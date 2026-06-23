@@ -92,7 +92,7 @@ router.post('/', authenticate, requireRole('Superadmin', 'Editor'), async (req, 
       await query(
         `INSERT INTO documents (deal_id, name, size, uploaded_at)
          VALUES ($1, $2, $3, $4)`,
-        [dealId, doc.name, doc.size, doc.uploaded_at]
+        [dealId, doc.name, doc.size, doc.uploadedAt || doc.uploaded_at]
       );
     }
 
@@ -135,7 +135,7 @@ router.put('/:id', authenticate, requireRole('Superadmin', 'Editor'), async (req
         await query(
           `INSERT INTO documents (deal_id, name, size, uploaded_at)
            VALUES ($1, $2, $3, $4)`,
-          [numericId, doc.name, doc.size, doc.uploaded_at]
+          [numericId, doc.name, doc.size, doc.uploadedAt || doc.uploaded_at]
         );
       }
     }
