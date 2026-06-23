@@ -154,24 +154,6 @@ export default function LoginPage() {
             </Button>
           </form>
 
-          <div style={{
-            marginTop: 20, padding: '12px 14px',
-            background: 'rgba(37,99,235,0.08)', borderRadius: 8,
-            border: '1px solid rgba(37,99,235,0.15)',
-          }}>
-            <p style={{ color: '#93C5FD', fontSize: 12, fontWeight: 500, marginBottom: 6 }}>Demo credentials</p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <div style={{ color: '#64748B', fontSize: 12 }}>
-                <span style={{ color: '#94A3B8' }}>Superadmin:</span> admin@deal.com / Admin1234!
-              </div>
-              <div style={{ color: '#64748B', fontSize: 12 }}>
-                <span style={{ color: '#94A3B8' }}>Editor:</span> user@deal.com / Editor1234!
-              </div>
-              <div style={{ color: '#64748B', fontSize: 12 }}>
-                <span style={{ color: '#94A3B8' }}>Viewer:</span> viewer@deal.com / Viewer1234!
-              </div>
-            </div>
-          </div>
         </div>
       </div>
 

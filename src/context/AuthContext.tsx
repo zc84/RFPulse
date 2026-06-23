@@ -1,73 +1,92 @@
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { User, UserRole } from '../types';
-import { mockUsers } from '../data/mockData';
+import { authApi, usersApi } from '../api';
 
-const SESSION_KEY = 'rfpulse_user_id';
-const USERS_KEY = 'rfpulse_users';
-
-function loadUsers(): User[] {
-  try {
-    const raw = localStorage.getItem(USERS_KEY);
-    if (raw) return JSON.parse(raw) as User[];
-  } catch { /* ignore */ }
-  return mockUsers;
-}
-
-function saveUsers(users: User[]) {
-  localStorage.setItem(USERS_KEY, JSON.stringify(users));
-}
+const TOKEN_KEY = 'rfpulse_token';
 
 interface AuthContextType {
   currentUser: User | null;
   users: User[];
+  loading: boolean;
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
-  addUser: (user: Omit<User, 'id'>) => void;
-  updateUser: (id: string, updates: Partial<User>) => void;
-  deleteUser: (id: string) => void;
+  addUser: (user: Omit<User, 'id'>) => Promise<void>;
+  updateUser: (id: string, updates: Partial<User>) => Promise<void>;
+  deleteUser: (id: string) => Promise<void>;
   isRole: (...roles: UserRole[]) => boolean;
+  refreshUsers: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [users, setUsers] = useState<User[]>(loadUsers);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [users, setUsers] = useState<User[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const resolveUser = (all: User[]): User | null => {
-    const id = sessionStorage.getItem(SESSION_KEY);
-    return id ? (all.find(u => u.id === id) ?? null) : null;
-  };
+  const loadUsers = useCallback(async () => {
+    try {
+      const data = await usersApi.getAll();
+      setUsers(data);
+    } catch (err) {
+      console.error('Failed to load users:', err);
+    }
+  }, []);
 
-  const [currentUser, setCurrentUser] = useState<User | null>(() => resolveUser(loadUsers()));
+  useEffect(() => {
+    const init = async () => {
+      const token = localStorage.getItem(TOKEN_KEY);
+      if (token) {
+        try {
+          const user = await authApi.me();
+          setCurrentUser(user);
+          await loadUsers();
+        } catch {
+          localStorage.removeItem(TOKEN_KEY);
+        }
+      }
+      setLoading(false);
+    };
+    init();
+  }, [loadUsers]);
 
   const login = useCallback(async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
-    await new Promise(r => setTimeout(r, 900));
-    const found = users.find(u => u.email.toLowerCase() === email.toLowerCase());
-    if (!found) return { success: false, error: 'email_not_found' };
-    if (found.password !== password) return { success: false, error: 'wrong_password' };
-    sessionStorage.setItem(SESSION_KEY, found.id);
-    setCurrentUser(found);
-    return { success: true };
-  }, [users]);
+    try {
+      const { user, token } = await authApi.login(email, password);
+      localStorage.setItem(TOKEN_KEY, token);
+      setCurrentUser(user);
+      await loadUsers();
+      return { success: true };
+    } catch (err: any) {
+      const error = err.message === 'email_not_found' ? 'email_not_found' : 'wrong_password';
+      return { success: false, error };
+    }
+  }, [loadUsers]);
 
   const logout = useCallback(() => {
-    sessionStorage.removeItem(SESSION_KEY);
+    localStorage.removeItem(TOKEN_KEY);
     setCurrentUser(null);
+    setUsers([]);
   }, []);
 
-  const addUser = useCallback((user: Omit<User, 'id'>) => {
-    const newUser: User = { ...user, id: `U-${Date.now()}` };
-    setUsers(prev => { const next = [...prev, newUser]; saveUsers(next); return next; });
-  }, []);
+  const addUser = useCallback(async (user: Omit<User, 'id'>) => {
+    await usersApi.create(user);
+    await loadUsers();
+  }, [loadUsers]);
 
-  const updateUser = useCallback((id: string, updates: Partial<User>) => {
-    setUsers(prev => { const next = prev.map(u => u.id === id ? { ...u, ...updates } : u); saveUsers(next); return next; });
-    setCurrentUser(prev => prev && prev.id === id ? { ...prev, ...updates } : prev);
-  }, []);
+  const updateUser = useCallback(async (id: string, updates: Partial<User>) => {
+    await usersApi.update(id, updates);
+    await loadUsers();
+    setCurrentUser(prev => {
+      if (!prev || prev.id !== id) return prev;
+      return { ...prev, ...updates };
+    });
+  }, [loadUsers]);
 
-  const deleteUser = useCallback((id: string) => {
-    setUsers(prev => { const next = prev.filter(u => u.id !== id); saveUsers(next); return next; });
-  }, []);
+  const deleteUser = useCallback(async (id: string) => {
+    await usersApi.delete(id);
+    await loadUsers();
+  }, [loadUsers]);
 
   const isRole = useCallback((...roles: UserRole[]) => {
     if (!currentUser) return false;
@@ -75,7 +94,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [currentUser]);
 
   return (
-    <AuthContext.Provider value={{ currentUser, users, login, logout, addUser, updateUser, deleteUser, isRole }}>
+    <AuthContext.Provider value={{ currentUser, users, loading, login, logout, addUser, updateUser, deleteUser, isRole, refreshUsers: loadUsers }}>
       {children}
     </AuthContext.Provider>
   );
