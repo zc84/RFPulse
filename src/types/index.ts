@@ -1,11 +1,13 @@
 export type DealStatus = 'New' | 'In Progress' | 'Won' | 'Lost' | 'TBC';
 export type DealDomain = 'Healthcare' | 'Fintech' | 'Retail' | 'Education' | 'Government' | 'Manufacturing' | 'Technology' | 'TBC';
+export type DealClassification = 'A' | 'B' | 'C';
 export type UserRole = 'Superadmin' | 'Editor' | 'Viewer';
 
 export interface Document {
   id: string;
   name: string;
   size: string;
+  filename?: string;
   uploadedAt: string;
 }
 
@@ -16,6 +18,8 @@ export interface Deal {
   dueDate: string;
   budget: number;
   domain: DealDomain;
+  clientName?: string;
+  classification?: DealClassification;
   description?: string;
   documents: Document[];
   createdAt: string;

@@ -49,6 +49,35 @@ export const dealsApi = {
     apiFetch(`/deals/${id}`, { method: 'PUT', body: JSON.stringify(updates) }),
   delete: (id: string) =>
     apiFetch(`/deals/${id}`, { method: 'DELETE' }),
+  uploadDocuments: (dealId: string, files: File[]) => {
+    const formData = new FormData();
+    files.forEach(f => formData.append('files', f));
+    const token = getToken();
+    return fetch(`${API_BASE_URL}/deals/${dealId}/documents`, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: formData,
+    }).then(async res => {
+      if (!res.ok) throw new Error('Upload failed');
+      return res.json();
+    });
+  },
+  downloadDocument: async (docId: string, filename: string) => {
+    const token = getToken();
+    const res = await fetch(`${API_BASE_URL}/deals/documents/${docId}/download`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) throw new Error('Download failed');
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    window.URL.revokeObjectURL(url);
+  },
+  deleteDocument: (docId: string) =>
+    apiFetch(`/deals/documents/${docId}`, { method: 'DELETE' }),
 };
 
 export const usersApi = {

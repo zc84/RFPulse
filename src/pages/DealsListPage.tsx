@@ -8,7 +8,7 @@ import Header from '../components/Header';
 import StatusBadge from '../components/StatusBadge';
 import Button from '../components/Button';
 
-type SortField = 'id' | 'name' | 'status' | 'dueDate' | 'budget' | 'domain';
+type SortField = 'id' | 'name' | 'status' | 'dueDate' | 'budget' | 'domain' | 'clientName' | 'classification';
 type SortDir = 'asc' | 'desc';
 
 const ALL_STATUSES: DealStatus[] = ['New', 'In Progress', 'Won', 'Lost', 'TBC'];
@@ -32,7 +32,7 @@ export default function DealsListPage() {
   const navigate = useNavigate();
 
   const [search, setSearch] = useState('');
-  const [selectedStatuses, setSelectedStatuses] = useState<DealStatus[]>([]);
+  const [selectedStatuses, setSelectedStatuses] = useState<DealStatus[]>(ALL_STATUSES);
   const [showStatusFilter, setShowStatusFilter] = useState(false);
   const [sortField, setSortField] = useState<SortField | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>('asc');
@@ -148,9 +148,6 @@ export default function DealsListPage() {
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>
           <div>
             <h1 style={{ fontSize: 22, fontWeight: 700, color: '#0F172A', letterSpacing: '-0.3px' }}>Deals & Tenders</h1>
-            <p style={{ color: '#64748B', fontSize: 13, marginTop: 2 }}>
-              {deals.length} total deals across all stages
-            </p>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <Button
@@ -168,31 +165,6 @@ export default function DealsListPage() {
               </Button>
             )}
           </div>
-        </div>
-
-        {/* Status summary pills */}
-        <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
-          {ALL_STATUSES.map(s => {
-            const count = deals.filter(d => d.status === s).length;
-            const active = selectedStatuses.includes(s);
-            return (
-              <button
-                key={s}
-                onClick={() => toggleStatus(s)}
-                style={{
-                  padding: '5px 12px', borderRadius: 999, fontSize: 12, fontWeight: 500,
-                  cursor: 'pointer', transition: 'all 0.15s',
-                  border: active ? '1.5px solid currentColor' : '1.5px solid #E2E8F0',
-                  background: active ? 'currentColor' : '#fff',
-                  color: active ? '#fff' : '#64748B',
-                  display: 'flex', alignItems: 'center', gap: 5,
-                }}
-              >
-                <StatusBadge status={s} size="sm" />
-                <span style={{ color: '#64748B', fontWeight: 600 }}>{count}</span>
-              </button>
-            );
-          })}
         </div>
 
         {/* Filter bar */}
@@ -328,6 +300,8 @@ export default function DealsListPage() {
                       {colHeader('Due Date', 'dueDate')}
                       {colHeader('Budget', 'budget')}
                       {colHeader('Domain', 'domain')}
+                      {colHeader('Client', 'clientName')}
+                      {colHeader('Class', 'classification')}
                     </tr>
                   </thead>
                   <tbody>
@@ -410,7 +384,24 @@ export default function DealsListPage() {
 function TableRow({ deal, i, onClick }: { deal: Deal; i: number; onClick: () => void }) {
   const [hovered, setHovered] = useState(false);
 
-  const isOverdue = new Date(deal.dueDate) < new Date() && deal.status !== 'Won' && deal.status !== 'Lost';
+  const isFinal = deal.status === 'Won' || deal.status === 'Lost';
+  const dueDay = new Date(deal.dueDate);
+  dueDay.setHours(0, 0, 0, 0);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const daysUntil = Math.ceil((dueDay.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+
+  let dateColor = '#374151';
+  let dateWeight = 400;
+  if (!isFinal) {
+    if (daysUntil <= 0) {
+      dateColor = '#DC2626';
+      dateWeight = 500;
+    } else if (daysUntil <= 2) {
+      dateColor = '#CA8A04';
+      dateWeight = 500;
+    }
+  }
 
   return (
     <tr
@@ -434,9 +425,8 @@ function TableRow({ deal, i, onClick }: { deal: Deal; i: number; onClick: () => 
       <td style={{ padding: '12px 16px' }}>
         <StatusBadge status={deal.status} size="sm" />
       </td>
-      <td style={{ padding: '12px 16px', fontSize: 13, color: isOverdue ? '#DC2626' : '#374151', fontWeight: isOverdue ? 500 : 400, whiteSpace: 'nowrap' }}>
+      <td style={{ padding: '12px 16px', fontSize: 13, color: dateColor, fontWeight: dateWeight, whiteSpace: 'nowrap' }}>
         {formatDate(deal.dueDate)}
-        {isOverdue && <span style={{ fontSize: 10, marginLeft: 4, color: '#DC2626' }}>OVERDUE</span>}
       </td>
       <td style={{ padding: '12px 16px', fontSize: 13, color: '#374151', fontWeight: 500, whiteSpace: 'nowrap' }}>
         {formatBudget(deal.budget)}
@@ -448,6 +438,21 @@ function TableRow({ deal, i, onClick }: { deal: Deal; i: number; onClick: () => 
         }}>
           {deal.domain}
         </span>
+      </td>
+      <td style={{ padding: '12px 16px', fontSize: 13, color: '#374151', whiteSpace: 'nowrap' }}>
+        {deal.clientName || '-'}
+      </td>
+      <td style={{ padding: '12px 16px' }}>
+        {deal.classification && (
+          <span style={{
+            display: 'inline-block', padding: '3px 8px', borderRadius: 6,
+            background: deal.classification === 'A' ? '#DCFCE7' : deal.classification === 'B' ? '#FEF3C7' : '#FEE2E2',
+            color: deal.classification === 'A' ? '#166534' : deal.classification === 'B' ? '#92400E' : '#991B1B',
+            fontSize: 11, fontWeight: 600,
+          }}>
+            {deal.classification}
+          </span>
+        )}
       </td>
     </tr>
   );

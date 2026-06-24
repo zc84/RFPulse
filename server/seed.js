@@ -15,6 +15,8 @@ const MOCK_DEALS = [
     due_date: '2025-02-15',
     budget: 850000,
     domain: 'Healthcare',
+    client_name: 'NHS',
+    classification: 'A',
     description: 'Comprehensive digital transformation program for NHS trusts across the North West region, including EHR integration and patient portal development.',
     documents: [
       { name: 'RFP_NHS_Digital.pdf', size: '2.4 MB', uploaded_at: '2024-12-01' },
@@ -27,6 +29,8 @@ const MOCK_DEALS = [
     due_date: '2025-01-30',
     budget: 2400000,
     domain: 'Fintech',
+    client_name: 'Barclays',
+    classification: 'A',
     description: 'Legacy core banking system migration to cloud-native microservices architecture.',
     documents: [
       { name: 'Scope_of_Work.pdf', size: '3.8 MB', uploaded_at: '2024-11-20' },
@@ -38,6 +42,8 @@ const MOCK_DEALS = [
     due_date: '2024-12-31',
     budget: 620000,
     domain: 'Retail',
+    client_name: 'Tesco',
+    classification: 'B',
     description: 'Real-time supply chain analytics and demand forecasting platform for UK operations.',
     documents: [],
   },
@@ -47,6 +53,8 @@ const MOCK_DEALS = [
     due_date: '2025-03-10',
     budget: 310000,
     domain: 'Education',
+    client_name: 'Oxford University',
+    classification: 'B',
     description: 'Learning management system upgrade with AI-powered personalisation features.',
     documents: [
       { name: 'LMS_Requirements.pdf', size: '1.7 MB', uploaded_at: '2024-12-10' },
@@ -58,141 +66,189 @@ const MOCK_DEALS = [
     due_date: '2025-04-01',
     budget: 5200000,
     domain: 'Government',
-    description: 'Complete rebuild of the self-assessment tax portal with improved UX and accessibility.',
+    client_name: 'HMRC',
+    classification: 'A',
+    description: 'Complete rebuild of the online tax portal with improved UX and security features.',
     documents: [
-      { name: 'HMRC_ITT.pdf', size: '8.2 MB', uploaded_at: '2024-11-05' },
-      { name: 'Security_Requirements.pdf', size: '2.1 MB', uploaded_at: '2024-11-06' },
+      { name: 'Tax_Portal_Specs.pdf', size: '4.2 MB', uploaded_at: '2024-11-15' },
+      { name: 'Security_Requirements.docx', size: '890 KB', uploaded_at: '2024-11-18' },
     ],
   },
   {
-    name: 'Siemens Manufacturing IoT Dashboard',
-    status: 'TBC',
-    due_date: '2025-05-20',
-    budget: 480000,
-    domain: 'Manufacturing',
-    description: 'IoT-enabled production monitoring dashboard for German automotive manufacturing facilities.',
-    documents: [],
-  },
-  {
-    name: 'Lloyds Bank Fraud Detection AI',
-    status: 'Lost',
-    due_date: '2024-11-15',
-    budget: 1800000,
-    domain: 'Fintech',
-    description: 'Machine learning-based real-time fraud detection system integration.',
-    documents: [
-      { name: 'Fraud_Detection_Spec.pdf', size: '4.5 MB', uploaded_at: '2024-09-15' },
-    ],
-  },
-  {
-    name: 'Manchester City Council Digital Services',
-    status: 'New',
+    name: 'Airbus Manufacturing IoT Platform',
+    status: 'In Progress',
     due_date: '2025-02-28',
-    budget: 730000,
-    domain: 'Government',
-    description: 'Citizen-facing digital services portal for council tax, planning applications, and benefits.',
-    documents: [],
-  },
-  {
-    name: 'ASOS Personalisation Engine',
-    status: 'In Progress',
-    due_date: '2025-03-15',
-    budget: 920000,
-    domain: 'Retail',
-    description: 'AI-powered product recommendation and personalisation engine for fashion e-commerce platform.',
-    documents: [
-      { name: 'Technical_Proposal.pdf', size: '5.1 MB', uploaded_at: '2024-11-25' },
-    ],
-  },
-  {
-    name: 'University of Edinburgh Student Portal',
-    status: 'Won',
-    due_date: '2024-12-20',
-    budget: 275000,
-    domain: 'Education',
-    description: 'Unified student services portal integrating timetabling, grades, and library systems.',
-    documents: [],
-  },
-  {
-    name: 'AstraZeneca Clinical Trial Management',
-    status: 'New',
-    due_date: '2025-06-01',
-    budget: 3100000,
-    domain: 'Healthcare',
-    description: 'Clinical trial management system with regulatory compliance and data integrity features.',
-    documents: [
-      { name: 'Clinical_Trial_RFP.pdf', size: '6.3 MB', uploaded_at: '2024-12-14' },
-    ],
-  },
-  {
-    name: 'HSBC Open Banking API Gateway',
-    status: 'TBC',
-    due_date: '2025-07-15',
-    budget: 1450000,
-    domain: 'Fintech',
-    description: 'PSD2-compliant open banking API gateway with developer portal and sandbox environment.',
-    documents: [],
-  },
-  {
-    name: 'Rolls-Royce Digital Twin Platform',
-    status: 'In Progress',
-    due_date: '2025-08-30',
-    budget: 4700000,
+    budget: 1800000,
     domain: 'Manufacturing',
-    description: 'Digital twin simulation platform for jet engine performance monitoring and predictive maintenance.',
+    client_name: 'Airbus',
+    classification: 'A',
+    description: 'IoT platform for real-time monitoring of manufacturing processes and predictive maintenance.',
     documents: [
-      { name: 'Digital_Twin_ITT.pdf', size: '9.7 MB', uploaded_at: '2024-12-02' },
+      { name: 'IoT_Architecture.pdf', size: '2.1 MB', uploaded_at: '2024-11-25' },
     ],
   },
   {
-    name: 'Cambridge Assessment Online Exam Platform',
+    name: 'Spotify Content Delivery Network',
+    status: 'New',
+    due_date: '2025-05-15',
+    budget: 3200000,
+    domain: 'Technology',
+    client_name: 'Spotify',
+    classification: 'A',
+    description: 'Global content delivery network infrastructure for improved streaming performance.',
+    documents: [
+      { name: 'CDN_Requirements.pdf', size: '1.5 MB', uploaded_at: '2024-12-05' },
+    ],
+  },
+  {
+    name: 'BP Energy Trading Dashboard',
     status: 'Lost',
-    due_date: '2024-10-30',
-    budget: 540000,
-    domain: 'Education',
-    description: 'Secure online examination platform with AI proctoring and accessibility features.',
+    due_date: '2024-12-15',
+    budget: 950000,
+    domain: 'Fintech',
+    client_name: 'BP',
+    classification: 'B',
+    description: 'Real-time energy trading analytics dashboard for global operations.',
+    documents: [
+      { name: 'Trading_Specs.pdf', size: '2.8 MB', uploaded_at: '2024-10-20' },
+    ],
+  },
+  {
+    name: 'Sainsbury\'s Customer Loyalty App',
+    status: 'TBC',
+    due_date: '2025-06-01',
+    budget: 450000,
+    domain: 'Retail',
+    client_name: 'Sainsbury\'s',
+    classification: 'C',
+    description: 'Mobile application for customer loyalty program with personalised offers.',
     documents: [],
   },
   {
-    name: 'Vodafone Network Operations Centre',
+    name: 'Cambridge University Research Portal',
+    status: 'Won',
+    due_date: '2025-01-20',
+    budget: 280000,
+    domain: 'Education',
+    client_name: 'Cambridge University',
+    classification: 'C',
+    description: 'Research collaboration and grant management portal for academic departments.',
+    documents: [
+      { name: 'Research_Portal.pdf', size: '1.9 MB', uploaded_at: '2024-11-30' },
+    ],
+  },
+  {
+    name: 'Ministry of Defence Cybersecurity',
+    status: 'In Progress',
+    due_date: '2025-07-01',
+    budget: 7500000,
+    domain: 'Government',
+    client_name: 'Ministry of Defence',
+    classification: 'A',
+    description: 'Comprehensive cybersecurity framework for defence systems and networks.',
+    documents: [
+      { name: 'Cyber_Security_Specs.pdf', size: '5.5 MB', uploaded_at: '2024-11-10' },
+      { name: 'Compliance_Doc.pdf', size: '1.2 MB', uploaded_at: '2024-11-12' },
+    ],
+  },
+  {
+    name: 'Rolls-Royce Engine Analytics',
+    status: 'New',
+    due_date: '2025-03-30',
+    budget: 2100000,
+    domain: 'Manufacturing',
+    client_name: 'Rolls-Royce',
+    classification: 'A',
+    description: 'Engine performance analytics and predictive maintenance platform for aerospace division.',
+    documents: [
+      { name: 'Engine_Analytics.pdf', size: '3.2 MB', uploaded_at: '2024-12-08' },
+    ],
+  },
+  {
+    name: 'Netflix Content Management',
+    status: 'TBC',
+    due_date: '2025-08-01',
+    budget: 4100000,
+    domain: 'Technology',
+    client_name: 'Netflix',
+    classification: 'A',
+    description: 'Content management and asset tracking system for global streaming operations.',
+    documents: [],
+  },
+  {
+    name: 'Lloyds Banking Mobile App',
+    status: 'In Progress',
+    due_date: '2025-02-10',
+    budget: 1500000,
+    domain: 'Fintech',
+    client_name: 'Lloyds Banking',
+    classification: 'B',
+    description: 'Mobile banking application with enhanced security and user experience.',
+    documents: [
+      { name: 'Mobile_App_Specs.pdf', size: '2.3 MB', uploaded_at: '2024-11-22' },
+    ],
+  },
+  {
+    name: 'Aldi Inventory Management',
+    status: 'Won',
+    due_date: '2025-01-10',
+    budget: 380000,
+    domain: 'Retail',
+    client_name: 'Aldi',
+    classification: 'C',
+    description: 'Automated inventory management system for UK warehouse operations.',
+    documents: [
+      { name: 'Inventory_Specs.pdf', size: '1.6 MB', uploaded_at: '2024-11-28' },
+    ],
+  },
+  {
+    name: 'Imperial College Data Platform',
     status: 'New',
     due_date: '2025-04-15',
-    budget: 2200000,
-    domain: 'Technology',
-    description: 'Next-generation network operations centre with automated incident response and AI-assisted NOC management.',
-    documents: [
-      { name: 'NOC_Requirements.pdf', size: '3.2 MB', uploaded_at: '2024-12-09' },
-    ],
-  },
-  {
-    name: 'John Lewis Supply Chain Integration',
-    status: 'TBC',
-    due_date: '2025-09-01',
-    budget: 890000,
-    domain: 'Retail',
-    description: 'End-to-end supply chain integration connecting suppliers, warehouses, and retail outlets.',
+    budget: 520000,
+    domain: 'Education',
+    client_name: 'Imperial College',
+    classification: 'B',
+    description: 'Research data management platform for scientific collaboration.',
     documents: [],
   },
   {
-    name: 'DVLA Vehicle Registration Modernisation',
-    status: 'Won',
-    due_date: '2025-01-15',
-    budget: 1650000,
+    name: 'Department of Health NHS App',
+    status: 'In Progress',
+    due_date: '2025-05-30',
+    budget: 2800000,
     domain: 'Government',
-    description: 'Modernisation of vehicle registration and licensing systems with real-time ANPR integration.',
+    client_name: 'Department of Health',
+    classification: 'A',
+    description: 'National health service application for appointments, prescriptions, and health records.',
     documents: [
-      { name: 'DVLA_Tender.pdf', size: '4.8 MB', uploaded_at: '2024-10-01' },
+      { name: 'NHS_App_Specs.pdf', size: '4.1 MB', uploaded_at: '2024-11-05' },
     ],
   },
   {
-    name: 'Pfizer Drug Discovery Analytics',
-    status: 'In Progress',
-    due_date: '2025-10-01',
-    budget: 6800000,
-    domain: 'Healthcare',
-    description: 'Advanced analytics platform for accelerating drug discovery through molecular simulation data.',
+    name: 'Siemens Smart Factory',
+    status: 'TBC',
+    due_date: '2025-09-01',
+    budget: 6200000,
+    domain: 'Manufacturing',
+    client_name: 'Siemens',
+    classification: 'A',
+    description: 'Smart factory automation and digital twin implementation for production facilities.',
     documents: [
-      { name: 'Discovery_Analytics_RFP.pdf', size: '7.4 MB', uploaded_at: '2024-12-06' },
+      { name: 'Smart_Factory.pdf', size: '6.3 MB', uploaded_at: '2024-10-15' },
+    ],
+  },
+  {
+    name: 'Meta AI Infrastructure',
+    status: 'New',
+    due_date: '2025-10-15',
+    budget: 12000000,
+    domain: 'Technology',
+    client_name: 'Meta',
+    classification: 'A',
+    description: 'Large-scale AI training infrastructure for generative AI models.',
+    documents: [
+      { name: 'AI_Infrastructure.pdf', size: '8.7 MB', uploaded_at: '2024-12-12' },
     ],
   },
 ];
@@ -217,11 +273,11 @@ async function seed() {
 
     for (const deal of MOCK_DEALS) {
       const dealResult = await query(
-        `INSERT INTO deals (name, status, due_date, budget, domain, description)
-         VALUES ($1, $2, $3, $4, $5, $6)
+        `INSERT INTO deals (name, status, due_date, budget, domain, client_name, classification, description)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
          ON CONFLICT DO NOTHING
          RETURNING id`,
-        [deal.name, deal.status, deal.due_date, deal.budget, deal.domain, deal.description || null]
+        [deal.name, deal.status, deal.due_date, deal.budget, deal.domain, deal.client_name || null, deal.classification || null, deal.description || null]
       );
 
       if (dealResult.rows.length === 0) continue;
@@ -229,9 +285,9 @@ async function seed() {
 
       for (const doc of deal.documents) {
         await query(
-          `INSERT INTO documents (deal_id, name, size, uploaded_at)
-           VALUES ($1, $2, $3, $4)`,
-          [dealId, doc.name, doc.size, doc.uploaded_at]
+          `INSERT INTO documents (deal_id, name, size, filename, uploaded_at)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [dealId, doc.name, doc.size, null, doc.uploaded_at]
         );
       }
     }

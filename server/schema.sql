@@ -18,6 +18,8 @@ CREATE TABLE deals (
   due_date DATE NOT NULL,
   budget NUMERIC(15, 2) NOT NULL,
   domain VARCHAR(100) NOT NULL,
+  client_name VARCHAR(255),
+  classification VARCHAR(1) CHECK (classification IN ('A', 'B', 'C')),
   description TEXT,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -27,6 +29,7 @@ CREATE TABLE documents (
   deal_id INTEGER NOT NULL REFERENCES deals(id) ON DELETE CASCADE,
   name VARCHAR(500) NOT NULL,
   size VARCHAR(50) NOT NULL,
+  filename VARCHAR(255),
   uploaded_at DATE NOT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

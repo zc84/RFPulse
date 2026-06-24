@@ -3,13 +3,15 @@ import { useNavigate, Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { ArrowLeft, Upload, X, FileText } from 'lucide-react';
 import { useDeals } from '../context/DealsContext';
-import { DealStatus, DealDomain, Document } from '../types';
+import { DealStatus, DealDomain, DealClassification, Document } from '../types';
+import { dealsApi } from '../api';
 import Header from '../components/Header';
 import Button from '../components/Button';
 import FormField, { Input, Select, Textarea } from '../components/FormField';
 
 const STATUSES: DealStatus[] = ['New', 'In Progress', 'Won', 'Lost', 'TBC'];
 const DOMAINS: DealDomain[] = ['Healthcare', 'Fintech', 'Retail', 'Education', 'Government', 'Manufacturing', 'Technology', 'TBC'];
+const CLASSIFICATIONS: DealClassification[] = ['A', 'B', 'C'];
 
 interface FormData {
   name: string;
@@ -17,6 +19,8 @@ interface FormData {
   dueDate: string;
   budget: string;
   domain: DealDomain | '';
+  clientName: string;
+  classification: DealClassification | '';
   description: string;
 }
 
@@ -27,16 +31,21 @@ interface FormErrors {
   domain?: string;
 }
 
+interface PendingDoc {
+  file: File;
+  document: Document;
+}
+
 export default function AddDealPage() {
-  const { addDeal } = useDeals();
+  const { addDeal, refreshDeals } = useDeals();
   const navigate = useNavigate();
 
   const [form, setForm] = useState<FormData>({
-    name: '', status: 'New', dueDate: '', budget: '', domain: '', description: '',
+    name: '', status: 'New', dueDate: '', budget: '', domain: '', clientName: '', classification: '', description: '',
   });
   const [errors, setErrors] = useState<FormErrors>({});
   const [loading, setLoading] = useState(false);
-  const [docs, setDocs] = useState<Document[]>([]);
+  const [pendingDocs, setPendingDocs] = useState<PendingDoc[]>([]);
 
   const set = (field: keyof FormData) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     setForm(p => ({ ...p, [field]: e.target.value }));
@@ -59,15 +68,21 @@ export default function AddDealPage() {
     if (Object.keys(errs).length) { setErrors(errs); return; }
     setLoading(true);
     try {
-      await addDeal({
+      const newDeal = await addDeal({
         name: form.name.trim(),
         status: form.status,
         dueDate: form.dueDate,
         budget: Number(form.budget),
         domain: form.domain as DealDomain,
+        clientName: form.clientName.trim() || undefined,
+        classification: form.classification || undefined,
         description: form.description.trim() || undefined,
-        documents: docs,
+        documents: [],
       });
+      if (pendingDocs.length > 0) {
+        await dealsApi.uploadDocuments(newDeal.id, pendingDocs.map(p => p.file));
+        await refreshDeals();
+      }
       toast.success('Deal created successfully.');
       navigate('/deals');
     } catch {
@@ -79,13 +94,16 @@ export default function AddDealPage() {
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
-    const newDocs: Document[] = files.map(f => ({
-      id: `doc-${Date.now()}-${Math.random()}`,
-      name: f.name,
-      size: `${(f.size / 1024).toFixed(0)} KB`,
-      uploadedAt: new Date().toISOString().split('T')[0],
+    const newPending: PendingDoc[] = files.map(f => ({
+      file: f,
+      document: {
+        id: `doc-${Date.now()}-${Math.random()}`,
+        name: f.name,
+        size: `${(f.size / 1024).toFixed(0)} KB`,
+        uploadedAt: new Date().toISOString().split('T')[0],
+      } as Document,
     }));
-    setDocs(p => [...p, ...newDocs]);
+    setPendingDocs(p => [...p, ...newPending]);
     e.target.value = '';
   };
 
@@ -164,8 +182,25 @@ export default function AddDealPage() {
 
               <FormField label="Domain" error={errors.domain} required>
                 <Select value={form.domain} onChange={set('domain')} error={!!errors.domain}>
-                  <option value="">Select domain…</option>
+                  <option value="">Select domain</option>
                   {DOMAINS.map(d => <option key={d} value={d}>{d}</option>)}
+                </Select>
+              </FormField>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+              <FormField label="Client Name" hint="Name of the client organization">
+                <Input
+                  value={form.clientName}
+                  onChange={set('clientName')}
+                  placeholder="e.g. NHS"
+                />
+              </FormField>
+
+              <FormField label="Classification" hint="Priority level (A=Highest, C=Lowest)">
+                <Select value={form.classification} onChange={set('classification')}>
+                  <option value="">Select classification</option>
+                  {CLASSIFICATIONS.map(c => <option key={c} value={c}>{c}</option>)}
                 </Select>
               </FormField>
             </div>
@@ -182,25 +217,25 @@ export default function AddDealPage() {
 
           {/* Documents section */}
           <div style={{ borderTop: '1px solid #F1F5F9' }}>
-            <div style={{ padding: '16px 24px', background: '#FAFAFA', borderBottom: docs.length > 0 ? '1px solid #F1F5F9' : undefined }}>
+            <div style={{ padding: '16px 24px', background: '#FAFAFA', borderBottom: pendingDocs.length > 0 ? '1px solid #F1F5F9' : undefined }}>
               <h2 style={{ fontSize: 14, fontWeight: 600, color: '#374151' }}>Documents</h2>
             </div>
             <div style={{ padding: 24 }}>
-              {docs.length > 0 && (
+              {pendingDocs.length > 0 && (
                 <div style={{ marginBottom: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {docs.map(doc => (
-                    <div key={doc.id} style={{
+                  {pendingDocs.map(pd => (
+                    <div key={pd.document.id} style={{
                       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                       padding: '8px 12px', background: '#F8FAFC', borderRadius: 7,
                       border: '1px solid #E2E8F0',
                     }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <FileText size={14} color="#64748B" />
-                        <span style={{ fontSize: 13, color: '#374151' }}>{doc.name}</span>
-                        <span style={{ fontSize: 11, color: '#94A3B8' }}>{doc.size}</span>
+                        <span style={{ fontSize: 13, color: '#374151' }}>{pd.document.name}</span>
+                        <span style={{ fontSize: 11, color: '#94A3B8' }}>{pd.document.size}</span>
                       </div>
                       <button
-                        onClick={() => setDocs(p => p.filter(d => d.id !== doc.id))}
+                        onClick={() => setPendingDocs(p => p.filter(d => d.document.id !== pd.document.id))}
                         style={{ background: 'none', border: 'none', color: '#94A3B8', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
                       >
                         <X size={14} />

@@ -1,15 +1,17 @@
 import React, { useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { ArrowLeft, FileText, X } from 'lucide-react';
+import { ArrowLeft, FileText, X, Upload } from 'lucide-react';
 import { useDeals } from '../context/DealsContext';
-import { DealStatus, DealDomain, Document } from '../types';
+import { DealStatus, DealDomain, DealClassification, Document } from '../types';
+import { dealsApi } from '../api';
 import Header from '../components/Header';
 import Button from '../components/Button';
 import FormField, { Input, Select, Textarea } from '../components/FormField';
 
 const STATUSES: DealStatus[] = ['New', 'In Progress', 'Won', 'Lost', 'TBC'];
 const DOMAINS: DealDomain[] = ['Healthcare', 'Fintech', 'Retail', 'Education', 'Government', 'Manufacturing', 'Technology', 'TBC'];
+const CLASSIFICATIONS: DealClassification[] = ['A', 'B', 'C'];
 
 interface FormErrors {
   name?: string;
@@ -20,7 +22,7 @@ interface FormErrors {
 
 export default function EditDealPage() {
   const { id } = useParams<{ id: string }>();
-  const { getDeal, updateDeal } = useDeals();
+  const { getDeal, updateDeal, refreshDeals } = useDeals();
   const navigate = useNavigate();
 
   const deal = getDeal(id!);
@@ -31,6 +33,8 @@ export default function EditDealPage() {
     dueDate: deal?.dueDate ?? '',
     budget: deal?.budget?.toString() ?? '',
     domain: deal?.domain ?? '' as DealDomain | '',
+    clientName: deal?.clientName ?? '',
+    classification: deal?.classification ?? '' as DealClassification | '',
     description: deal?.description ?? '',
   });
   const [errors, setErrors] = useState<FormErrors>({});
@@ -64,6 +68,29 @@ export default function EditDealPage() {
     return e;
   };
 
+  const handleDeleteDoc = async (docId: string) => {
+    try {
+      await dealsApi.deleteDocument(docId);
+      setDocs(p => p.filter(d => d.id !== docId));
+      toast.success('Document removed.');
+    } catch {
+      toast.error('Failed to remove document.');
+    }
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+    try {
+      const uploaded = await dealsApi.uploadDocuments(deal.id, files);
+      setDocs(p => [...p, ...uploaded]);
+      toast.success(`${files.length} file(s) uploaded.`);
+    } catch {
+      toast.error('Failed to upload files.');
+    }
+    e.target.value = '';
+  };
+
   const handleSave = async () => {
     const errs = validate();
     if (Object.keys(errs).length) { setErrors(errs); return; }
@@ -75,10 +102,12 @@ export default function EditDealPage() {
         dueDate: form.dueDate,
         budget: Number(form.budget),
         domain: form.domain as DealDomain,
+        clientName: form.clientName.trim() || undefined,
+        classification: form.classification || undefined,
         description: form.description.trim() || undefined,
-        documents: docs,
       });
       toast.success('Deal updated successfully.');
+      await refreshDeals();
       navigate(`/deals/${deal.id}`);
     } catch {
       toast.error('Failed to update deal. Please try again.');
@@ -152,6 +181,19 @@ export default function EditDealPage() {
               </FormField>
             </div>
 
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+              <FormField label="Client Name" hint="Name of the client organization">
+                <Input value={form.clientName} onChange={set('clientName')} placeholder="e.g. NHS" />
+              </FormField>
+
+              <FormField label="Classification" hint="Priority level (A=Highest, C=Lowest)">
+                <Select value={form.classification} onChange={set('classification')}>
+                  <option value="">Select classification</option>
+                  {CLASSIFICATIONS.map(c => <option key={c} value={c}>{c}</option>)}
+                </Select>
+              </FormField>
+            </div>
+
             <FormField label="Description / Notes">
               <Textarea value={form.description} onChange={set('description')} rows={4} />
             </FormField>
@@ -175,7 +217,7 @@ export default function EditDealPage() {
                         <span style={{ fontSize: 13, color: '#374151' }}>{doc.name}</span>
                         <span style={{ fontSize: 11, color: '#94A3B8' }}>{doc.size}</span>
                       </div>
-                      <button onClick={() => setDocs(p => p.filter(d => d.id !== doc.id))}
+                      <button onClick={() => handleDeleteDoc(doc.id)}
                         style={{ background: 'none', border: 'none', color: '#94A3B8', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
                         <X size={14} />
                       </button>
@@ -183,9 +225,27 @@ export default function EditDealPage() {
                   ))}
                 </div>
               )}
-              <p style={{ fontSize: 12, color: '#94A3B8' }}>
-                {docs.length === 0 ? 'No documents attached.' : `${docs.length} document(s) attached.`}
-              </p>
+              <label style={{
+                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
+                padding: 20, border: '2px dashed #E2E8F0', borderRadius: 8, cursor: 'pointer',
+                background: '#FAFAFA', transition: 'all 0.15s',
+              }}
+              onMouseEnter={e => {
+                (e.currentTarget as HTMLElement).style.borderColor = '#2563EB';
+                (e.currentTarget as HTMLElement).style.background = '#EFF6FF';
+              }}
+              onMouseLeave={e => {
+                (e.currentTarget as HTMLElement).style.borderColor = '#E2E8F0';
+                (e.currentTarget as HTMLElement).style.background = '#FAFAFA';
+              }}
+              >
+                <Upload size={18} color="#94A3B8" />
+                <span style={{ fontSize: 12, color: '#64748B', textAlign: 'center' }}>
+                  <span style={{ color: '#2563EB', fontWeight: 500 }}>Click to upload</span> or drag & drop
+                </span>
+                <span style={{ fontSize: 11, color: '#94A3B8' }}>PDF, DOCX, XLSX up to 20MB</span>
+                <input type="file" multiple accept=".pdf,.docx,.xlsx,.doc,.ppt,.pptx" onChange={handleFileUpload} style={{ display: 'none' }} />
+              </label>
             </div>
           </div>
 

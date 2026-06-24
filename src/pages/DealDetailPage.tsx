@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { ArrowLeft, Edit2, Trash2, Download, FileText, Calendar, DollarSign, Tag, AlignLeft, Hash } from 'lucide-react';
+import { ArrowLeft, Edit2, Trash2, Download, FileText, Calendar, DollarSign, Tag, AlignLeft, Hash, Share2, Copy, X, Building } from 'lucide-react';
 import { useDeals } from '../context/DealsContext';
 import { useAuth } from '../context/AuthContext';
+import { dealsApi } from '../api';
 import Header from '../components/Header';
 import StatusBadge from '../components/StatusBadge';
 import Button from '../components/Button';
@@ -34,12 +35,15 @@ function InfoCard({ icon, label, value }: { icon: React.ReactNode; label: string
 
 export default function DealDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const { getDeal, deleteDeal } = useDeals();
+  const { getDeal, deleteDeal, refreshDeals } = useDeals();
   const { isRole } = useAuth();
   const navigate = useNavigate();
 
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [docToDelete, setDocToDelete] = useState<{ id: string; name: string } | null>(null);
+  const [deletingDoc, setDeletingDoc] = useState(false);
+  const [shareUrl, setShareUrl] = useState<string | null>(null);
 
   const deal = getDeal(id!);
   const canEdit = isRole('Superadmin', 'Editor');
@@ -65,6 +69,28 @@ export default function DealDetailPage() {
     await deleteDeal(deal.id);
     toast.success('Deal deleted.');
     navigate('/deals');
+  };
+
+  const handleDeleteDoc = async () => {
+    if (!docToDelete) return;
+    setDeletingDoc(true);
+    try {
+      await dealsApi.deleteDocument(docToDelete.id);
+      await refreshDeals();
+      toast.success('Document deleted.');
+    } catch {
+      toast.error('Failed to delete document.');
+    } finally {
+      setDeletingDoc(false);
+      setDocToDelete(null);
+    }
+  };
+
+  const handleShare = (docId: string) => {
+    const apiBase = import.meta.env.VITE_API_URL || (window.location.origin + '/api');
+    const url = `${apiBase}/deals/documents/${docId}/share`;
+    navigator.clipboard.writeText(url);
+    toast.success('Share URL copied to clipboard');
   };
 
   return (
@@ -138,6 +164,17 @@ export default function DealDetailPage() {
           } />
           <InfoCard icon={<DollarSign size={13} />} label="Budget" value={formatBudget(deal.budget)} />
           <InfoCard icon={<Tag size={13} />} label="Domain" value={deal.domain} />
+          {deal.clientName && <InfoCard icon={<Building size={13} />} label="Client" value={deal.clientName} />}
+          {deal.classification && <InfoCard icon={<Tag size={13} />} label="Class" value={
+            <span style={{
+              display: 'inline-block', padding: '2px 8px', borderRadius: 6,
+              background: deal.classification === 'A' ? '#DCFCE7' : deal.classification === 'B' ? '#FEF3C7' : '#FEE2E2',
+              color: deal.classification === 'A' ? '#166534' : deal.classification === 'B' ? '#92400E' : '#991B1B',
+              fontSize: 12, fontWeight: 600,
+            }}>
+              {deal.classification}
+            </span>
+          } />}
         </div>
 
         {/* Description */}
@@ -190,27 +227,79 @@ export default function DealDetailPage() {
                         <div style={{ fontSize: 11, color: '#94A3B8' }}>{doc.size} · Uploaded {formatDate(doc.uploadedAt)}</div>
                       </div>
                     </div>
-                    <button style={{
-                      display: 'flex', alignItems: 'center', gap: 5,
-                      padding: '6px 10px', borderRadius: 6,
-                      border: '1px solid #E2E8F0', background: '#fff',
-                      color: '#374151', fontSize: 12, cursor: 'pointer',
-                      fontWeight: 500,
-                    }}
-                    onMouseEnter={e => {
-                      (e.currentTarget as HTMLElement).style.background = '#EFF6FF';
-                      (e.currentTarget as HTMLElement).style.color = '#2563EB';
-                      (e.currentTarget as HTMLElement).style.borderColor = '#BFDBFE';
-                    }}
-                    onMouseLeave={e => {
-                      (e.currentTarget as HTMLElement).style.background = '#fff';
-                      (e.currentTarget as HTMLElement).style.color = '#374151';
-                      (e.currentTarget as HTMLElement).style.borderColor = '#E2E8F0';
-                    }}
-                    onClick={() => toast.success(`Downloading ${doc.name}…`)}
-                    >
-                      <Download size={12} /> Download
-                    </button>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button
+                        disabled={!doc.filename}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: 4,
+                          padding: '6px 10px', borderRadius: 6,
+                          border: '1px solid #E2E8F0', background: '#fff',
+                          color: doc.filename ? '#374151' : '#94A3B8', fontSize: 12, cursor: doc.filename ? 'pointer' : 'not-allowed',
+                          fontWeight: 500,
+                        }}
+                        onMouseEnter={e => {
+                          if (!doc.filename) return;
+                          (e.currentTarget as HTMLElement).style.background = '#EFF6FF';
+                          (e.currentTarget as HTMLElement).style.color = '#2563EB';
+                          (e.currentTarget as HTMLElement).style.borderColor = '#BFDBFE';
+                        }}
+                        onMouseLeave={e => {
+                          (e.currentTarget as HTMLElement).style.background = '#fff';
+                          (e.currentTarget as HTMLElement).style.color = doc.filename ? '#374151' : '#94A3B8';
+                          (e.currentTarget as HTMLElement).style.borderColor = '#E2E8F0';
+                        }}
+                        onClick={() => {
+                          if (!doc.filename) return;
+                          dealsApi.downloadDocument(doc.id, doc.name);
+                        }}
+                      >
+                        <Download size={12} />
+                      </button>
+                      <button
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: 4,
+                          padding: '6px 10px', borderRadius: 6,
+                          border: '1px solid #E2E8F0', background: '#fff',
+                          color: '#374151', fontSize: 12, cursor: 'pointer',
+                          fontWeight: 500,
+                        }}
+                        onMouseEnter={e => {
+                          (e.currentTarget as HTMLElement).style.background = '#EFF6FF';
+                          (e.currentTarget as HTMLElement).style.color = '#2563EB';
+                          (e.currentTarget as HTMLElement).style.borderColor = '#BFDBFE';
+                        }}
+                        onMouseLeave={e => {
+                          (e.currentTarget as HTMLElement).style.background = '#fff';
+                          (e.currentTarget as HTMLElement).style.color = '#374151';
+                          (e.currentTarget as HTMLElement).style.borderColor = '#E2E8F0';
+                        }}
+                        onClick={() => handleShare(doc.id)}
+                      >
+                        <Share2 size={12} />
+                      </button>
+                      {canEdit && doc.filename && (
+                        <button
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: 4,
+                            padding: '6px 10px', borderRadius: 6,
+                            border: '1px solid #E2E8F0', background: '#fff',
+                            color: '#DC2626', fontSize: 12, cursor: 'pointer',
+                            fontWeight: 500,
+                          }}
+                          onMouseEnter={e => {
+                            (e.currentTarget as HTMLElement).style.background = '#FEF2F2';
+                            (e.currentTarget as HTMLElement).style.borderColor = '#FECACA';
+                          }}
+                          onMouseLeave={e => {
+                            (e.currentTarget as HTMLElement).style.background = '#fff';
+                            (e.currentTarget as HTMLElement).style.borderColor = '#E2E8F0';
+                          }}
+                          onClick={() => setDocToDelete({ id: doc.id, name: doc.name })}
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -242,6 +331,34 @@ export default function DealDetailPage() {
             </Button>
             <Button variant="danger" onClick={handleDelete} loading={deleting} icon={<Trash2 size={13} />}>
               {deleting ? 'Deleting…' : 'Delete Deal'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Document delete modal */}
+      <Modal open={!!docToDelete} onClose={() => !deletingDoc && setDocToDelete(null)} title="Delete Document">
+        <div style={{ textAlign: 'center', padding: '8px 0' }}>
+          <div style={{
+            width: 52, height: 52, borderRadius: '50%',
+            background: '#FEF2F2', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            margin: '0 auto 16px',
+          }}>
+            <Trash2 size={22} color="#DC2626" />
+          </div>
+          <h3 style={{ fontSize: 16, fontWeight: 600, color: '#0F172A', marginBottom: 8 }}>
+            Delete this document?
+          </h3>
+          <p style={{ color: '#64748B', fontSize: 13, marginBottom: 24, lineHeight: 1.6 }}>
+            Are you sure you want to delete <strong style={{ color: '#374151' }}>{docToDelete?.name}</strong>?
+            The file will be removed from the server. This action cannot be undone.
+          </p>
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
+            <Button variant="secondary" onClick={() => setDocToDelete(null)} disabled={deletingDoc}>
+              Cancel
+            </Button>
+            <Button variant="danger" onClick={handleDeleteDoc} loading={deletingDoc} icon={<Trash2 size={13} />}>
+              {deletingDoc ? 'Deleting…' : 'Delete Document'}
             </Button>
           </div>
         </div>
