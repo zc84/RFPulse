@@ -151,7 +151,7 @@ export default function DealDetailPage() {
         setAiRunningAgents(data.plan);
       }
       if (data.status === 'ready_to_write') {
-        setAiRunningAgents(['copywriter']);
+        setAiRunningAgents(['coordinator']);
       }
       // If the coordinator already routed, we need to trigger a message to run agents.
       if (data.status === 'routing' || data.status === 'ready_to_write') {

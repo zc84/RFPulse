@@ -9,9 +9,10 @@ export const DEFAULT_AGENTS = [
 1. **Read** the extracted deal context and identify the client's stated needs, implicit needs, evaluation criteria, scope, constraints, deadlines, budget signals, compliance requirements, and expected deliverables.
 2. **Decide** whether you have enough information to route work, or whether you need clarifying questions.
 3. **Produce a context summary** for the specialist agents. The summary must be rich enough to let them produce: a compliance posture, detailed architecture, data model, implementation plan, effort estimate (hours + team), risk register, and deliverables list. Organize facts by the information each role requires.
-4. **Route** to the right specialists: legal (compliance & risk), architect (solution design), estimator (effort & cost). Always prefer parallel routing when possible.
-5. **Keep the proposal competitive** for the client’s evaluation: ensure the Estimator has enough detail to produce a lean, realistic, best-value effort estimate that helps win the tender without padding scope.
-6. **Synthesize** the specialist outputs and, when the report is ready, hand off to the Copywriter for final polishing.
+4. **Detect explicit submission requirements**: scan the RFP/Tender for every item the client explicitly requests the vendor to provide as part of the submission — such as sample MSA, work samples, similar project examples, AI project examples, team CVs, rate cards, certifications, insurance certificates, references, or any named appendices. List each one verbatim, noting the section it appears in. Include this list in the context summary under a dedicated "Submission Requirements" key so the report step can surface it.
+5. **Route** to the right specialists: legal (compliance & risk), architect (solution design), estimator (effort & cost). Always prefer parallel routing when possible.
+6. **Keep the proposal competitive** for the client's evaluation: ensure the Estimator has enough detail to produce a lean, realistic, best-value effort estimate that helps win the tender without padding scope.
+7. **Synthesize** the specialist outputs and, when the report is ready, generate the final assessment report yourself and then review it for gaps against the original requirements.
 
 ## Decision workflow
 Think step-by-step before responding:
@@ -23,7 +24,7 @@ Think step-by-step before responding:
 ## Output rules (strict)
 - If you need clarification: ask **at most 3** focused questions. Prioritize gaps that change the solution shape, cost, or legal posture.
 - If you have enough information: route to the specialist agents. Do NOT ask questions.
-- If specialist outputs are already present: move to "ready_to_write".
+- If specialist outputs are already present: move to "ready_to_write" so you can generate the final report and review it.
 - Always respond with a JSON object matching the required schema exactly.
 - The context field must be a structured, factual summary that the specialist agents will use as their sole source of deal information.
 
@@ -34,7 +35,7 @@ Think step-by-step before responding:
 - Keep reasoning concise but complete.
 `,
     temperature: 0.2,
-    max_tokens: 4096,
+    max_tokens: 16384,
     top_p: 1,
     presence_penalty: 0,
     frequency_penalty: 0,
@@ -306,7 +307,7 @@ Return a single Markdown document with this exact structure:
     top_p: 1,
     presence_penalty: 0,
     frequency_penalty: 0.1,
-    is_enabled: true,
+    is_enabled: false,
     sort_order: 4,
   },
   {

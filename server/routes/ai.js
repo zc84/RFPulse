@@ -4,7 +4,8 @@ import { authenticate, requireRole } from '../middleware/auth.js';
 import { buildDealContextBundle, summarizeContextBundle } from '../services/documentExtractor.js';
 import {
   coordinatorStep,
-  copywriterStep,
+  coordinatorReportStep,
+  coordinatorReviewStep,
   runAgentPlan,
   ensureDefaultAgents,
 } from '../services/aiOrchestrator.js';
@@ -218,9 +219,10 @@ router.post('/message', authenticate, requireRole('Superadmin', 'Editor'), async
       const updatedOutputs = await getAgentOutputs(session.id);
       const nextResult = await coordinatorStep(contextBundle, updatedMessages, updatedOutputs);
       if (nextResult.status === 'ready_to_write') {
-        const report = await copywriterStep(agentContext, updatedMessages, updatedOutputs);
-        finalReportDocumentId = await saveFinalReport(dealId, session.id, report);
-        await addMessage(session.id, 'agent', 'Assessment report generated.', 'copywriter');
+        const draftReport = await coordinatorReportStep(agentContext, updatedMessages, updatedOutputs);
+        const finalReport = await coordinatorReviewStep(contextBundle, draftReport);
+        finalReportDocumentId = await saveFinalReport(dealId, session.id, finalReport);
+        await addMessage(session.id, 'agent', 'Assessment report generated and reviewed.', 'coordinator');
       } else if (nextResult.status === 'clarifying' && nextResult.questions?.length) {
         const qContent = nextResult.questions.map((q, i) => `${i + 1}. ${q}`).join('\n');
         await addMessage(session.id, 'coordinator', qContent);
@@ -238,9 +240,10 @@ router.post('/message', authenticate, requireRole('Superadmin', 'Editor'), async
       }
       const finalOutputs = await getAgentOutputs(session.id);
       const finalMessages = await getSessionMessages(session.id);
-      const report = await copywriterStep(agentContext, finalMessages, finalOutputs);
-      finalReportDocumentId = await saveFinalReport(dealId, session.id, report);
-      await addMessage(session.id, 'agent', 'Assessment report generated.', 'copywriter');
+      const draftReport = await coordinatorReportStep(agentContext, finalMessages, finalOutputs);
+      const finalReport = await coordinatorReviewStep(contextBundle, draftReport);
+      finalReportDocumentId = await saveFinalReport(dealId, session.id, finalReport);
+      await addMessage(session.id, 'agent', 'Assessment report generated and reviewed.', 'coordinator');
     } else if (coordinatorResult.status === 'clarifying' && coordinatorResult.questions?.length) {
       const qContent = coordinatorResult.questions.map((q, i) => `${i + 1}. ${q}`).join('\n');
       await addMessage(session.id, 'coordinator', qContent);

@@ -46,11 +46,10 @@ RFP & Tender Management Platform with a React frontend and PostgreSQL-backed Exp
 RFPulse includes a Coordinator-driven multi-agent AI processor that reads a deal's uploaded documents and generates a submission-ready assessment report.
 
 **Agent roles**
-- **Coordinator** — reads the deal context, extracts facts, and routes work to specialists.
+- **Coordinator** — reads the deal context, extracts facts, routes work to specialists, synthesizes their outputs into the final Markdown assessment report, and reviews it for gaps against the original requirements.
 - **Legal** — compliance, contractual risks, and governance posture.
 - **Architect** — solution design, data model, phased implementation plan.
 - **Estimator** — granular Work Breakdown Structure (WBS), effort estimate, team composition, and contingency.
-- **Copywriter** — synthesizes all specialist outputs into a final Markdown assessment report.
 - **UI Developer** *(disabled by default)* — optional prototype scope.
 
 A Superadmin can configure each agent (model, system prompt, temperature, etc.) from the **Agent Management** page.
@@ -65,12 +64,15 @@ flowchart TD
     D --> E[Legal Agent]
     D --> F[Architect Agent]
     D --> G[Estimator Agent]
-    E --> H[Copywriter Agent]
+    E --> H[Coordinator Report Step]
     F --> H
     G --> H
-    H --> I[Assessment Report saved as Deal Document]
-    I --> J[AI Chat Panel review]
+    H --> I[Coordinator Review Step]
+    I --> J[Assessment Report saved as Deal Document]
+    J --> K[AI Chat Panel review]
 ```
+
+The final report begins with a **Coordinator Review** section that includes a **Confidence Win Score (%)**, a short explanation, and any highlighted gaps or missed requirements from the original deal documents.
 
 ## Configuring the AI Processor
 
