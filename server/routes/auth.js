@@ -25,19 +25,19 @@ router.get('/me', authenticate, async (req, res, next) => {
 
 router.post('/login', async (req, res, next) => {
   try {
-    const { email, password } = req.body;
-    if (!email || !password) {
-      return res.status(400).json({ error: 'Email and password are required' });
+    const { username, password } = req.body;
+    if (!username || !password) {
+      return res.status(400).json({ error: 'Username and password are required' });
     }
 
     const result = await query(
-      'SELECT id, name, email, role, password_hash FROM users WHERE email = $1',
-      [email.toLowerCase()]
+      'SELECT id, name, email, role, password_hash FROM users WHERE LOWER(name) = LOWER($1)',
+      [username.trim()]
     );
 
     const user = result.rows[0];
     if (!user) {
-      return res.status(401).json({ error: 'email_not_found' });
+      return res.status(401).json({ error: 'username_not_found' });
     }
 
     const valid = await bcrypt.compare(password, user.password_hash);

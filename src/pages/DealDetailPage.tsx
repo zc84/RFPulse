@@ -1,14 +1,16 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { ArrowLeft, Edit2, Trash2, Download, FileText, Calendar, DollarSign, Tag, AlignLeft, Hash, Share2, Copy, X, Building } from 'lucide-react';
+import { ArrowLeft, Edit2, Trash2, Download, FileText, Calendar, DollarSign, Tag, AlignLeft, Hash, Share2, Copy, X, Building, Sparkles, Bot } from 'lucide-react';
 import { useDeals } from '../context/DealsContext';
 import { useAuth } from '../context/AuthContext';
-import { dealsApi } from '../api';
+import { dealsApi, aiApi, agentsApi } from '../api';
+import { AIMessage } from '../types';
 import Header from '../components/Header';
 import StatusBadge from '../components/StatusBadge';
 import Button from '../components/Button';
 import Modal from '../components/Modal';
+import AIChatPanel from '../components/AIChatPanel';
 
 function formatBudget(n: number) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n);
@@ -45,8 +47,37 @@ export default function DealDetailPage() {
   const [deletingDoc, setDeletingDoc] = useState(false);
   const [shareUrl, setShareUrl] = useState<string | null>(null);
 
+  const [showAIPanel, setShowAIPanel] = useState(false);
+  const [aiSessionId, setAiSessionId] = useState<number | null>(null);
+  const [aiMessages, setAiMessages] = useState<AIMessage[]>([]);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiRunningAgents, setAiRunningAgents] = useState<string[]>([]);
+  const [aiExtractedDocs, setAiExtractedDocs] = useState<{ id: string; name: string; size: string; success: boolean }[]>([]);
+  const [aiKeyMissing, setAiKeyMissing] = useState(false);
+  const [aiKeyValid, setAiKeyValid] = useState<boolean | null>(null);
+  const [aiKeyError, setAiKeyError] = useState<string | null>(null);
+
   const deal = getDeal(id!);
   const canEdit = isRole('Superadmin', 'Editor');
+  const canRunAI = canEdit && aiKeyValid === true;
+
+  useEffect(() => {
+    if (id) loadAISession();
+    validateAIKey();
+  }, [id]);
+
+  const validateAIKey = async () => {
+    try {
+      const result = await agentsApi.validateKey();
+      setAiKeyValid(result.valid);
+      setAiKeyError(result.error);
+      if (!result.valid) setAiKeyMissing(true);
+    } catch {
+      setAiKeyValid(false);
+      setAiKeyError('Could not verify OpenAI API key.');
+      setAiKeyMissing(true);
+    }
+  };
 
   if (!deal) {
     return (
@@ -93,6 +124,78 @@ export default function DealDetailPage() {
     toast.success('Share URL copied to clipboard');
   };
 
+  const loadAISession = async () => {
+    if (!id) return;
+    try {
+      const data = await aiApi.getSession(id);
+      if (data.session) {
+        setAiSessionId(data.session.id);
+        setAiMessages(data.messages);
+      }
+    } catch {
+      // No existing session is fine.
+    }
+  };
+
+  const handleStartAI = async () => {
+    if (!id || !canRunAI) return;
+    setShowAIPanel(true);
+    setAiLoading(true);
+    setAiKeyMissing(false);
+    try {
+      const data = await aiApi.start(id);
+      setAiSessionId(data.sessionId);
+      setAiMessages(data.messages);
+      setAiExtractedDocs(data.extractedDocs);
+      if (data.status === 'routing' && data.plan?.length) {
+        setAiRunningAgents(data.plan);
+      }
+      if (data.status === 'ready_to_write') {
+        setAiRunningAgents(['copywriter']);
+      }
+      // If the coordinator already routed, we need to trigger a message to run agents.
+      if (data.status === 'routing' || data.status === 'ready_to_write') {
+        await handleSendMessage('Proceed with the analysis.', true);
+      }
+    } catch (err: any) {
+      if (err.message?.includes('API key') || err.message?.includes('not configured')) {
+        setAiKeyMissing(true);
+      }
+      toast.error(err.message || 'Failed to start AI assistant');
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  const handleSendMessage = async (content: string, silent: boolean = false) => {
+    if (!id || !canRunAI) return;
+    setAiLoading(true);
+    setAiRunningAgents([]);
+    try {
+      const data = await aiApi.sendMessage(id, content);
+      setAiSessionId(data.sessionId);
+      setAiMessages(data.messages);
+      if (data.agentOutputs && Object.keys(data.agentOutputs).length > 0) {
+        setAiRunningAgents(Object.keys(data.agentOutputs));
+      }
+      if (data.finalReportDocumentId) {
+        await refreshDeals();
+        toast.success('Assessment report generated and saved to documents.');
+      }
+      if (!silent) {
+        toast.success(data.finalReportDocumentId ? 'Report saved.' : 'Message sent.');
+      }
+    } catch (err: any) {
+      if (err.message?.includes('API key') || err.message?.includes('not configured')) {
+        setAiKeyMissing(true);
+      }
+      toast.error(err.message || 'Failed to send message');
+    } finally {
+      setAiLoading(false);
+      setAiRunningAgents([]);
+    }
+  };
+
   return (
     <div style={{ minHeight: '100vh', background: '#F8FAFC', display: 'flex', flexDirection: 'column' }}>
       <Header />
@@ -137,6 +240,18 @@ export default function DealDetailPage() {
 
             {canEdit && (
               <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                <span title={aiKeyValid === false ? (aiKeyError || 'OpenAI API key is not configured') : ''}>
+                  <Button
+                    variant="outline"
+                    icon={<Sparkles size={13} />}
+                    onClick={handleStartAI}
+                    loading={aiLoading && !showAIPanel}
+                    disabled={aiLoading || aiKeyValid === false}
+                    style={{ width: '100%' }}
+                  >
+                    {aiSessionId ? 'Continue AI' : 'Execute AI'}
+                  </Button>
+                </span>
                 <Button
                   variant="secondary"
                   icon={<Edit2 size={13} />}
@@ -155,6 +270,52 @@ export default function DealDetailPage() {
             )}
           </div>
         </div>
+
+        {/* AI assistant panel */}
+        {showAIPanel && (
+          <div style={{
+            background: '#fff', border: '1px solid #E2E8F0', borderRadius: 12,
+            marginBottom: 16, boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+            overflow: 'hidden',
+          }}>
+            <div style={{
+              padding: '14px 20px', borderBottom: '1px solid #F1F5F9',
+              background: '#FAFAFA', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Bot size={16} color="#2563EB" />
+                <h2 style={{ fontSize: 13, fontWeight: 600, color: '#374151' }}>AI Assistant</h2>
+              </div>
+              <button
+                onClick={() => setShowAIPanel(false)}
+                style={{
+                  background: 'transparent', border: 'none', cursor: 'pointer', color: '#94A3B8', display: 'flex', alignItems: 'center',
+                }}
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <div style={{ height: 420 }}>
+              <AIChatPanel
+                messages={aiMessages}
+                loading={aiLoading}
+                runningAgents={aiRunningAgents}
+                extractedDocs={aiExtractedDocs}
+                onSend={handleSendMessage}
+                disabled={aiKeyMissing}
+              />
+            </div>
+            {aiKeyMissing && (
+              <div style={{
+                padding: '10px 16px', background: '#FEF2F2', borderTop: '1px solid #FECACA',
+                fontSize: 12, color: '#991B1B', display: 'flex', alignItems: 'center', gap: 6,
+              }}>
+                <Sparkles size={12} />
+                {aiKeyError || 'OpenAI API key is not configured.'} Ask a Superadmin to add it in AI Agent Configuration.
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Info grid */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12, marginBottom: 16 }}>

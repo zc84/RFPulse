@@ -9,16 +9,15 @@ import FormField, { Input } from '../components/FormField';
 export default function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
+  const [errors, setErrors] = useState<{ username?: string; password?: string }>({});
 
   const validate = () => {
     const e: typeof errors = {};
-    if (!email.trim()) e.email = 'Email is required';
-    else if (!/\S+@\S+\.\S+/.test(email)) e.email = 'Enter a valid email address';
+    if (!username.trim()) e.username = 'Username is required';
     if (!password) e.password = 'Password is required';
     return e;
   };
@@ -29,12 +28,12 @@ export default function LoginPage() {
     if (Object.keys(errs).length) { setErrors(errs); return; }
     setErrors({});
     setLoading(true);
-    const result = await login(email, password);
+    const result = await login(username, password);
     setLoading(false);
     if (result.success) {
       navigate('/deals');
-    } else if (result.error === 'email_not_found') {
-      toast.error('Email not recognised. Please contact your administrator.');
+    } else if (result.error === 'username_not_found') {
+      toast.error('Username not recognised. Please contact your administrator.');
     } else {
       toast.error('Incorrect password. Please try again.');
     }
@@ -95,14 +94,14 @@ export default function LoginPage() {
           <p style={{ color: '#64748B', fontSize: 13, marginBottom: 24 }}>Sign in to your account to continue</p>
 
           <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            <FormField label="Email address" error={errors.email} required>
+            <FormField label="Username" error={errors.username} required>
               <Input
-                type="email"
-                value={email}
-                onChange={e => { setEmail(e.target.value); setErrors(p => ({ ...p, email: undefined })); }}
-                placeholder="you@example.com"
-                error={!!errors.email}
-                style={{ background: 'rgba(255,255,255,0.06)', color: '#F8FAFC', borderColor: errors.email ? '#DC2626' : 'rgba(255,255,255,0.12)' }}
+                type="text"
+                value={username}
+                onChange={e => { setUsername(e.target.value); setErrors(p => ({ ...p, username: undefined })); }}
+                placeholder="your_username"
+                error={!!errors.username}
+                style={{ background: 'rgba(255,255,255,0.06)', color: '#F8FAFC', borderColor: errors.username ? '#DC2626' : 'rgba(255,255,255,0.12)' }}
                 disabled={loading}
               />
             </FormField>

@@ -2,7 +2,7 @@ import bcrypt from 'bcryptjs';
 import { pool, query } from './db.js';
 
 const SUPERADMIN = {
-  name: 'Superadmin',
+  name: 'd.sharstabitau',
   email: 'd.sharstabitau@andersenlab.com',
   password: 'Toriabra909',
   role: 'Superadmin',
@@ -260,8 +260,8 @@ async function seed() {
     const userResult = await query(
       `INSERT INTO users (name, email, role, password_hash)
        VALUES ($1, $2, $3, $4)
-       ON CONFLICT (email) DO UPDATE SET
-         name = EXCLUDED.name,
+       ON CONFLICT (name) DO UPDATE SET
+         email = EXCLUDED.email,
          role = EXCLUDED.role,
          password_hash = EXCLUDED.password_hash
        RETURNING id`,
@@ -269,7 +269,7 @@ async function seed() {
     );
 
     const superadminId = userResult.rows[0].id;
-    console.log(`Seeded superadmin user ${SUPERADMIN.email} (id=${superadminId})`);
+    console.log(`Seeded superadmin user ${SUPERADMIN.name} (id=${superadminId})`);
 
     for (const deal of MOCK_DEALS) {
       const dealResult = await query(

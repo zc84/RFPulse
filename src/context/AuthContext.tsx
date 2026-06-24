@@ -8,7 +8,7 @@ interface AuthContextType {
   currentUser: User | null;
   users: User[];
   loading: boolean;
-  login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  login: (username: string, password: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
   addUser: (user: Omit<User, 'id'>) => Promise<void>;
   updateUser: (id: string, updates: Partial<User>) => Promise<void>;
@@ -50,15 +50,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     init();
   }, [loadUsers]);
 
-  const login = useCallback(async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
+  const login = useCallback(async (username: string, password: string): Promise<{ success: boolean; error?: string }> => {
     try {
-      const { user, token } = await authApi.login(email, password);
+      const { user, token } = await authApi.login(username, password);
       localStorage.setItem(TOKEN_KEY, token);
       setCurrentUser(user);
       await loadUsers();
       return { success: true };
     } catch (err: any) {
-      const error = err.message === 'email_not_found' ? 'email_not_found' : 'wrong_password';
+      const error = err.message === 'username_not_found' ? 'username_not_found' : 'wrong_password';
       return { success: false, error };
     }
   }, [loadUsers]);

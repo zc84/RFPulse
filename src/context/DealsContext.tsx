@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { Deal } from '../types';
 import { dealsApi } from '../api';
+import { useAuth } from './AuthContext';
 
 interface DealsContextType {
   deals: Deal[];
@@ -15,6 +16,7 @@ interface DealsContextType {
 const DealsContext = createContext<DealsContextType | null>(null);
 
 export function DealsProvider({ children }: { children: React.ReactNode }) {
+  const { currentUser, loading: authLoading } = useAuth();
   const [deals, setDeals] = useState<Deal[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -25,14 +27,22 @@ export function DealsProvider({ children }: { children: React.ReactNode }) {
       setDeals(data);
     } catch (err) {
       console.error('Failed to load deals:', err);
+      setDeals([]);
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    refreshDeals();
-  }, [refreshDeals]);
+    if (!authLoading) {
+      if (currentUser) {
+        refreshDeals();
+      } else {
+        setDeals([]);
+        setLoading(false);
+      }
+    }
+  }, [authLoading, currentUser, refreshDeals]);
 
   const addDeal = useCallback(async (deal: Omit<Deal, 'id' | 'createdAt'>): Promise<Deal> => {
     const newDeal = await dealsApi.create(deal);

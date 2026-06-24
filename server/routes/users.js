@@ -26,19 +26,26 @@ router.get('/', authenticate, requireRole('Superadmin'), async (req, res, next) 
 router.post('/', authenticate, requireRole('Superadmin'), async (req, res, next) => {
   try {
     const { name, email, role, password } = req.body;
-    if (!name || !email || !role || !password) {
+    if (!name || !role || !password) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
-    const existing = await query('SELECT id FROM users WHERE email = $1', [email.toLowerCase()]);
-    if (existing.rows.length > 0) {
-      return res.status(409).json({ error: 'Email already in use' });
+    const existingUsername = await query('SELECT id FROM users WHERE LOWER(name) = LOWER($1)', [name.trim()]);
+    if (existingUsername.rows.length > 0) {
+      return res.status(409).json({ error: 'Username already in use' });
+    }
+
+    if (email) {
+      const existingEmail = await query('SELECT id FROM users WHERE email = $1', [email.toLowerCase()]);
+      if (existingEmail.rows.length > 0) {
+        return res.status(409).json({ error: 'Email already in use' });
+      }
     }
 
     const passwordHash = await bcrypt.hash(password, 10);
     const result = await query(
       'INSERT INTO users (name, email, role, password_hash) VALUES ($1, $2, $3, $4) RETURNING id, name, email, role',
-      [name.trim(), email.toLowerCase(), role, passwordHash]
+      [name.trim(), email ? email.toLowerCase() : null, role, passwordHash]
     );
 
     res.status(201).json(formatUser(result.rows[0]));
@@ -54,12 +61,22 @@ router.put('/:id', authenticate, requireRole('Superadmin'), async (req, res, nex
 
     const { name, email, role, password } = req.body;
 
+    if (name !== undefined && name.trim()) {
+      const existingUsername = await query(
+        'SELECT id FROM users WHERE LOWER(name) = LOWER($1) AND id <> $2',
+        [name.trim(), numericId]
+      );
+      if (existingUsername.rows.length > 0) {
+        return res.status(409).json({ error: 'Username already in use' });
+      }
+    }
+
     if (email) {
-      const existing = await query(
+      const existingEmail = await query(
         'SELECT id FROM users WHERE email = $1 AND id <> $2',
         [email.toLowerCase(), numericId]
       );
-      if (existing.rows.length > 0) {
+      if (existingEmail.rows.length > 0) {
         return res.status(409).json({ error: 'Email already in use' });
       }
     }
@@ -69,7 +86,7 @@ router.put('/:id', authenticate, requireRole('Superadmin'), async (req, res, nex
     let idx = 1;
 
     if (name !== undefined) { updates.push(`name = $${idx++}`); params.push(name.trim()); }
-    if (email !== undefined) { updates.push(`email = $${idx++}`); params.push(email.toLowerCase()); }
+    if (email !== undefined) { updates.push(`email = $${idx++}`); params.push(email ? email.toLowerCase() : null); }
     if (role !== undefined) { updates.push(`role = $${idx++}`); params.push(role); }
     if (password) { updates.push(`password_hash = $${idx++}`); params.push(await bcrypt.hash(password, 10)); }
 

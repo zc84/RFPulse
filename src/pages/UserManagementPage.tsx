@@ -59,7 +59,7 @@ export default function UserManagementPage() {
 
   const openEdit = (user: User) => {
     setEditingUser(user);
-    setForm({ name: user.name, email: user.email, password: '', confirmPassword: '', role: user.role });
+    setForm({ name: user.name, email: user.email || '', password: '', confirmPassword: '', role: user.role });
     setErrors({});
     setShowModal(true);
   };
@@ -71,11 +71,14 @@ export default function UserManagementPage() {
 
   const validate = (): Partial<UserForm> => {
     const e: Partial<UserForm> = {};
-    if (!form.name.trim()) e.name = 'Name is required';
-    if (!form.email.trim()) e.email = 'Email is required';
-    else if (!/\S+@\S+\.\S+/.test(form.email)) e.email = 'Enter a valid email';
+    if (!form.name.trim()) e.name = 'Username is required';
     else {
-      const existing = users.find(u => u.email.toLowerCase() === form.email.toLowerCase() && u.id !== editingUser?.id);
+      const existing = users.find(u => u.name.toLowerCase() === form.name.toLowerCase() && u.id !== editingUser?.id);
+      if (existing) e.name = 'Username already in use';
+    }
+    if (form.email.trim() && !/\S+@\S+\.\S+/.test(form.email)) e.email = 'Enter a valid email';
+    else if (form.email.trim()) {
+      const existing = users.find(u => u.email?.toLowerCase() === form.email.toLowerCase() && u.id !== editingUser?.id);
       if (existing) e.email = 'Email already in use';
     }
     if (!editingUser || form.password) {
@@ -168,7 +171,7 @@ export default function UserManagementPage() {
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ background: '#F8FAFC', borderBottom: '1px solid #E2E8F0' }}>
-                  {['Name', 'Email', 'Role', 'Actions'].map(h => (
+                  {['Username', 'Email', 'Role', 'Actions'].map(h => (
                     <th key={h} style={{
                       padding: '10px 16px', textAlign: h === 'Actions' ? 'right' : 'left',
                       fontSize: 11, fontWeight: 600, color: '#64748B',
@@ -203,7 +206,7 @@ export default function UserManagementPage() {
                           </div>
                         </div>
                       </td>
-                      <td style={{ padding: '14px 16px', fontSize: 13, color: '#475569' }}>{user.email}</td>
+                      <td style={{ padding: '14px 16px', fontSize: 13, color: user.email ? '#475569' : '#94A3B8' }}>{user.email || '—'}</td>
                       <td style={{ padding: '14px 16px' }}><RoleBadge role={user.role} /></td>
                       <td style={{ padding: '14px 16px', textAlign: 'right' }}>
                         <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
@@ -244,11 +247,11 @@ export default function UserManagementPage() {
         width={480}
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <FormField label="Full Name" error={errors.name} required>
-            <Input value={form.name} onChange={set('name')} placeholder="Jane Smith" error={!!errors.name} />
+          <FormField label="Username" error={errors.name} required>
+            <Input value={form.name} onChange={set('name')} placeholder="jane.smith" error={!!errors.name} />
           </FormField>
 
-          <FormField label="Email Address" error={errors.email} required>
+          <FormField label="Email Address" error={errors.email} hint="Optional">
             <Input type="email" value={form.email} onChange={set('email')} placeholder="jane@example.com" error={!!errors.email} />
           </FormField>
 

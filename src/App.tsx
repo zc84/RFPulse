@@ -8,6 +8,7 @@ import AddDealPage from './pages/AddDealPage';
 import DealDetailPage from './pages/DealDetailPage';
 import EditDealPage from './pages/EditDealPage';
 import UserManagementPage from './pages/UserManagementPage';
+import AgentManagementPage from './pages/AgentManagementPage';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { currentUser } = useAuth();
@@ -32,6 +33,7 @@ function AppRoutes() {
       <Route path="/deals/:id" element={<ProtectedRoute><DealDetailPage /></ProtectedRoute>} />
       <Route path="/deals/:id/edit" element={<ProtectedRoute><EditDealPage /></ProtectedRoute>} />
       <Route path="/users" element={<AdminRoute><UserManagementPage /></AdminRoute>} />
+      <Route path="/agents" element={<AdminRoute><AgentManagementPage /></AdminRoute>} />
       <Route path="*" element={<Navigate to={currentUser ? "/deals" : "/login"} replace />} />
     </Routes>
   );

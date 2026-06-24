@@ -1,4 +1,4 @@
-import { User } from './types';
+import { User, Agent, GlobalAISettings, AIStartResponse, AIMessageResponse, AISessionResponse } from './types';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
@@ -31,10 +31,10 @@ async function apiFetch(path: string, options: RequestInit = {}) {
 }
 
 export const authApi = {
-  login: (email: string, password: string) =>
+  login: (username: string, password: string) =>
     apiFetch('/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ username, password }),
     }) as Promise<{ user: User; token: string }>,
   me: () =>
     apiFetch('/auth/me') as Promise<User>,
@@ -88,4 +88,24 @@ export const usersApi = {
     apiFetch(`/users/${id}`, { method: 'PUT', body: JSON.stringify(updates) }),
   delete: (id: string) =>
     apiFetch(`/users/${id}`, { method: 'DELETE' }),
+};
+
+export const agentsApi = {
+  getAll: () => apiFetch('/ai/agents') as Promise<Agent[]>,
+  getBySlug: (slug: string) => apiFetch(`/ai/agents/${slug}`) as Promise<Agent>,
+  update: (slug: string, updates: Partial<Agent>) =>
+    apiFetch(`/ai/agents/${slug}`, { method: 'PUT', body: JSON.stringify(updates) }) as Promise<Agent>,
+  getSettings: () => apiFetch('/ai/agents/settings') as Promise<GlobalAISettings>,
+  updateSettings: (settings: { openai_api_key: string }) =>
+    apiFetch('/ai/agents/settings', { method: 'POST', body: JSON.stringify(settings) }) as Promise<GlobalAISettings>,
+  validateKey: () => apiFetch('/ai/agents/validate') as Promise<{ valid: boolean; error: string | null }>,
+};
+
+export const aiApi = {
+  start: (dealId: string) =>
+    apiFetch(`/deals/${dealId}/ai/start`, { method: 'POST' }) as Promise<AIStartResponse>,
+  sendMessage: (dealId: string, content: string) =>
+    apiFetch(`/deals/${dealId}/ai/message`, { method: 'POST', body: JSON.stringify({ content }) }) as Promise<AIMessageResponse>,
+  getSession: (dealId: string) =>
+    apiFetch(`/deals/${dealId}/ai/session`) as Promise<AISessionResponse>,
 };

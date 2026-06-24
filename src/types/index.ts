@@ -28,7 +28,77 @@ export interface Deal {
 export interface User {
   id: string;
   name: string;
-  email: string;
+  email?: string;
   role: UserRole;
   password?: string;
+}
+
+export interface Agent {
+  id: number;
+  slug: string;
+  name: string;
+  model: string;
+  system_prompt: string;
+  temperature: number;
+  max_tokens: number;
+  top_p: number;
+  presence_penalty: number;
+  frequency_penalty: number;
+  is_enabled: boolean;
+  sort_order: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface AIMessage {
+  id: number;
+  session_id: number;
+  role: 'coordinator' | 'user' | 'agent';
+  agent_slug?: string;
+  content: string;
+  created_at?: string;
+}
+
+export interface AISession {
+  id: number;
+  deal_id: number;
+  status: 'active' | 'completed' | 'failed';
+  current_agent_plan?: string[] | null;
+  extracted_context?: string;
+  final_report_document_id?: number | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface AIAgentOutput {
+  agent_slug: string;
+  content: string;
+}
+
+export interface AISessionResponse {
+  session: AISession | null;
+  messages: AIMessage[];
+  agentOutputs?: Record<string, string>;
+}
+
+export interface AIStartResponse {
+  sessionId: number;
+  status: string;
+  plan?: string[];
+  reasoning?: string;
+  messages: AIMessage[];
+  extractedDocs: { id: string; name: string; size: string; success: boolean }[];
+}
+
+export interface AIMessageResponse {
+  sessionId: number;
+  status: string;
+  messages: AIMessage[];
+  finalReportDocumentId?: number;
+  agentOutputs?: Record<string, string>;
+}
+
+export interface GlobalAISettings {
+  openai_api_key: string;
+  has_key: boolean;
 }
