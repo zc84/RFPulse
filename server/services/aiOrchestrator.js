@@ -96,14 +96,13 @@ function formatConversation(messages) {
 }
 
 export async function callAgent(slug, messages, options = {}) {
-  const client = await getOpenAIClient();
   const agent = await loadAgentConfig(slug);
   if (!agent) throw new Error(`Agent ${slug} not found`);
   if (!agent.is_enabled) throw new Error(`Agent ${slug} is disabled`);
 
   const systemPrompt = options.systemPrompt || agent.system_prompt;
 
-  const response = await client.chat.completions.create({
+  const params = {
     model: agent.model,
     messages: [
       { role: 'system', content: systemPrompt },
@@ -115,9 +114,29 @@ export async function callAgent(slug, messages, options = {}) {
     presence_penalty: Number(agent.presence_penalty),
     frequency_penalty: Number(agent.frequency_penalty),
     response_format: options.json ? { type: 'json_object' } : undefined,
-  });
+  };
 
-  return response.choices[0].message.content || '';
+  const MAX_RETRIES = 3;
+  let lastError;
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const client = await getOpenAIClient();
+      const response = await client.chat.completions.create(params);
+      return response.choices[0].message.content || '';
+    } catch (err) {
+      lastError = err;
+      const isStreamError =
+        err.message?.includes('stream error') ||
+        err.message?.includes('INTERNAL_ERROR') ||
+        err.code === 'ERR_HTTP2_STREAM_ERROR';
+      if (isStreamError && attempt < MAX_RETRIES) {
+        await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastError;
 }
 
 export async function coordinatorStep(contextBundle, conversation, agentOutputs = {}) {
@@ -172,85 +191,6 @@ export async function runAgent(slug, context, conversation, priorOutputs = {}) {
   return await callAgent(slug, messages);
 }
 
-const REPORT_GENERATION_PROMPT = `You are the Coordinator, acting as a senior proposal writer. You are now writing the final assessment report. You have the original deal context and the outputs from all specialist agents (Legal, Architect, Estimator). Synthesize them into a cohesive, professional Markdown report that mirrors the client's language, tone, and priorities.
-
-## Your responsibilities
-1. Read the original deal context and all specialist outputs.
-2. Write a submission-ready assessment report in Markdown.
-3. Frame the proposal as the best possible deal to win the tender: competitive, lean, and honest, while demonstrating capability and value.
-4. Embed the specialist outputs naturally. Do not just paste them; integrate them into a single narrative.
-5. Ensure every section adds value, is fact-based, and that the report is submission-ready.
-
-## Output format
-Return a single Markdown document with this exact structure:
-# Assessment Report: [Deal Name]
-
-## 1. Executive Summary
-- Client's need in one sentence
-- Our proposed approach
-- Key capabilities
-- High-level timeline and team
-
-## 2. Compliance Posture
-{{ Adapted from the Legal agent output — governance, data residency, privacy/consent, HIPAA/security controls }}
-
-## 3. Technology Stack & Architecture
-{{ Adapted from the Architect agent output — overview, requirements addressed, components, data flow, architecture diagram, AI/recommender, analytics, security notes }}
-
-## 4. Data Residency & Tenancy
-{{ From the Architect agent — if relevant; otherwise omit and note }}
-
-## 5. Security Controls (Detailed)
-{{ Adapted from the Architect/Legal agent outputs — access control, audit logging, key management, device security, SDLC }}
-
-## 6. AI & Recommendation Engine
-{{ If the solution uses AI, describe the approach, de-identification, safety guardrails, and audit trace }}
-
-## 7. Analytics & Product Insights
-{{ PHI-safe analytics approach, event dictionary, privacy controls }}
-
-## 8. Offline-First Strategy (if applicable)
-{{ Local encrypted store, sync, conflict resolution }}
-
-## 9. Core Data Model (Outline)
-{{ Adapted from the Architect agent output }}
-
-## 10. Implementation Plan
-{{ Adapted from the Architect agent output — phases, durations, key deliverables, dependencies, and sequencing }}
-
-## 11. Work Breakdown Structure (WBS)
-{{ Adapted from the Estimator agent output — granular implementation tasks grouped by work package. Include task ID, task, description, effort in hours, assumptions, dependencies, and confidence. No individual task may exceed 40 hours. }}
-
-## 12. Effort & Cost Estimate
-{{ Adapted from the Estimator agent output — work package totals, total effort in hours, team composition, and contingency. Do NOT include rates or USD costs. }}
-
-## 13. Team Composition
-{{ Adapted from the Estimator agent output }}
-
-## 14. Risks & Mitigations
-{{ Top risks, hidden complexity, and how they are handled }}
-
-## 15. Deliverables
-{{ List of artifacts produced during the engagement }}
-
-## 16. Appendices
-{{ DPIA outline, audit event catalog, data retention matrix, or other compliance/technical appendices as relevant }}
-
-## 17. Submission Requirements
-{{ List every item the RFP/Tender explicitly requested the vendor to include in or alongside this submission. For each item state: the exact requirement as written in the source document, the section it appears in, and whether it is included in this report or must be supplied as a separate attachment. Examples: Sample MSA, work samples, AI project examples, similar project references, team CVs, rate cards, certifications, insurance certificates, named appendices. If none were explicitly requested, state: "No explicit submission requirements identified beyond the assessment report itself." }}
-
-## Quality standards
-- Use clear, professional, client-friendly language.
-- Adopt the client's terminology and tone from the documents.
-- Do not omit any specialist outputs; integrate them fully.
-- Frame the proposal as the best possible deal to win the tender: competitive, realistic, and value-focused.
-- Include the full granular WBS from the Estimator; do not omit it.
-- Do NOT include a "Why Us" or sales-pitch section.
-- Do NOT include USD rates or currency totals in the estimate.
-- Always include Section 17 Submission Requirements and populate it from the Coordinator's context summary. Never omit it.
-- The report must be self-contained, fact-based, and ready to submit.
-- Output ONLY the Markdown report. No commentary, no preamble.`;
-
 const REPORT_REVIEW_PROMPT = `You are the Coordinator, acting as a senior quality reviewer. You have just written a draft assessment report. Your job is to review the draft against the original deal requirements and identify any gaps, missed points, or inaccuracies.
 
 ## Your responsibilities
@@ -290,24 +230,27 @@ If none were explicitly requested, state: "No explicit submission requirements i
 - Always include the Submission Requirements block, even if the list is empty.
 - Output ONLY the Coordinator Review block above. Do NOT repeat or include any part of the draft report.`;
 
-export async function coordinatorReportStep(context, conversation, agentOutputs) {
-  const outputsSummary = formatAgentOutputs(agentOutputs);
-  const conversationText = formatConversation(conversation);
+export function buildReportFromOutputs(dealName, coordinatorContext, agentOutputs) {
+  const AGENT_ORDER = ['legal', 'architect', 'estimator'];
+  const parts = [`# Assessment Report: ${dealName || 'Untitled Deal'}`, ''];
 
-  const messages = [
-    {
-      role: 'user',
-      content: [
-        '## Original deal context',
-        context,
-        outputsSummary,
-        '## Conversation so far',
-        conversationText || 'No conversation yet.',
-      ].filter(Boolean).join('\n\n'),
-    },
-  ];
+  if (coordinatorContext) {
+    parts.push('## Deal Context', '', coordinatorContext.trim(), '');
+  }
 
-  return await callAgent('coordinator', messages, { systemPrompt: REPORT_GENERATION_PROMPT });
+  for (const slug of AGENT_ORDER) {
+    if (agentOutputs[slug]) {
+      parts.push('---', '', agentOutputs[slug].trim(), '');
+    }
+  }
+
+  for (const [slug, content] of Object.entries(agentOutputs)) {
+    if (!AGENT_ORDER.includes(slug) && content) {
+      parts.push('---', '', content.trim(), '');
+    }
+  }
+
+  return parts.join('\n');
 }
 
 export async function coordinatorReviewStep(context, draftReport) {

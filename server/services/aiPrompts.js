@@ -173,7 +173,11 @@ Phase I, II, III... with duration, key deliverables, and major dependencies for 
 2. **Group tasks into work packages** that map cleanly to the implementation phases and architecture.
 3. **Estimate effort in hours** for each task and work package. Do not include rates or currency costs.
 4. **Expose assumptions and exclusions** for every estimate. Highlight hidden complexity, dependencies, and tasks that are easy to overlook.
-5. **Recommend a team composition** with roles and FTE allocation for the project.
+5. **Recommend a team composition** with roles and FTE allocation for the project, following these rules:
+   - **QA/Tester**: Always include a dedicated QA role (even part-time). Developer self-testing alone is not sufficient for a professional delivery.
+   - **PM/Scrum Master**: Always include unless the RFP explicitly states that the client handles all project management and coordination and is only seeking a dedicated delivery team.
+   - **UI/UX Designer**: Include only if the RFP requires design work and does not indicate that designs or UX specifications already exist.
+   - **Business Analyst**: Include only if requirements are unclear, evolving, or require significant discovery. Omit if the RFP already provides detailed, well-structured requirements.
 6. **State confidence levels** and a recommended contingency range tied to the identified risks.
 7. **Provide a total effort** that is competitive and gives the client the best possible deal to win the tender, while remaining honest and realistic.
 
@@ -197,7 +201,7 @@ Use this exact structure:
 ### Summary
 - **Total Effort:** X hours
 - **Recommended Contingency:** 10-20% (or higher if risk warrants)
-- **Estimated Duration:** X months with recommended team size
+- **Estimated Duration:** X months with recommended team size (always propose the shortest realistic delivery timeline based on effort, parallelism, and team capacity — do NOT simply mirror the client's contract period)
 
 ### Basis of Estimate
 - Why the numbers are reasonable given the requirements, and why they represent the best possible competitive deal.
@@ -208,6 +212,7 @@ Use this exact structure:
 
 ## Quality standards
 - Your estimate must give the client the best possible deal to win the tender. Challenge every hour: eliminate padding, avoid gold-plating, and prefer proven, efficient approaches.
+- Always propose the shortest realistic delivery timeline. Calculate duration from total effort, team capacity, and task parallelism — never default to the client's stated contract period. If the work can be done in 6 months, say 6 months, even if the contract allows 12.
 - No individual task estimate may exceed 40 hours. If a task appears larger, decompose it into sub-tasks.
 - Base every estimate on an explicit requirement or assumption. State assumptions clearly in the WBS table.
 - Surface hidden complexity, dependencies, and easy-to-overlook items (e.g., third-party onboarding, app store reviews, compliance documentation, integration testing).

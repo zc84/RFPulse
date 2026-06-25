@@ -4,7 +4,7 @@ import { authenticate, requireRole } from '../middleware/auth.js';
 import { buildDealContextBundle, summarizeContextBundle } from '../services/documentExtractor.js';
 import {
   coordinatorStep,
-  coordinatorReportStep,
+  buildReportFromOutputs,
   coordinatorReviewStep,
   runAgentPlan,
   ensureDefaultAgents,
@@ -94,6 +94,33 @@ async function saveAgentOutput(sessionId, slug, content) {
   );
 }
 
+function writeMarkdownChunks(filePath, markdown) {
+  return new Promise((resolve, reject) => {
+    const stream = fs.createWriteStream(filePath, { encoding: 'utf-8' });
+    const chunkSize = 64 * 1024;
+    let position = 0;
+
+    stream.on('error', reject);
+    stream.on('finish', resolve);
+
+    function writeNext() {
+      if (position >= markdown.length) {
+        stream.end();
+        return;
+      }
+      const chunk = markdown.slice(position, position + chunkSize);
+      position += chunk.length;
+      if (!stream.write(chunk)) {
+        stream.once('drain', writeNext);
+      } else {
+        setImmediate(writeNext);
+      }
+    }
+
+    writeNext();
+  });
+}
+
 async function saveFinalReport(dealId, sessionId, markdown) {
   const dealDir = path.join(UPLOAD_DIR, String(dealId));
   if (!fs.existsSync(dealDir)) {
@@ -102,7 +129,7 @@ async function saveFinalReport(dealId, sessionId, markdown) {
 
   const filename = `assessment-report-${Date.now()}.md`;
   const filePath = path.join(dealDir, filename);
-  await fs.promises.writeFile(filePath, markdown, 'utf-8');
+  await writeMarkdownChunks(filePath, markdown);
 
   const sizeBytes = Buffer.byteLength(markdown, 'utf-8');
   const size = sizeBytes >= 1024 * 1024
@@ -219,7 +246,9 @@ router.post('/message', authenticate, requireRole('Superadmin', 'Editor'), async
       const updatedOutputs = await getAgentOutputs(session.id);
       const nextResult = await coordinatorStep(contextBundle, updatedMessages, updatedOutputs);
       if (nextResult.status === 'ready_to_write') {
-        const draftReport = await coordinatorReportStep(agentContext, updatedMessages, updatedOutputs);
+        const dealRow = await query('SELECT name FROM deals WHERE id = $1', [dealId]);
+        const dealName = dealRow.rows[0]?.name || 'Untitled Deal';
+        const draftReport = buildReportFromOutputs(dealName, agentContext, updatedOutputs);
         const finalReport = await coordinatorReviewStep(contextBundle, draftReport);
         finalReportDocumentId = await saveFinalReport(dealId, session.id, finalReport);
         await addMessage(session.id, 'agent', 'Assessment report generated and reviewed.', 'coordinator');
@@ -239,8 +268,9 @@ router.post('/message', authenticate, requireRole('Superadmin', 'Editor'), async
         }
       }
       const finalOutputs = await getAgentOutputs(session.id);
-      const finalMessages = await getSessionMessages(session.id);
-      const draftReport = await coordinatorReportStep(agentContext, finalMessages, finalOutputs);
+      const dealRow = await query('SELECT name FROM deals WHERE id = $1', [dealId]);
+      const dealName = dealRow.rows[0]?.name || 'Untitled Deal';
+      const draftReport = buildReportFromOutputs(dealName, agentContext, finalOutputs);
       const finalReport = await coordinatorReviewStep(contextBundle, draftReport);
       finalReportDocumentId = await saveFinalReport(dealId, session.id, finalReport);
       await addMessage(session.id, 'agent', 'Assessment report generated and reviewed.', 'coordinator');
