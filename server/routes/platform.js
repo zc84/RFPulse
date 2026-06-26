@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { query } from '../db.js';
+import { pool, query } from '../db.js';
 import { authenticate, requireRole } from '../middleware/auth.js';
 
 const router = Router();
@@ -10,20 +10,50 @@ function parseOptionId(id) {
   return Number.isNaN(numericId) ? null : numericId;
 }
 
+async function ensurePlatformOptionsReady() {
+  await query(`
+    CREATE TABLE IF NOT EXISTS platform_config_options (
+      id SERIAL PRIMARY KEY,
+      type VARCHAR(50) NOT NULL CHECK (type IN ('status', 'domain')),
+      value VARCHAR(100) NOT NULL,
+      sort_order INTEGER DEFAULT 0,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE (type, value)
+    )
+  `);
+
+  await syncDealValuesToOptions();
+}
+
+async function syncDealValuesToOptions() {
+  await query(`
+    INSERT INTO platform_config_options (type, value, sort_order)
+    SELECT type, value, sort_order
+    FROM (
+      SELECT 'status' AS type, status AS value, 1000 + ROW_NUMBER() OVER (ORDER BY status) * 10 AS sort_order
+      FROM (SELECT DISTINCT status FROM deals WHERE status IS NOT NULL AND TRIM(status) <> '') deal_statuses
+      UNION ALL
+      SELECT 'domain' AS type, domain AS value, 1000 + ROW_NUMBER() OVER (ORDER BY domain) * 10 AS sort_order
+      FROM (SELECT DISTINCT domain FROM deals WHERE domain IS NOT NULL AND TRIM(domain) <> '') deal_domains
+    ) existing_values
+    ON CONFLICT (type, value) DO NOTHING
+  `);
+}
+
 router.get('/options', authenticate, async (req, res, next) => {
   try {
+    await ensurePlatformOptionsReady();
     const result = await query('SELECT * FROM platform_config_options ORDER BY type, sort_order, value');
     res.json(result.rows);
   } catch (err) {
-    if (err.code === '42P01') {
-      return res.json([]);
-    }
     next(err);
   }
 });
 
 router.post('/options', authenticate, requireRole('Superadmin'), async (req, res, next) => {
   try {
+    await ensurePlatformOptionsReady();
     const { type, value } = req.body;
     if (!OPTION_TYPES.has(type)) return res.status(400).json({ error: 'Invalid option type' });
     if (!value || !String(value).trim()) return res.status(400).json({ error: 'Value is required' });
@@ -43,28 +73,61 @@ router.post('/options', authenticate, requireRole('Superadmin'), async (req, res
 });
 
 router.put('/options/:id', authenticate, requireRole('Superadmin'), async (req, res, next) => {
+  const client = await pool.connect();
   try {
+    await ensurePlatformOptionsReady();
     const id = parseOptionId(req.params.id);
     if (!id) return res.status(400).json({ error: 'Invalid option id' });
     const { value, sort_order } = req.body;
     if (!value || !String(value).trim()) return res.status(400).json({ error: 'Value is required' });
 
-    const result = await query(
+    await client.query('BEGIN');
+    const existing = await client.query('SELECT * FROM platform_config_options WHERE id = $1 FOR UPDATE', [id]);
+    if (existing.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Option not found' });
+    }
+
+    const option = existing.rows[0];
+    const nextValue = String(value).trim();
+    const usageColumn = option.type === 'status' ? 'status' : 'domain';
+
+    if (option.value !== nextValue) {
+      const duplicate = await client.query(
+        'SELECT id FROM platform_config_options WHERE type = $1 AND value = $2 AND id <> $3',
+        [option.type, nextValue, id]
+      );
+      if (duplicate.rows.length > 0) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: `${option.type} already exists.` });
+      }
+    }
+
+    const result = await client.query(
       `UPDATE platform_config_options
        SET value = $1, sort_order = $2, updated_at = CURRENT_TIMESTAMP
        WHERE id = $3
        RETURNING *`,
-      [String(value).trim(), Number.isFinite(Number(sort_order)) ? Number(sort_order) : 0, id]
+      [nextValue, Number.isFinite(Number(sort_order)) ? Number(sort_order) : option.sort_order, id]
     );
-    if (result.rows.length === 0) return res.status(404).json({ error: 'Option not found' });
+
+    if (option.value !== nextValue) {
+      await client.query(`UPDATE deals SET ${usageColumn} = $1 WHERE ${usageColumn} = $2`, [nextValue, option.value]);
+    }
+
+    await client.query('COMMIT');
     res.json(result.rows[0]);
   } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
     next(err);
+  } finally {
+    client.release();
   }
 });
 
 router.delete('/options/:id', authenticate, requireRole('Superadmin'), async (req, res, next) => {
   try {
+    await ensurePlatformOptionsReady();
     const id = parseOptionId(req.params.id);
     if (!id) return res.status(400).json({ error: 'Invalid option id' });
 

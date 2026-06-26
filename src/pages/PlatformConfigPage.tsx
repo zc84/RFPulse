@@ -66,6 +66,7 @@ function CmsOptionsSection({
   };
 
   const remove = async (option: PlatformConfigOption) => {
+    if (!window.confirm(`Delete "${option.value}" from ${title.toLowerCase()}? This is allowed only when no deals use it.`)) return;
     setBusy(true);
     try {
       await platformApi.deleteOption(option.id);

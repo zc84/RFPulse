@@ -10,8 +10,6 @@ import Header from '../components/Header';
 import Button from '../components/Button';
 import FormField, { Input, Select, Textarea } from '../components/FormField';
 
-const FALLBACK_STATUSES: DealStatus[] = ['New', 'In Progress', 'Won', 'Lost', 'TBC'];
-const FALLBACK_DOMAINS: DealDomain[] = ['Healthcare', 'Fintech', 'Retail', 'Education', 'Government', 'Manufacturing', 'Technology', 'TBC'];
 const CLASSIFICATIONS: DealClassification[] = ['A', 'B', 'C'];
 
 interface FormData {
@@ -24,11 +22,13 @@ interface FormData {
   clientName: string;
   classification: DealClassification | '';
   description: string;
+  aiNotes: string;
   assigneeId: string;
 }
 
 interface FormErrors {
   name?: string;
+  status?: string;
   dueDate?: string;
   budget?: string;
   domain?: string;
@@ -45,7 +45,7 @@ export default function AddDealPage() {
   const navigate = useNavigate();
 
   const [form, setForm] = useState<FormData>({
-    name: '', status: 'New', dueDate: '', budgetMode: 'unknown', budget: '', domain: '', clientName: '', classification: '', description: '', assigneeId: currentUser?.id || '',
+    name: '', status: '', dueDate: '', budgetMode: 'unknown', budget: '', domain: '', clientName: '', classification: '', description: '', aiNotes: '', assigneeId: currentUser?.id || '',
   });
   const [errors, setErrors] = useState<FormErrors>({});
   const [loading, setLoading] = useState(false);
@@ -57,14 +57,18 @@ export default function AddDealPage() {
   }, []);
 
   const statuses = useMemo(() => {
-    const values = configOptions.filter(o => o.type === 'status').map(o => o.value);
-    return values.length ? values : FALLBACK_STATUSES;
+    return configOptions.filter(o => o.type === 'status').map(o => o.value);
   }, [configOptions]);
 
   const domains = useMemo(() => {
-    const values = configOptions.filter(o => o.type === 'domain').map(o => o.value);
-    return values.length ? values : FALLBACK_DOMAINS;
+    return configOptions.filter(o => o.type === 'domain').map(o => o.value);
   }, [configOptions]);
+
+  useEffect(() => {
+    if (statuses.length && !statuses.includes(form.status)) {
+      setForm(p => ({ ...p, status: statuses[0] }));
+    }
+  }, [statuses, form.status]);
 
   const set = (field: keyof FormData) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     setForm(p => ({ ...p, [field]: e.target.value }));
@@ -75,6 +79,7 @@ export default function AddDealPage() {
     const e: FormErrors = {};
     if (!form.name.trim()) e.name = 'Deal name is required';
     else if (form.name.trim().length < 3) e.name = 'Name must be at least 3 characters';
+    if (!form.status) e.status = 'Status is required. Add statuses in Platform Configuration > CMS.';
     if (!form.dueDate) e.dueDate = 'Due date is required';
     if (form.budgetMode === 'known' && (!form.budget || isNaN(Number(form.budget)) || Number(form.budget) <= 0)) {
       e.budget = 'Enter a valid positive number';
@@ -97,6 +102,7 @@ export default function AddDealPage() {
         clientName: form.clientName.trim() || undefined,
         classification: form.classification || undefined,
         description: form.description.trim() || undefined,
+        aiNotes: form.aiNotes.trim() || undefined,
         assigneeId: form.assigneeId || null,
         documents: [],
       });
@@ -166,8 +172,9 @@ export default function AddDealPage() {
             </FormField>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-              <FormField label="Status" required>
-                <Select value={form.status} onChange={set('status')}>
+              <FormField label="Status" error={errors.status} required>
+                <Select value={form.status} onChange={set('status')} error={!!errors.status}>
+                  <option value="">{statuses.length ? 'Select status' : 'No statuses configured'}</option>
                   {statuses.map(s => <option key={s} value={s}>{s}</option>)}
                 </Select>
               </FormField>
@@ -247,6 +254,15 @@ export default function AddDealPage() {
                 value={form.description}
                 onChange={set('description')}
                 placeholder="Brief description of the deal scope, requirements, or notes…"
+                rows={4}
+              />
+            </FormField>
+
+            <FormField label="AI Notes" hint="Optional — strong guidance injected into Coordinator and Validator prompts">
+              <Textarea
+                value={form.aiNotes}
+                onChange={set('aiNotes')}
+                placeholder="Instructions, assumptions, or constraints the AI must treat as important…"
                 rows={4}
               />
             </FormField>

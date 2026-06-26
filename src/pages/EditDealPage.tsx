@@ -11,8 +11,6 @@ import Button from '../components/Button';
 import FormField, { Input, Select, Textarea } from '../components/FormField';
 import DocumentSection from '../components/DocumentSection';
 
-const STATUSES: DealStatus[] = ['New', 'In Progress', 'Won', 'Lost', 'TBC'];
-const DOMAINS: DealDomain[] = ['Healthcare', 'Fintech', 'Retail', 'Education', 'Government', 'Manufacturing', 'Technology', 'TBC'];
 const CLASSIFICATIONS: DealClassification[] = ['A', 'B', 'C'];
 
 interface FormErrors {
@@ -32,7 +30,7 @@ export default function EditDealPage() {
 
   const [form, setForm] = useState({
     name: deal?.name ?? '',
-    status: deal?.status ?? 'New' as DealStatus,
+    status: deal?.status ?? '' as DealStatus,
     dueDate: deal?.dueDate ?? '',
     budgetMode: deal?.budget === null ? 'unknown' : 'known' as 'unknown' | 'known',
     budget: deal?.budget?.toString() ?? '',
@@ -40,6 +38,7 @@ export default function EditDealPage() {
     clientName: deal?.clientName ?? '',
     classification: deal?.classification ?? '' as DealClassification | '',
     description: deal?.description ?? '',
+    aiNotes: deal?.aiNotes ?? '',
     assigneeId: deal?.assigneeId ?? '',
   });
   const [errors, setErrors] = useState<FormErrors>({});
@@ -54,13 +53,11 @@ export default function EditDealPage() {
   }, []);
 
   const statuses = useMemo(() => {
-    const values = configOptions.filter(o => o.type === 'status').map(o => o.value);
-    return values.length ? values : STATUSES;
+    return configOptions.filter(o => o.type === 'status').map(o => o.value);
   }, [configOptions]);
 
   const domains = useMemo(() => {
-    const values = configOptions.filter(o => o.type === 'domain').map(o => o.value);
-    return values.length ? values : DOMAINS;
+    return configOptions.filter(o => o.type === 'domain').map(o => o.value);
   }, [configOptions]);
 
   useEffect(() => {
@@ -242,6 +239,7 @@ export default function EditDealPage() {
         clientName: form.clientName.trim() || undefined,
         classification: form.classification || undefined,
         description: form.description.trim() || undefined,
+        aiNotes: form.aiNotes.trim() || undefined,
         assigneeId: form.assigneeId || null,
       });
       toast.success('Deal updated successfully.');
@@ -349,6 +347,10 @@ export default function EditDealPage() {
 
             <FormField label="Description / Notes">
               <Textarea value={form.description} onChange={set('description')} rows={4} />
+            </FormField>
+
+            <FormField label="AI Notes" hint="Strong guidance injected into Coordinator and Validator prompts">
+              <Textarea value={form.aiNotes} onChange={set('aiNotes')} rows={4} />
             </FormField>
           </div>
 

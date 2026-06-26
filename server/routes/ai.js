@@ -119,6 +119,29 @@ async function buildChatContext(dealId, documents) {
   return parts.join('\n').trim();
 }
 
+function buildAiNotesBlock(deal) {
+  if (!deal?.ai_notes || !String(deal.ai_notes).trim()) return '';
+  return [
+    '## High Priority AI Notes',
+    'Treat the following deal-specific notes as a strong statement from the user. Use them to guide Coordinator routing, specialist interpretation, validation, assumptions, and final recommendations. If these notes conflict with uploaded documents, explicitly flag the conflict instead of silently ignoring either source.',
+    '',
+    String(deal.ai_notes).trim(),
+  ].join('\n');
+}
+
+function withAiNotes(contextBundle, deal) {
+  const notes = buildAiNotesBlock(deal);
+  return notes ? [notes, '## Extracted Document Context', contextBundle].join('\n\n') : contextBundle;
+}
+
+function refreshAiNotesInContext(contextBundle, deal) {
+  const marker = '## Extracted Document Context';
+  const rawContext = contextBundle?.includes(marker)
+    ? contextBundle.slice(contextBundle.indexOf(marker) + marker.length).trim()
+    : contextBundle;
+  return withAiNotes(rawContext || '', deal);
+}
+
 async function getAgentOutputs(sessionId) {
   const result = await query('SELECT * FROM ai_agent_outputs WHERE session_id = $1', [sessionId]);
   const outputs = {};
@@ -387,7 +410,7 @@ router.post('/start', authenticate, requireRole('Superadmin', 'Editor'), async (
     await addMessage(session.id, 'coordinator', 'Starting Execute AI flow. Reading deal documents and preparing context.');
 
     const extractedDocs = await buildDealContextBundle(req.params.id, data.documents);
-    const contextBundle = summarizeContextBundle(extractedDocs);
+    const contextBundle = withAiNotes(summarizeContextBundle(extractedDocs), data.deal);
     await query('UPDATE ai_sessions SET extracted_context = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', [contextBundle, session.id]);
     await markWorkflowStepCompleted(session.id, dealId, 'extracted-context', contextBundle, {
       documents: extractedDocs.map(d => ({ id: d.id, name: d.name, success: d.success })),
@@ -465,6 +488,7 @@ router.post('/validate', authenticate, requireRole('Superadmin', 'Editor'), asyn
         content: [
           '## Company Profile',
           companyProfile,
+          buildAiNotesBlock(data.deal),
           '## Deal Context',
           contextBundle,
           `## Deal Name\n${dealName}`,
@@ -510,7 +534,11 @@ router.post('/message', authenticate, requireRole('Superadmin', 'Editor'), async
     await addMessage(session.id, 'user', content);
 
     const messages = await getSessionMessages(session.id);
-    const contextBundle = session.extracted_context || '';
+    const dealData = await getDealWithDocs(dealId);
+    const contextBundle = refreshAiNotesInContext(session.extracted_context || '', dealData?.deal);
+    if (contextBundle !== (session.extracted_context || '')) {
+      await query('UPDATE ai_sessions SET extracted_context = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', [contextBundle, session.id]);
+    }
     const savedAgentOutputs = await getAgentOutputs(session.id);
     const workflowArtifacts = await getWorkflowArtifacts(session.id);
     const agentOutputs = {
@@ -772,6 +800,7 @@ function formatDealForChat(deal) {
     `- Client: ${deal.client_name || 'N/A'}`,
     `- Classification: ${deal.classification || 'N/A'}`,
     `- Description: ${deal.description || 'N/A'}`,
+    `- AI Notes: ${deal.ai_notes || 'N/A'}`,
   ].join('\n');
 }
 

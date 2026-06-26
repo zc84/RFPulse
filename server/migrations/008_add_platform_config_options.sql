@@ -19,18 +19,12 @@ ALTER TABLE platform_config_options
 DELETE FROM platform_config_options WHERE type NOT IN ('status', 'domain');
 
 INSERT INTO platform_config_options (type, value, sort_order)
-VALUES
-  ('status', 'New', 10),
-  ('status', 'In Progress', 20),
-  ('status', 'Won', 30),
-  ('status', 'Lost', 40),
-  ('status', 'TBC', 50),
-  ('domain', 'Healthcare', 10),
-  ('domain', 'Fintech', 20),
-  ('domain', 'Retail', 30),
-  ('domain', 'Education', 40),
-  ('domain', 'Government', 50),
-  ('domain', 'Manufacturing', 60),
-  ('domain', 'Technology', 70),
-  ('domain', 'TBC', 80)
+SELECT type, value, sort_order
+FROM (
+  SELECT 'status' AS type, status AS value, 1000 + ROW_NUMBER() OVER (ORDER BY status) * 10 AS sort_order
+  FROM (SELECT DISTINCT status FROM deals WHERE status IS NOT NULL AND TRIM(status) <> '') deal_statuses
+  UNION ALL
+  SELECT 'domain' AS type, domain AS value, 1000 + ROW_NUMBER() OVER (ORDER BY domain) * 10 AS sort_order
+  FROM (SELECT DISTINCT domain FROM deals WHERE domain IS NOT NULL AND TRIM(domain) <> '') deal_domains
+) existing_values
 ON CONFLICT (type, value) DO NOTHING;

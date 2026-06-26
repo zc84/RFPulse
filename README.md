@@ -85,6 +85,8 @@ Agent workflow progress is persisted per deal in `ai_workflow_steps`. The table 
 
 When Execute AI proposes deal property updates, generated deal descriptions are Markdown so they render cleanly on the deal page.
 
+Deals also include **AI Notes**, a separate field directly below the description. These notes are injected into Coordinator and Validator prompts as high-priority user guidance.
+
 ## Configuring the AI Processor
 
 1. Sign in as a Superadmin and open **Platform Configuration → AI Settings**.
@@ -100,7 +102,7 @@ Superadmins use **Platform Configuration** for admin-only setup:
 
 - **User Management**: create, update, and delete users.
 - **AI Settings**: configure the OpenAI key and agent model settings.
-- **CMS**: add, rename, and delete deal statuses and domains. Options currently used by deals cannot be deleted.
+- **CMS**: add, rename, and delete deal statuses and domains. Existing deal values are automatically added to CMS options, deal forms and filters read these options dynamically, and renaming an option updates deals that use it. Options currently used by deals cannot be deleted.
 
 Editors and Superadmins can update deal properties directly on the deal detail page by clicking the displayed value. Viewers remain read-only.
 

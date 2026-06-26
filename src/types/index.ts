@@ -29,6 +29,7 @@ export interface Deal {
   clientName?: string;
   classification?: DealClassification;
   description?: string;
+  aiNotes?: string;
   assigneeId?: string | null;
   assigneeName?: string | null;
   lock?: DealLock | null;

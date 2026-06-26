@@ -32,6 +32,10 @@ const upload = multer({ storage, limits: { fileSize: 20 * 1024 * 1024 } });
 
 const router = Router();
 
+async function ensureDealAiNotesColumn() {
+  await query('ALTER TABLE deals ADD COLUMN IF NOT EXISTS ai_notes TEXT');
+}
+
 function formatUserId(id) {
   return `U-${String(id).padStart(3, '0')}`;
 }
@@ -53,6 +57,7 @@ function formatDeal(row) {
     clientName: row.client_name,
     classification: row.classification,
     description: row.description,
+    aiNotes: row.ai_notes,
     assigneeId: row.assignee_id ? formatUserId(row.assignee_id) : null,
     assigneeName: row.assignee_name || null,
     createdAt: row.created_at,
@@ -142,6 +147,7 @@ async function releaseLock(dealId, userId) {
 
 router.get('/', authenticate, async (req, res, next) => {
   try {
+    await ensureDealAiNotesColumn();
     const result = await query(
       `SELECT d.*, u.name AS assignee_name,
               dl.user_id AS lock_user_id, lu.name AS lock_user_name,
@@ -287,6 +293,7 @@ router.post('/:id/heartbeat', authenticate, async (req, res, next) => {
 
 router.get('/:id', authenticate, async (req, res, next) => {
   try {
+    await ensureDealAiNotesColumn();
     const numericId = parseInt(req.params.id.replace('D-', ''), 10);
     if (isNaN(numericId)) return res.status(400).json({ error: 'Invalid deal id' });
 
@@ -317,7 +324,8 @@ router.get('/:id', authenticate, async (req, res, next) => {
 
 router.post('/', authenticate, requireRole('Superadmin', 'Editor'), async (req, res, next) => {
   try {
-    const { name, status, dueDate, budget, domain, clientName, classification, description, assigneeId, documents = [] } = req.body;
+    await ensureDealAiNotesColumn();
+    const { name, status, dueDate, budget, domain, clientName, classification, description, aiNotes, assigneeId, documents = [] } = req.body;
     if (!name || !status || !dueDate || !domain) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
@@ -333,9 +341,9 @@ router.post('/', authenticate, requireRole('Superadmin', 'Editor'), async (req, 
     const effectiveAssigneeId = parsedAssigneeId || req.user.userId;
 
     const result = await query(
-      `INSERT INTO deals (name, status, due_date, budget, domain, client_name, classification, description, assignee_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
-      [name.trim(), status, dueDate, normalizedBudget, domain, clientName || null, classification || null, description || null, effectiveAssigneeId]
+      `INSERT INTO deals (name, status, due_date, budget, domain, client_name, classification, description, ai_notes, assignee_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
+      [name.trim(), status, dueDate, normalizedBudget, domain, clientName || null, classification || null, description || null, aiNotes || null, effectiveAssigneeId]
     );
 
     const dealId = result.rows[0].id;
@@ -397,10 +405,11 @@ router.post('/:id/documents', authenticate, requireRole('Superadmin', 'Editor'),
 
 router.put('/:id', authenticate, requireRole('Superadmin', 'Editor'), async (req, res, next) => {
   try {
+    await ensureDealAiNotesColumn();
     const numericId = parseInt(req.params.id.replace('D-', ''), 10);
     if (isNaN(numericId)) return res.status(400).json({ error: 'Invalid deal id' });
 
-    const { name, status, dueDate, budget, domain, clientName, classification, description, assigneeId } = req.body;
+    const { name, status, dueDate, budget, domain, clientName, classification, description, aiNotes, assigneeId } = req.body;
     const existing = await query('SELECT * FROM deals WHERE id = $1', [numericId]);
     if (existing.rows.length === 0) return res.status(404).json({ error: 'Not found' });
     const existingDeal = existing.rows[0];
@@ -413,6 +422,7 @@ router.put('/:id', authenticate, requireRole('Superadmin', 'Editor'), async (req
     const nextClientName = has('clientName') ? clientName || null : existingDeal.client_name;
     const nextClassification = has('classification') ? classification || null : existingDeal.classification;
     const nextDescription = has('description') ? description || null : existingDeal.description;
+    const nextAiNotes = has('aiNotes') ? aiNotes || null : existingDeal.ai_notes;
     const parsedAssigneeId = has('assigneeId') ? parseUserId(assigneeId) : existingDeal.assignee_id;
     if (Number.isNaN(parsedAssigneeId)) {
       return res.status(400).json({ error: 'Invalid assignee id' });
@@ -437,9 +447,10 @@ router.put('/:id', authenticate, requireRole('Superadmin', 'Editor'), async (req
            client_name = $6,
            classification = $7,
            description = $8,
-           assignee_id = $9
-       WHERE id = $10`,
-      [nextName, nextStatus, nextDueDate, normalizedBudget, nextDomain, nextClientName, nextClassification, nextDescription, parsedAssigneeId, numericId]
+           ai_notes = $9,
+           assignee_id = $10
+       WHERE id = $11`,
+      [nextName, nextStatus, nextDueDate, normalizedBudget, nextDomain, nextClientName, nextClassification, nextDescription, nextAiNotes, parsedAssigneeId, numericId]
     );
 
     const deal = await query('SELECT d.*, u.name AS assignee_name FROM deals d LEFT JOIN users u ON d.assignee_id = u.id WHERE d.id = $1', [numericId]);

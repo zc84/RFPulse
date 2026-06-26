@@ -1,9 +1,10 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Search, RefreshCw, Plus, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, FileText, Filter, Lock } from 'lucide-react';
 import { useDeals } from '../context/DealsContext';
 import { useAuth } from '../context/AuthContext';
-import { Deal, DealStatus } from '../types';
+import { Deal, DealStatus, PlatformConfigOption } from '../types';
+import { platformApi } from '../api';
 import Header from '../components/Header';
 import StatusBadge from '../components/StatusBadge';
 import Button from '../components/Button';
@@ -11,10 +12,7 @@ import Button from '../components/Button';
 type SortField = 'id' | 'name' | 'status' | 'dueDate' | 'budget' | 'domain' | 'clientName' | 'classification' | 'assigneeName';
 type SortDir = 'asc' | 'desc';
 
-const ALL_STATUSES: DealStatus[] = ['New', 'In Progress', 'Won', 'Lost', 'TBC'];
 const PAGE_SIZE = 10;
-
-const STATUS_ORDER: Record<DealStatus, number> = { New: 0, 'In Progress': 1, Won: 2, Lost: 3, TBC: 4 };
 
 function formatBudget(n: number | null) {
   if (n === null) return 'Unknown';
@@ -33,7 +31,7 @@ export default function DealsListPage() {
   const navigate = useNavigate();
 
   const [search, setSearch] = useState('');
-  const [selectedStatuses, setSelectedStatuses] = useState<DealStatus[]>(ALL_STATUSES);
+  const [selectedStatuses, setSelectedStatuses] = useState<DealStatus[]>([]);
   const [showStatusFilter, setShowStatusFilter] = useState(false);
   const [selectedAssignees, setSelectedAssignees] = useState<string[]>([]);
   const [showAssigneeFilter, setShowAssigneeFilter] = useState(false);
@@ -42,8 +40,26 @@ export default function DealsListPage() {
   const [page, setPage] = useState(1);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [configOptions, setConfigOptions] = useState<PlatformConfigOption[]>([]);
 
   const canEdit = isRole('Superadmin', 'Editor');
+
+  useEffect(() => {
+    platformApi.getOptions().then(setConfigOptions).catch(() => setConfigOptions([]));
+  }, []);
+
+  const statusOptions = useMemo(() => {
+    const cmsStatuses = configOptions.filter(o => o.type === 'status').map(o => o.value);
+    const dealStatuses = deals.map(deal => deal.status).filter(Boolean);
+    return Array.from(new Set([...cmsStatuses, ...dealStatuses]));
+  }, [configOptions, deals]);
+
+  const statusOrder = useMemo(() => {
+    return statusOptions.reduce<Record<string, number>>((acc, status, index) => {
+      acc[status] = index;
+      return acc;
+    }, {});
+  }, [statusOptions]);
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -107,7 +123,8 @@ export default function DealsListPage() {
         if (sortField === 'budget') {
           va = a.budget ?? Number.POSITIVE_INFINITY; vb = b.budget ?? Number.POSITIVE_INFINITY;
         } else if (sortField === 'status') {
-          va = STATUS_ORDER[a.status]; vb = STATUS_ORDER[b.status];
+          va = statusOrder[a.status] ?? Number.MAX_SAFE_INTEGER;
+          vb = statusOrder[b.status] ?? Number.MAX_SAFE_INTEGER;
         }
         if (va < vb) return sortDir === 'asc' ? -1 : 1;
         if (va > vb) return sortDir === 'asc' ? 1 : -1;
@@ -115,13 +132,15 @@ export default function DealsListPage() {
       });
     } else {
       arr.sort((a, b) => {
-        const sd = STATUS_ORDER[a.status] - STATUS_ORDER[b.status];
+        const statusA = statusOrder[a.status] ?? Number.MAX_SAFE_INTEGER;
+        const statusB = statusOrder[b.status] ?? Number.MAX_SAFE_INTEGER;
+        const sd = statusA - statusB || a.status.localeCompare(b.status);
         if (sd !== 0) return sd;
         return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
       });
     }
     return arr;
-  }, [filtered, sortField, sortDir]);
+  }, [filtered, sortField, sortDir, statusOrder]);
 
   const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
   const paginated = sorted.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
@@ -218,7 +237,7 @@ export default function DealsListPage() {
                 background: '#fff', border: '1px solid #E2E8F0', borderRadius: 8,
                 padding: 8, boxShadow: '0 4px 12px rgba(0,0,0,0.1)', minWidth: 160,
               }}>
-                {ALL_STATUSES.map(s => (
+                {statusOptions.map(s => (
                   <label key={s} style={{
                     display: 'flex', alignItems: 'center', gap: 8,
                     padding: '6px 8px', cursor: 'pointer', borderRadius: 5,

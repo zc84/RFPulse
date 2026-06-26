@@ -102,12 +102,10 @@ export default function DealDetailPage() {
   });
   const aiWorkspaceKeyMissing = aiKeyMissing || aiChatKeyMissing;
   const statuses = useMemo(() => {
-    const values = configOptions.filter(o => o.type === 'status').map(o => o.value);
-    return values.length ? values : ['New', 'In Progress', 'Won', 'Lost', 'TBC'];
+    return configOptions.filter(o => o.type === 'status').map(o => o.value);
   }, [configOptions]);
   const domains = useMemo(() => {
-    const values = configOptions.filter(o => o.type === 'domain').map(o => o.value);
-    return values.length ? values : ['Healthcare', 'Fintech', 'Retail', 'Education', 'Government', 'Manufacturing', 'Technology', 'TBC'];
+    return configOptions.filter(o => o.type === 'domain').map(o => o.value);
   }, [configOptions]);
 
   const addLocalAiProgress = (content: string) => {
@@ -256,7 +254,7 @@ export default function DealDetailPage() {
       toast.error('Enter a valid budget amount.');
       return;
     }
-    if (field === 'clientName' || field === 'classification' || field === 'description' || field === 'assigneeId') {
+    if (field === 'clientName' || field === 'classification' || field === 'description' || field === 'aiNotes' || field === 'assigneeId') {
       value = draftValue.trim() || null;
     }
     setSavingField(true);
@@ -717,6 +715,26 @@ export default function DealDetailPage() {
               <span style={{ color: '#94A3B8', fontSize: 14 }}>Not set</span>
             ), deal.description || '', (
               <Textarea value={draftValue} onChange={e => setDraftValue(e.target.value)} rows={8} autoFocus />
+            ))}
+          </div>
+        )}
+
+        {/* AI notes */}
+        {(deal.aiNotes || canEdit) && (
+          <div style={{
+            background: '#fff', border: '1px solid #E2E8F0', borderRadius: 12,
+            padding: 20, marginBottom: 16, boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#64748B', marginBottom: 10 }}>
+              <BrainCircuit size={14} />
+              <span style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>AI Notes</span>
+            </div>
+            {editableShell('aiNotes', deal.aiNotes ? (
+              <p style={{ color: '#374151', fontSize: 14, lineHeight: 1.7, whiteSpace: 'pre-wrap', margin: 0 }}>{deal.aiNotes}</p>
+            ) : (
+              <span style={{ color: '#94A3B8', fontSize: 14 }}>Not set</span>
+            ), deal.aiNotes || '', (
+              <Textarea value={draftValue} onChange={e => setDraftValue(e.target.value)} rows={6} autoFocus />
             ))}
           </div>
         )}
