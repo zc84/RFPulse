@@ -1,16 +1,17 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { ArrowLeft, Edit2, Trash2, Download, FileText, Calendar, DollarSign, Tag, AlignLeft, Hash, Share2, Copy, X, Building, Sparkles, Bot } from 'lucide-react';
+import { ArrowLeft, Edit2, Trash2, Download, FileText, Calendar, DollarSign, Tag, AlignLeft, Hash, Share2, Copy, X, Building, Sparkles, Bot, BrainCircuit, UserCircle } from 'lucide-react';
 import { useDeals } from '../context/DealsContext';
 import { useAuth } from '../context/AuthContext';
 import { dealsApi, aiApi, agentsApi } from '../api';
-import { AIMessage } from '../types';
+import { AIMessage, Document, AIChatMessage, ProposedDealUpdates } from '../types';
 import Header from '../components/Header';
 import StatusBadge from '../components/StatusBadge';
 import Button from '../components/Button';
 import Modal from '../components/Modal';
 import AIChatPanel from '../components/AIChatPanel';
+import DocumentSection from '../components/DocumentSection';
 
 function formatBudget(n: number) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n);
@@ -57,14 +58,27 @@ export default function DealDetailPage() {
   const [aiKeyValid, setAiKeyValid] = useState<boolean | null>(null);
   const [aiKeyError, setAiKeyError] = useState<string | null>(null);
 
+  const [aiChatMessages, setAiChatMessages] = useState<AIChatMessage[]>([]);
+  const [aiChatLoading, setAiChatLoading] = useState(false);
+  const [aiChatKeyMissing, setAiChatKeyMissing] = useState(false);
+
+  const [proposedUpdates, setProposedUpdates] = useState<ProposedDealUpdates | null>(null);
+
+  const [aiDocConfirm, setAiDocConfirm] = useState<{ show: boolean; names: string[] }>({ show: false, names: [] });
+
   const deal = getDeal(id!);
   const canEdit = isRole('Superadmin', 'Editor');
   const canRunAI = canEdit && aiKeyValid === true;
+  const hasAiDocs = deal ? deal.documents.some(d => d.source === 'ai') : false;
 
   useEffect(() => {
     if (id) loadAISession();
     validateAIKey();
   }, [id]);
+
+  useEffect(() => {
+    if (hasAiDocs && id) loadAIChat();
+  }, [hasAiDocs, id]);
 
   const validateAIKey = async () => {
     try {
@@ -137,13 +151,23 @@ export default function DealDetailPage() {
     }
   };
 
-  const handleStartAI = async () => {
+  const loadAIChat = async () => {
+    if (!id) return;
+    try {
+      const data = await aiApi.getChat(id);
+      setAiChatMessages(data.messages);
+    } catch {
+      // No chat history is fine.
+    }
+  };
+
+  const startAIWithForce = async (force: boolean) => {
     if (!id || !canRunAI) return;
     setShowAIPanel(true);
     setAiLoading(true);
     setAiKeyMissing(false);
     try {
-      const data = await aiApi.start(id);
+      const data = await aiApi.start(id, force);
       setAiSessionId(data.sessionId);
       setAiMessages(data.messages);
       setAiExtractedDocs(data.extractedDocs);
@@ -158,6 +182,12 @@ export default function DealDetailPage() {
         await handleSendMessage('Proceed with the analysis.', true);
       }
     } catch (err: any) {
+      if (err.message?.includes('AI documents already exist')) {
+        const names = err.aiDocs?.map((d: any) => d.name) || [];
+        setAiDocConfirm({ show: true, names });
+        toast.error('AI documents already exist. Please confirm to replace them.');
+        return;
+      }
       if (err.message?.includes('API key') || err.message?.includes('not configured')) {
         setAiKeyMissing(true);
       }
@@ -165,6 +195,13 @@ export default function DealDetailPage() {
     } finally {
       setAiLoading(false);
     }
+  };
+
+  const handleStartAI = async () => startAIWithForce(false);
+
+  const handleConfirmAiDocRestart = async () => {
+    setAiDocConfirm({ show: false, names: [] });
+    await startAIWithForce(true);
   };
 
   const handleSendMessage = async (content: string, silent: boolean = false) => {
@@ -181,6 +218,9 @@ export default function DealDetailPage() {
       if (data.finalReportDocumentId) {
         await refreshDeals();
         toast.success('Assessment report generated and saved to documents.');
+        if (data.proposedUpdates && Object.values(data.proposedUpdates).some(v => v !== null && v !== undefined)) {
+          setProposedUpdates(data.proposedUpdates);
+        }
       }
       if (!silent) {
         toast.success(data.finalReportDocumentId ? 'Report saved.' : 'Message sent.');
@@ -194,6 +234,56 @@ export default function DealDetailPage() {
       setAiLoading(false);
       setAiRunningAgents([]);
     }
+  };
+
+  const handleSendChatMessage = async (content: string) => {
+    if (!id || !canRunAI) return;
+    setAiChatLoading(true);
+    setAiChatKeyMissing(false);
+    try {
+      const data = await aiApi.sendChat(id, content);
+      setAiChatMessages(data.messages);
+    } catch (err: any) {
+      if (err.message?.includes('API key') || err.message?.includes('not configured')) {
+        setAiChatKeyMissing(true);
+      }
+      toast.error(err.message || 'Failed to send chat message');
+    } finally {
+      setAiChatLoading(false);
+    }
+  };
+
+  const handleUpload = async (files: FileList | null, source: 'user' | 'ai') => {
+    if (!id || !files || files.length === 0) return;
+    try {
+      const uploaded = await dealsApi.uploadDocuments(id, Array.from(files), source);
+      await refreshDeals();
+      toast.success(`${uploaded.length} file(s) uploaded to ${source === 'ai' ? 'AI' : 'User'} documents.`);
+    } catch {
+      toast.error('Failed to upload files.');
+    }
+  };
+
+  const handleDownload = (doc: Document) => {
+    if (doc.filename) dealsApi.downloadDocument(doc.id, doc.name);
+  };
+
+  const handleUpdateField = async (field: keyof ProposedDealUpdates, value: unknown) => {
+    if (!id || !proposedUpdates) return;
+    try {
+      const updates: Partial<Record<string, unknown>> = {};
+      updates[field] = value;
+      await dealsApi.update(id, updates);
+      await refreshDeals();
+      toast.success(`${field} updated.`);
+      setProposedUpdates(p => p ? { ...p, [field]: null } : null);
+    } catch {
+      toast.error(`Failed to update ${field}.`);
+    }
+  };
+
+  const handleSkipField = (field: keyof ProposedDealUpdates) => {
+    setProposedUpdates(p => p ? { ...p, [field]: null } : null);
   };
 
   return (
@@ -326,6 +416,7 @@ export default function DealDetailPage() {
           <InfoCard icon={<DollarSign size={13} />} label="Budget" value={formatBudget(deal.budget)} />
           <InfoCard icon={<Tag size={13} />} label="Domain" value={deal.domain} />
           {deal.clientName && <InfoCard icon={<Building size={13} />} label="Client" value={deal.clientName} />}
+          <InfoCard icon={<UserCircle size={13} />} label="Assignee" value={deal.assigneeName || 'Unassigned'} />
           {deal.classification && <InfoCard icon={<Tag size={13} />} label="Class" value={
             <span style={{
               display: 'inline-block', padding: '2px 8px', borderRadius: 6,
@@ -352,121 +443,73 @@ export default function DealDetailPage() {
           </div>
         )}
 
-        {/* Documents */}
-        <div style={{
-          background: '#fff', border: '1px solid #E2E8F0', borderRadius: 12,
-          overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
-        }}>
-          <div style={{ padding: '14px 20px', borderBottom: '1px solid #F1F5F9', background: '#FAFAFA', display: 'flex', alignItems: 'center', gap: 6 }}>
-            <FileText size={14} color="#64748B" />
-            <h2 style={{ fontSize: 13, fontWeight: 600, color: '#374151' }}>
-              Documents ({deal.documents.length})
-            </h2>
-          </div>
-          <div style={{ padding: 16 }}>
-            {deal.documents.length === 0 ? (
-              <p style={{ color: '#94A3B8', fontSize: 13, textAlign: 'center', padding: '16px 0' }}>
-                No documents attached to this deal.
-              </p>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {deal.documents.map(doc => (
-                  <div key={doc.id} style={{
-                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    padding: '10px 14px', background: '#F8FAFC',
-                    border: '1px solid #E2E8F0', borderRadius: 8,
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <div style={{
-                        width: 34, height: 34, borderRadius: 8,
-                        background: '#EFF6FF', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      }}>
-                        <FileText size={16} color="#2563EB" />
-                      </div>
-                      <div>
-                        <div style={{ fontSize: 13, fontWeight: 500, color: '#0F172A' }}>{doc.name}</div>
-                        <div style={{ fontSize: 11, color: '#94A3B8' }}>{doc.size} · Uploaded {formatDate(doc.uploadedAt)}</div>
-                      </div>
-                    </div>
-                    <div style={{ display: 'flex', gap: 6 }}>
-                      <button
-                        disabled={!doc.filename}
-                        style={{
-                          display: 'flex', alignItems: 'center', gap: 4,
-                          padding: '6px 10px', borderRadius: 6,
-                          border: '1px solid #E2E8F0', background: '#fff',
-                          color: doc.filename ? '#374151' : '#94A3B8', fontSize: 12, cursor: doc.filename ? 'pointer' : 'not-allowed',
-                          fontWeight: 500,
-                        }}
-                        onMouseEnter={e => {
-                          if (!doc.filename) return;
-                          (e.currentTarget as HTMLElement).style.background = '#EFF6FF';
-                          (e.currentTarget as HTMLElement).style.color = '#2563EB';
-                          (e.currentTarget as HTMLElement).style.borderColor = '#BFDBFE';
-                        }}
-                        onMouseLeave={e => {
-                          (e.currentTarget as HTMLElement).style.background = '#fff';
-                          (e.currentTarget as HTMLElement).style.color = doc.filename ? '#374151' : '#94A3B8';
-                          (e.currentTarget as HTMLElement).style.borderColor = '#E2E8F0';
-                        }}
-                        onClick={() => {
-                          if (!doc.filename) return;
-                          dealsApi.downloadDocument(doc.id, doc.name);
-                        }}
-                      >
-                        <Download size={12} />
-                      </button>
-                      <button
-                        style={{
-                          display: 'flex', alignItems: 'center', gap: 4,
-                          padding: '6px 10px', borderRadius: 6,
-                          border: '1px solid #E2E8F0', background: '#fff',
-                          color: '#374151', fontSize: 12, cursor: 'pointer',
-                          fontWeight: 500,
-                        }}
-                        onMouseEnter={e => {
-                          (e.currentTarget as HTMLElement).style.background = '#EFF6FF';
-                          (e.currentTarget as HTMLElement).style.color = '#2563EB';
-                          (e.currentTarget as HTMLElement).style.borderColor = '#BFDBFE';
-                        }}
-                        onMouseLeave={e => {
-                          (e.currentTarget as HTMLElement).style.background = '#fff';
-                          (e.currentTarget as HTMLElement).style.color = '#374151';
-                          (e.currentTarget as HTMLElement).style.borderColor = '#E2E8F0';
-                        }}
-                        onClick={() => handleShare(doc.id)}
-                      >
-                        <Share2 size={12} />
-                      </button>
-                      {canEdit && doc.filename && (
-                        <button
-                          style={{
-                            display: 'flex', alignItems: 'center', gap: 4,
-                            padding: '6px 10px', borderRadius: 6,
-                            border: '1px solid #E2E8F0', background: '#fff',
-                            color: '#DC2626', fontSize: 12, cursor: 'pointer',
-                            fontWeight: 500,
-                          }}
-                          onMouseEnter={e => {
-                            (e.currentTarget as HTMLElement).style.background = '#FEF2F2';
-                            (e.currentTarget as HTMLElement).style.borderColor = '#FECACA';
-                          }}
-                          onMouseLeave={e => {
-                            (e.currentTarget as HTMLElement).style.background = '#fff';
-                            (e.currentTarget as HTMLElement).style.borderColor = '#E2E8F0';
-                          }}
-                          onClick={() => setDocToDelete({ id: doc.id, name: doc.name })}
-                        >
-                          <Trash2 size={12} />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ))}
+        {/* Documents — side by side */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
+          <DocumentSection
+            title="User Documents"
+            icon={<FileText size={14} color="#64748B" />}
+            documents={deal.documents.filter(d => d.source === 'user' || !d.source)}
+            source="user"
+            canEdit={canEdit}
+            canUpload={canEdit}
+            onUpload={files => handleUpload(files, 'user')}
+            onDownload={handleDownload}
+            onShare={handleShare}
+            onDelete={doc => setDocToDelete({ id: doc.id, name: doc.name })}
+            emptyText="No user documents attached to this deal."
+          />
+          <DocumentSection
+            title="AI Documents"
+            icon={<BrainCircuit size={14} color="#4F46E5" />}
+            documents={deal.documents.filter(d => d.source === 'ai')}
+            source="ai"
+            canEdit={canEdit}
+            canUpload={canEdit}
+            onUpload={files => handleUpload(files, 'ai')}
+            onDownload={handleDownload}
+            onShare={handleShare}
+            onDelete={doc => setDocToDelete({ id: doc.id, name: doc.name })}
+            badge="AI Context"
+            emptyText="No AI documents yet. Run Execute AI to generate an assessment report, or upload documents here to add them as AI context."
+          />
+        </div>
+
+        {/* AI Chat panel — permanently visible when AI docs exist */}
+        {hasAiDocs && (
+          <div style={{
+            background: '#fff', border: '1px solid #E2E8F0', borderRadius: 12,
+            marginBottom: 16, boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+            overflow: 'hidden',
+          }}>
+            <div style={{
+              padding: '14px 20px', borderBottom: '1px solid #F1F5F9',
+              background: '#FAFAFA', display: 'flex', alignItems: 'center', gap: 8,
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <BrainCircuit size={16} color="#4F46E5" />
+                <h2 style={{ fontSize: 13, fontWeight: 600, color: '#374151' }}>AI Chat</h2>
+              </div>
+            </div>
+            <div style={{ height: 420 }}>
+              <AIChatPanel
+                messages={aiChatMessages}
+                loading={aiChatLoading}
+                onSend={handleSendChatMessage}
+                disabled={aiChatKeyMissing}
+                emptyMessage="Ask questions about the deal's AI documents. Type a message below to start."
+              />
+            </div>
+            {aiChatKeyMissing && (
+              <div style={{
+                padding: '10px 16px', background: '#FEF2F2', borderTop: '1px solid #FECACA',
+                fontSize: 12, color: '#991B1B', display: 'flex', alignItems: 'center', gap: 6,
+              }}>
+                <Sparkles size={12} />
+                {aiKeyError || 'OpenAI API key is not configured.'} Ask a Superadmin to add it in AI Agent Configuration.
               </div>
             )}
           </div>
-        </div>
+        )}
       </main>
 
       {/* Delete modal */}
@@ -525,6 +568,118 @@ export default function DealDetailPage() {
         </div>
       </Modal>
 
+      {/* AI doc restart confirmation */}
+      <Modal open={aiDocConfirm.show} onClose={() => setAiDocConfirm({ show: false, names: [] })} title="Replace AI documents?">
+        <div style={{ padding: '8px 0' }}>
+          <p style={{ color: '#64748B', fontSize: 13, marginBottom: 16, lineHeight: 1.6 }}>
+            Re-running <strong>Execute AI</strong> will delete the existing AI documents for this deal and generate new ones.
+          </p>
+          {aiDocConfirm.names.length > 0 && (
+            <div style={{
+              background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 8,
+              padding: 12, marginBottom: 20,
+            }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: '#991B1B', marginBottom: 8 }}>Documents to be deleted:</div>
+              <ul style={{ margin: 0, paddingLeft: 18, color: '#7F1D1D', fontSize: 12, lineHeight: 1.6 }}>
+                {aiDocConfirm.names.map((name, i) => <li key={i}>{name}</li>)}
+              </ul>
+            </div>
+          )}
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+            <Button variant="secondary" onClick={() => setAiDocConfirm({ show: false, names: [] })}>
+              Cancel
+            </Button>
+            <Button variant="danger" onClick={handleConfirmAiDocRestart} icon={<Trash2 size={13} />}>
+              Replace & Restart
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Proposed deal updates */}
+      <Modal open={!!proposedUpdates && Object.values(proposedUpdates).some(v => v !== null && v !== undefined)} onClose={() => setProposedUpdates(null)} title="Update deal details?">
+        <div style={{ padding: '8px 0' }}>
+          <p style={{ color: '#64748B', fontSize: 13, marginBottom: 20, lineHeight: 1.6 }}>
+            The AI found the following deal details in the documents. Update the deal or skip each one.
+          </p>
+          {proposedUpdates && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              {proposedUpdates.dueDate && (
+                <ProposedField
+                  label="Due Date"
+                  current={deal.dueDate}
+                  proposed={proposedUpdates.dueDate}
+                  onUpdate={() => handleUpdateField('dueDate', proposedUpdates.dueDate)}
+                  onSkip={() => handleSkipField('dueDate')}
+                />
+              )}
+              {proposedUpdates.budget && (
+                <ProposedField
+                  label="Budget"
+                  current={formatBudget(deal.budget)}
+                  proposed={formatBudget(proposedUpdates.budget)}
+                  onUpdate={() => handleUpdateField('budget', proposedUpdates.budget)}
+                  onSkip={() => handleSkipField('budget')}
+                />
+              )}
+              {proposedUpdates.clientName && (
+                <ProposedField
+                  label="Client"
+                  current={deal.clientName || 'Not set'}
+                  proposed={proposedUpdates.clientName}
+                  onUpdate={() => handleUpdateField('clientName', proposedUpdates.clientName)}
+                  onSkip={() => handleSkipField('clientName')}
+                />
+              )}
+              {proposedUpdates.description && (
+                <ProposedField
+                  label="Description"
+                  current={deal.description || 'Not set'}
+                  proposed={proposedUpdates.description}
+                  onUpdate={() => handleUpdateField('description', proposedUpdates.description)}
+                  onSkip={() => handleSkipField('description')}
+                />
+              )}
+            </div>
+          )}
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 24 }}>
+            <Button variant="secondary" onClick={() => setProposedUpdates(null)}>
+              Close
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+    </div>
+  );
+}
+
+function ProposedField({ label, current, proposed, onUpdate, onSkip }: {
+  label: string;
+  current: React.ReactNode;
+  proposed: React.ReactNode;
+  onUpdate: () => void;
+  onSkip: () => void;
+}) {
+  return (
+    <div style={{ border: '1px solid #E2E8F0', borderRadius: 10, padding: 14, background: '#FAFAFA' }}>
+      <div style={{ fontSize: 12, fontWeight: 600, color: '#64748B', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+        {label}
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+        <div>
+          <div style={{ fontSize: 11, color: '#94A3B8', marginBottom: 4 }}>Current</div>
+          <div style={{ fontSize: 13, color: '#374151', fontWeight: 500 }}>{current}</div>
+        </div>
+        <div>
+          <div style={{ fontSize: 11, color: '#94A3B8', marginBottom: 4 }}>Proposed</div>
+          <div style={{ fontSize: 13, color: '#0F172A', fontWeight: 500 }}>{proposed}</div>
+        </div>
+      </div>
+      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+        <Button variant="secondary" size="sm" onClick={onSkip}>Skip</Button>
+        <Button size="sm" onClick={onUpdate}>Update</Button>
+      </div>
     </div>
   );
 }

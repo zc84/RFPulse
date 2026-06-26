@@ -1,4 +1,4 @@
-import { User, Agent, GlobalAISettings, AIStartResponse, AIMessageResponse, AISessionResponse } from './types';
+import { User, Agent, GlobalAISettings, AIMessage, AIStartResponse, AIMessageResponse, AISessionResponse, AIChatMessage } from './types';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
@@ -49,9 +49,10 @@ export const dealsApi = {
     apiFetch(`/deals/${id}`, { method: 'PUT', body: JSON.stringify(updates) }),
   delete: (id: string) =>
     apiFetch(`/deals/${id}`, { method: 'DELETE' }),
-  uploadDocuments: (dealId: string, files: File[]) => {
+  uploadDocuments: (dealId: string, files: File[], source: 'user' | 'ai' = 'user') => {
     const formData = new FormData();
     files.forEach(f => formData.append('files', f));
+    formData.append('source', source);
     const token = getToken();
     return fetch(`${API_BASE_URL}/deals/${dealId}/documents`, {
       method: 'POST',
@@ -102,10 +103,43 @@ export const agentsApi = {
 };
 
 export const aiApi = {
-  start: (dealId: string) =>
-    apiFetch(`/deals/${dealId}/ai/start`, { method: 'POST' }) as Promise<AIStartResponse>,
+  start: (dealId: string, force = false) =>
+    apiFetch(`/deals/${dealId}/ai/start`, {
+      method: 'POST',
+      body: JSON.stringify({ force }),
+    }) as Promise<AIStartResponse>,
   sendMessage: (dealId: string, content: string) =>
     apiFetch(`/deals/${dealId}/ai/message`, { method: 'POST', body: JSON.stringify({ content }) }) as Promise<AIMessageResponse>,
   getSession: (dealId: string) =>
     apiFetch(`/deals/${dealId}/ai/session`) as Promise<AISessionResponse>,
+  getChat: (dealId: string) =>
+    apiFetch(`/deals/${dealId}/ai/chat`) as Promise<{ messages: AIChatMessage[] }>,
+  sendChat: (dealId: string, content: string) =>
+    apiFetch(`/deals/${dealId}/ai/chat`, { method: 'POST', body: JSON.stringify({ content }) }) as Promise<{ messages: AIChatMessage[] }>,
+};
+
+export interface AIDemoStartResponse {
+  sessionId: number;
+  status: string;
+  plan?: string[];
+  reasoning?: string;
+  messages: AIMessage[];
+  extractedDocs: { id: string; name: string; size: string; success: boolean }[];
+}
+
+export interface AIDemoMessageResponse {
+  sessionId: number;
+  status: string;
+  messages: AIMessage[];
+  agentOutputs?: Record<string, string>;
+  finalReport?: string;
+}
+
+export const debugApi = {
+  startAIDemo: () =>
+    apiFetch('/debug/ai-demo/start', { method: 'POST' }) as Promise<AIDemoStartResponse>,
+  sendDemoMessage: (content: string) =>
+    apiFetch('/debug/ai-demo/message', { method: 'POST', body: JSON.stringify({ content }) }) as Promise<AIDemoMessageResponse>,
+  getDemoSession: () =>
+    apiFetch('/debug/ai-demo/session') as Promise<AISessionResponse>,
 };

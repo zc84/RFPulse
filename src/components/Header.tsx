@@ -1,6 +1,6 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { LogOut, Users, Zap, Bot } from 'lucide-react';
+import { LogOut, Users, Zap, Bot, Bug } from 'lucide-react';
 
 export default function Header() {
   const { currentUser, logout } = useAuth();
@@ -73,6 +73,23 @@ export default function Header() {
             }}>
               <Bot size={14} />
               AI Settings
+            </Link>
+            <Link to="/ai-debug" style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              padding: '6px 12px', borderRadius: 6,
+              color: '#94A3B8', fontSize: 13, fontWeight: 500,
+              textDecoration: 'none', transition: 'all 0.15s',
+            }}
+            onMouseEnter={e => {
+              (e.currentTarget as HTMLElement).style.background = '#1E293B';
+              (e.currentTarget as HTMLElement).style.color = '#F8FAFC';
+            }}
+            onMouseLeave={e => {
+              (e.currentTarget as HTMLElement).style.background = 'transparent';
+              (e.currentTarget as HTMLElement).style.color = '#94A3B8';
+            }}>
+              <Bug size={14} />
+              AI Debug
             </Link>
           </>
         )}

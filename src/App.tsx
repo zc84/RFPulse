@@ -9,6 +9,7 @@ import DealDetailPage from './pages/DealDetailPage';
 import EditDealPage from './pages/EditDealPage';
 import UserManagementPage from './pages/UserManagementPage';
 import AgentManagementPage from './pages/AgentManagementPage';
+import AIDebugPage from './pages/AIDebugPage';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { currentUser } = useAuth();
@@ -34,6 +35,7 @@ function AppRoutes() {
       <Route path="/deals/:id/edit" element={<ProtectedRoute><EditDealPage /></ProtectedRoute>} />
       <Route path="/users" element={<AdminRoute><UserManagementPage /></AdminRoute>} />
       <Route path="/agents" element={<AdminRoute><AgentManagementPage /></AdminRoute>} />
+      <Route path="/ai-debug" element={<AdminRoute><AIDebugPage /></AdminRoute>} />
       <Route path="*" element={<Navigate to={currentUser ? "/deals" : "/login"} replace />} />
     </Routes>
   );

@@ -3,12 +3,12 @@ import { useNavigate, Link } from 'react-router-dom';
 import { Search, RefreshCw, Plus, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, FileText, Filter } from 'lucide-react';
 import { useDeals } from '../context/DealsContext';
 import { useAuth } from '../context/AuthContext';
-import { Deal, DealStatus } from '../types';
+import { Deal, DealStatus, User } from '../types';
 import Header from '../components/Header';
 import StatusBadge from '../components/StatusBadge';
 import Button from '../components/Button';
 
-type SortField = 'id' | 'name' | 'status' | 'dueDate' | 'budget' | 'domain' | 'clientName' | 'classification';
+type SortField = 'id' | 'name' | 'status' | 'dueDate' | 'budget' | 'domain' | 'clientName' | 'classification' | 'assigneeName';
 type SortDir = 'asc' | 'desc';
 
 const ALL_STATUSES: DealStatus[] = ['New', 'In Progress', 'Won', 'Lost', 'TBC'];
@@ -27,8 +27,8 @@ function formatDate(d: string) {
 }
 
 export default function DealsListPage() {
-  const { deals } = useDeals();
-  const { isRole } = useAuth();
+  const { deals, updateDeal } = useDeals();
+  const { isRole, users } = useAuth();
   const navigate = useNavigate();
 
   const [search, setSearch] = useState('');
@@ -301,12 +301,13 @@ export default function DealsListPage() {
                       {colHeader('Budget', 'budget')}
                       {colHeader('Domain', 'domain')}
                       {colHeader('Client', 'clientName')}
+                      {colHeader('Assignee', 'assigneeName')}
                       {colHeader('Class', 'classification')}
                     </tr>
                   </thead>
                   <tbody>
                     {paginated.map((deal, i) => (
-                      <TableRow key={deal.id} deal={deal} i={i} onClick={() => navigate(`/deals/${deal.id}`)} />
+                      <TableRow key={deal.id} deal={deal} i={i} onClick={() => navigate(`/deals/${deal.id}`)} users={users} canEdit={canEdit} onAssigneeChange={async (dealId, userId) => { await updateDeal(dealId, { assigneeId: userId || undefined }); }} />
                     ))}
                   </tbody>
                 </table>
@@ -381,7 +382,7 @@ export default function DealsListPage() {
   );
 }
 
-function TableRow({ deal, i, onClick }: { deal: Deal; i: number; onClick: () => void }) {
+function TableRow({ deal, i, onClick, users, canEdit, onAssigneeChange }: { deal: Deal; i: number; onClick: () => void; users: User[]; canEdit: boolean; onAssigneeChange: (dealId: string, userId: string) => void }) {
   const [hovered, setHovered] = useState(false);
 
   const isFinal = deal.status === 'Won' || deal.status === 'Lost';
@@ -441,6 +442,24 @@ function TableRow({ deal, i, onClick }: { deal: Deal; i: number; onClick: () => 
       </td>
       <td style={{ padding: '12px 16px', fontSize: 13, color: '#374151', whiteSpace: 'nowrap' }}>
         {deal.clientName || '-'}
+      </td>
+      <td style={{ padding: '12px 16px' }} onClick={e => e.stopPropagation()}>
+        {canEdit ? (
+          <select
+            value={deal.assigneeId || ''}
+            onChange={e => onAssigneeChange(deal.id, e.target.value)}
+            style={{
+              padding: '4px 8px', borderRadius: 6, border: '1px solid #E2E8F0',
+              fontSize: 12, color: '#374151', background: '#fff', cursor: 'pointer',
+              outline: 'none', maxWidth: 120,
+            }}
+          >
+            <option value="">Unassigned</option>
+            {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+          </select>
+        ) : (
+          <span style={{ fontSize: 13, color: '#374151' }}>{deal.assigneeName || '-'}</span>
+        )}
       </td>
       <td style={{ padding: '12px 16px' }}>
         {deal.classification && (

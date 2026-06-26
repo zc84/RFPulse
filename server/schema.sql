@@ -26,6 +26,7 @@ CREATE TABLE deals (
   client_name VARCHAR(255),
   classification VARCHAR(1) CHECK (classification IN ('A', 'B', 'C')),
   description TEXT,
+  assignee_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -35,12 +36,14 @@ CREATE TABLE documents (
   name VARCHAR(500) NOT NULL,
   size VARCHAR(50) NOT NULL,
   filename VARCHAR(255),
+  source VARCHAR(20) CHECK (source IN ('user', 'ai')),
   uploaded_at DATE NOT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX idx_deals_status ON deals(status);
 CREATE INDEX idx_deals_due_date ON deals(due_date);
+CREATE INDEX idx_deals_assignee_id ON deals(assignee_id);
 
 CREATE TABLE global_settings (
   id SERIAL PRIMARY KEY,
@@ -96,6 +99,15 @@ CREATE TABLE ai_agent_outputs (
   UNIQUE (session_id, agent_slug)
 );
 
+CREATE TABLE ai_chat_messages (
+  id SERIAL PRIMARY KEY,
+  deal_id INTEGER NOT NULL REFERENCES deals(id) ON DELETE CASCADE,
+  role VARCHAR(50) NOT NULL CHECK (role IN ('user', 'agent')),
+  content TEXT NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE INDEX idx_ai_sessions_deal_id ON ai_sessions(deal_id);
 CREATE INDEX idx_ai_messages_session_id ON ai_messages(session_id);
 CREATE INDEX idx_ai_agent_outputs_session_id ON ai_agent_outputs(session_id);
+CREATE INDEX idx_ai_chat_messages_deal_id ON ai_chat_messages(deal_id);

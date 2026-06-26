@@ -8,6 +8,7 @@ export interface Document {
   name: string;
   size: string;
   filename?: string;
+  source?: 'user' | 'ai';
   uploadedAt: string;
 }
 
@@ -21,6 +22,8 @@ export interface Deal {
   clientName?: string;
   classification?: DealClassification;
   description?: string;
+  assigneeId?: string | null;
+  assigneeName?: string | null;
   documents: Document[];
   createdAt: string;
 }
@@ -75,6 +78,14 @@ export interface AIAgentOutput {
   content: string;
 }
 
+export interface AIChatMessage {
+  id: number;
+  deal_id: number;
+  role: 'user' | 'agent';
+  content: string;
+  created_at?: string;
+}
+
 export interface AISessionResponse {
   session: AISession | null;
   messages: AIMessage[];
@@ -88,6 +99,9 @@ export interface AIStartResponse {
   reasoning?: string;
   messages: AIMessage[];
   extractedDocs: { id: string; name: string; size: string; success: boolean }[];
+  hasExistingAiDocs?: boolean;
+  aiDocs?: { id: string; name: string }[];
+  error?: string;
 }
 
 export interface AIMessageResponse {
@@ -95,7 +109,15 @@ export interface AIMessageResponse {
   status: string;
   messages: AIMessage[];
   finalReportDocumentId?: number;
+  proposedUpdates?: ProposedDealUpdates;
   agentOutputs?: Record<string, string>;
+}
+
+export interface ProposedDealUpdates {
+  dueDate?: string | null;
+  budget?: number | null;
+  clientName?: string | null;
+  description?: string | null;
 }
 
 export interface GlobalAISettings {

@@ -8,6 +8,8 @@ import {
   coordinatorReviewStep,
   runAgentPlan,
   ensureDefaultAgents,
+  extractDealProperties,
+  callAgent,
 } from '../services/aiOrchestrator.js';
 import fs from 'fs';
 import path from 'path';
@@ -76,6 +78,40 @@ async function addMessage(sessionId, role, content, agentSlug = null) {
   return result.rows[0];
 }
 
+async function getChatMessages(dealId) {
+  const result = await query('SELECT * FROM ai_chat_messages WHERE deal_id = $1 ORDER BY created_at ASC, id ASC', [dealId]);
+  return result.rows;
+}
+
+async function addChatMessage(dealId, role, content) {
+  const result = await query(
+    'INSERT INTO ai_chat_messages (deal_id, role, content) VALUES ($1, $2, $3) RETURNING *',
+    [dealId, role, content]
+  );
+  return result.rows[0];
+}
+
+async function buildChatContext(dealId, documents) {
+  const aiDocs = documents.filter(d => d.source === 'ai');
+  const userDocs = documents.filter(d => d.source === 'user' || !d.source);
+  const aiExtracted = await buildDealContextBundle(`D-${dealId}`, aiDocs);
+  const userExtracted = await buildDealContextBundle(`D-${dealId}`, userDocs);
+  const parts = [];
+  parts.push('## AI Documents (primary context)');
+  for (const doc of aiExtracted) {
+    parts.push(`--- ${doc.name} ---`);
+    parts.push(doc.success ? doc.text : `[Could not extract: ${doc.error}]`);
+    parts.push('');
+  }
+  parts.push('## User Documents (reference context)');
+  for (const doc of userExtracted) {
+    parts.push(`--- ${doc.name} ---`);
+    parts.push(doc.success ? doc.text : `[Could not extract: ${doc.error}]`);
+    parts.push('');
+  }
+  return parts.join('\n').trim();
+}
+
 async function getAgentOutputs(sessionId) {
   const result = await query('SELECT * FROM ai_agent_outputs WHERE session_id = $1', [sessionId]);
   const outputs = {};
@@ -121,6 +157,20 @@ function writeMarkdownChunks(filePath, markdown) {
   });
 }
 
+async function deleteAiDocuments(dealId) {
+  const aiDocs = await query('SELECT * FROM documents WHERE deal_id = $1 AND source = $2', [dealId, 'ai']);
+  for (const doc of aiDocs.rows) {
+    if (doc.filename) {
+      const filePath = path.join(UPLOAD_DIR, String(dealId), doc.filename);
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    }
+  }
+  if (aiDocs.rows.length > 0) {
+    await query('DELETE FROM documents WHERE deal_id = $1 AND source = $2', [dealId, 'ai']);
+  }
+  return aiDocs.rows;
+}
+
 async function saveFinalReport(dealId, sessionId, markdown) {
   const dealDir = path.join(UPLOAD_DIR, String(dealId));
   if (!fs.existsSync(dealDir)) {
@@ -138,9 +188,9 @@ async function saveFinalReport(dealId, sessionId, markdown) {
   const today = new Date().toISOString().split('T')[0];
 
   const docResult = await query(
-    `INSERT INTO documents (deal_id, name, size, filename, uploaded_at)
-     VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-    [dealId, 'AI Assessment Report.md', size, filename, today]
+    `INSERT INTO documents (deal_id, name, size, filename, source, uploaded_at)
+     VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+    [dealId, 'AI Assessment Report.md', size, filename, 'ai', today]
   );
 
   const documentId = docResult.rows[0].id;
@@ -160,6 +210,19 @@ router.post('/start', authenticate, requireRole('Superadmin', 'Editor'), async (
 
     const data = await getDealWithDocs(dealId);
     if (!data) return res.status(404).json({ error: 'Deal not found' });
+
+    const aiDocs = (await query('SELECT * FROM documents WHERE deal_id = $1 AND source = $2', [dealId, 'ai'])).rows;
+    const force = req.body.force === true;
+    if (aiDocs.length > 0 && !force) {
+      return res.status(409).json({
+        error: 'AI documents already exist for this deal.',
+        hasExistingAiDocs: true,
+        aiDocs: aiDocs.map(d => ({ id: `doc-${d.id}`, name: d.name })),
+      });
+    }
+    if (aiDocs.length > 0 && force) {
+      await deleteAiDocuments(dealId);
+    }
 
     const extractedDocs = await buildDealContextBundle(req.params.id, data.documents);
     const contextBundle = summarizeContextBundle(extractedDocs);
@@ -229,6 +292,7 @@ router.post('/message', authenticate, requireRole('Superadmin', 'Editor'), async
 
     let newAgentOutputs = null;
     let finalReportDocumentId = null;
+    let proposedUpdates = null;
 
     if (coordinatorResult.status === 'routing' && coordinatorResult.plan?.length) {
       await addMessage(session.id, 'agent', `Running agents: ${coordinatorResult.plan.join(', ')}`, 'coordinator');
@@ -251,6 +315,11 @@ router.post('/message', authenticate, requireRole('Superadmin', 'Editor'), async
         const draftReport = buildReportFromOutputs(dealName, agentContext, updatedOutputs);
         const finalReport = await coordinatorReviewStep(contextBundle, draftReport);
         finalReportDocumentId = await saveFinalReport(dealId, session.id, finalReport);
+        try {
+          proposedUpdates = await extractDealProperties(contextBundle);
+        } catch (extractErr) {
+          console.error('Property extraction failed:', extractErr);
+        }
         await addMessage(session.id, 'agent', 'Assessment report generated and reviewed.', 'coordinator');
       } else if (nextResult.status === 'clarifying' && nextResult.questions?.length) {
         const qContent = nextResult.questions.map((q, i) => `${i + 1}. ${q}`).join('\n');
@@ -273,6 +342,11 @@ router.post('/message', authenticate, requireRole('Superadmin', 'Editor'), async
       const draftReport = buildReportFromOutputs(dealName, agentContext, finalOutputs);
       const finalReport = await coordinatorReviewStep(contextBundle, draftReport);
       finalReportDocumentId = await saveFinalReport(dealId, session.id, finalReport);
+      try {
+        proposedUpdates = await extractDealProperties(contextBundle);
+      } catch (extractErr) {
+        console.error('Property extraction failed:', extractErr);
+      }
       await addMessage(session.id, 'agent', 'Assessment report generated and reviewed.', 'coordinator');
     } else if (coordinatorResult.status === 'clarifying' && coordinatorResult.questions?.length) {
       const qContent = coordinatorResult.questions.map((q, i) => `${i + 1}. ${q}`).join('\n');
@@ -287,6 +361,7 @@ router.post('/message', authenticate, requireRole('Superadmin', 'Editor'), async
       status: updatedSession.rows[0].status,
       messages: updatedMessages,
       finalReportDocumentId,
+      proposedUpdates,
       agentOutputs: newAgentOutputs || undefined,
     });
   } catch (err) {
@@ -316,5 +391,75 @@ router.get('/session', authenticate, requireRole('Superadmin', 'Editor'), async 
     next(err);
   }
 });
+
+router.get('/chat', authenticate, requireRole('Superadmin', 'Editor'), async (req, res, next) => {
+  try {
+    const dealId = parseDealId(req.params.id);
+    if (!dealId) return res.status(400).json({ error: 'Invalid deal id' });
+
+    const messages = await getChatMessages(dealId);
+    res.json({ messages });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/chat', authenticate, requireRole('Superadmin', 'Editor'), async (req, res, next) => {
+  try {
+    await ensureDefaultAgents();
+    const dealId = parseDealId(req.params.id);
+    if (!dealId) return res.status(400).json({ error: 'Invalid deal id' });
+
+    const { content } = req.body;
+    if (!content || typeof content !== 'string') {
+      return res.status(400).json({ error: 'Message content is required' });
+    }
+
+    const data = await getDealWithDocs(dealId);
+    if (!data) return res.status(404).json({ error: 'Deal not found' });
+
+    const dealContext = formatDealForChat(data.deal);
+    const docContext = await buildChatContext(dealId, data.documents);
+
+    await addChatMessage(dealId, 'user', content);
+    const history = await getChatMessages(dealId);
+
+    const messages = [
+      {
+        role: 'user',
+        content: [
+          '## Deal metadata',
+          dealContext,
+          '## Document context',
+          docContext,
+          '## Conversation history',
+          ...history.map(m => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`),
+          `User: ${content}`,
+        ].join('\n\n'),
+      },
+    ];
+
+    const response = await callAgent('chat-agent', messages);
+    await addChatMessage(dealId, 'agent', response);
+    const updatedHistory = await getChatMessages(dealId);
+
+    res.json({ messages: updatedHistory });
+  } catch (err) {
+    next(err);
+  }
+});
+
+function formatDealForChat(deal) {
+  return [
+    `- Name: ${deal.name || 'Untitled'}`,
+    `- Status: ${deal.status || 'N/A'}`,
+    `- Due Date: ${deal.due_date || 'N/A'}`,
+    `- Budget: ${deal.budget || 'N/A'}`,
+    `- Domain: ${deal.domain || 'N/A'}`,
+    `- Client: ${deal.client_name || 'N/A'}`,
+    `- Classification: ${deal.classification || 'N/A'}`,
+    `- Description: ${deal.description || 'N/A'}`,
+  ].join('\n');
+}
 
 export default router;

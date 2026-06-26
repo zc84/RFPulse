@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { ArrowLeft, Upload, X, FileText } from 'lucide-react';
 import { useDeals } from '../context/DealsContext';
+import { useAuth } from '../context/AuthContext';
 import { DealStatus, DealDomain, DealClassification, Document } from '../types';
 import { dealsApi } from '../api';
 import Header from '../components/Header';
@@ -22,6 +23,7 @@ interface FormData {
   clientName: string;
   classification: DealClassification | '';
   description: string;
+  assigneeId: string;
 }
 
 interface FormErrors {
@@ -38,10 +40,11 @@ interface PendingDoc {
 
 export default function AddDealPage() {
   const { addDeal, refreshDeals } = useDeals();
+  const { currentUser, users } = useAuth();
   const navigate = useNavigate();
 
   const [form, setForm] = useState<FormData>({
-    name: '', status: 'New', dueDate: '', budget: '', domain: '', clientName: '', classification: '', description: '',
+    name: '', status: 'New', dueDate: '', budget: '', domain: '', clientName: '', classification: '', description: '', assigneeId: currentUser?.id || '',
   });
   const [errors, setErrors] = useState<FormErrors>({});
   const [loading, setLoading] = useState(false);
@@ -77,10 +80,11 @@ export default function AddDealPage() {
         clientName: form.clientName.trim() || undefined,
         classification: form.classification || undefined,
         description: form.description.trim() || undefined,
+        assigneeId: form.assigneeId || undefined,
         documents: [],
       });
       if (pendingDocs.length > 0) {
-        await dealsApi.uploadDocuments(newDeal.id, pendingDocs.map(p => p.file));
+        await dealsApi.uploadDocuments(newDeal.id, pendingDocs.map(p => p.file), 'user');
         await refreshDeals();
       }
       toast.success('Deal created successfully.');
@@ -100,6 +104,7 @@ export default function AddDealPage() {
         id: `doc-${Date.now()}-${Math.random()}`,
         name: f.name,
         size: `${(f.size / 1024).toFixed(0)} KB`,
+        source: 'user',
         uploadedAt: new Date().toISOString().split('T')[0],
       } as Document,
     }));
@@ -204,6 +209,13 @@ export default function AddDealPage() {
                 </Select>
               </FormField>
             </div>
+
+            <FormField label="Assignee" hint="Person responsible for this deal">
+              <Select value={form.assigneeId} onChange={set('assigneeId')}>
+                <option value="">Unassigned</option>
+                {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+              </Select>
+            </FormField>
 
             <FormField label="Description / Notes" hint="Optional — additional context about this deal">
               <Textarea

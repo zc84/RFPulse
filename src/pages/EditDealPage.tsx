@@ -1,13 +1,15 @@
 import React, { useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { ArrowLeft, FileText, X, Upload } from 'lucide-react';
+import { ArrowLeft, FileText, BrainCircuit } from 'lucide-react';
 import { useDeals } from '../context/DealsContext';
+import { useAuth } from '../context/AuthContext';
 import { DealStatus, DealDomain, DealClassification, Document } from '../types';
 import { dealsApi } from '../api';
 import Header from '../components/Header';
 import Button from '../components/Button';
 import FormField, { Input, Select, Textarea } from '../components/FormField';
+import DocumentSection from '../components/DocumentSection';
 
 const STATUSES: DealStatus[] = ['New', 'In Progress', 'Won', 'Lost', 'TBC'];
 const DOMAINS: DealDomain[] = ['Healthcare', 'Fintech', 'Retail', 'Education', 'Government', 'Manufacturing', 'Technology', 'TBC'];
@@ -23,6 +25,7 @@ interface FormErrors {
 export default function EditDealPage() {
   const { id } = useParams<{ id: string }>();
   const { getDeal, updateDeal, refreshDeals } = useDeals();
+  const { users } = useAuth();
   const navigate = useNavigate();
 
   const deal = getDeal(id!);
@@ -36,6 +39,7 @@ export default function EditDealPage() {
     clientName: deal?.clientName ?? '',
     classification: deal?.classification ?? '' as DealClassification | '',
     description: deal?.description ?? '',
+    assigneeId: deal?.assigneeId ?? '',
   });
   const [errors, setErrors] = useState<FormErrors>({});
   const [loading, setLoading] = useState(false);
@@ -78,17 +82,15 @@ export default function EditDealPage() {
     }
   };
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    if (files.length === 0) return;
+  const handleFileUpload = async (files: FileList | null, source: 'user' | 'ai' = 'user') => {
+    if (!files || files.length === 0) return;
     try {
-      const uploaded = await dealsApi.uploadDocuments(deal.id, files);
+      const uploaded = await dealsApi.uploadDocuments(deal.id, Array.from(files), source);
       setDocs(p => [...p, ...uploaded]);
-      toast.success(`${files.length} file(s) uploaded.`);
+      toast.success(`${uploaded.length} file(s) uploaded to ${source === 'ai' ? 'AI' : 'User'} documents.`);
     } catch {
       toast.error('Failed to upload files.');
     }
-    e.target.value = '';
   };
 
   const handleSave = async () => {
@@ -105,6 +107,7 @@ export default function EditDealPage() {
         clientName: form.clientName.trim() || undefined,
         classification: form.classification || undefined,
         description: form.description.trim() || undefined,
+        assigneeId: form.assigneeId || undefined,
       });
       toast.success('Deal updated successfully.');
       await refreshDeals();
@@ -194,58 +197,48 @@ export default function EditDealPage() {
               </FormField>
             </div>
 
+            <FormField label="Assignee" hint="Person responsible for this deal">
+              <Select value={form.assigneeId} onChange={set('assigneeId')}>
+                <option value="">Unassigned</option>
+                {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+              </Select>
+            </FormField>
+
             <FormField label="Description / Notes">
               <Textarea value={form.description} onChange={set('description')} rows={4} />
             </FormField>
           </div>
 
-          {/* Documents */}
-          <div style={{ borderTop: '1px solid #F1F5F9' }}>
-            <div style={{ padding: '16px 24px', background: '#FAFAFA', borderBottom: docs.length > 0 ? '1px solid #F1F5F9' : undefined }}>
-              <h2 style={{ fontSize: 14, fontWeight: 600, color: '#374151' }}>Documents ({docs.length})</h2>
-            </div>
-            <div style={{ padding: 16 }}>
-              {docs.length > 0 && (
-                <div style={{ marginBottom: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {docs.map(doc => (
-                    <div key={doc.id} style={{
-                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                      padding: '8px 12px', background: '#F8FAFC', borderRadius: 7, border: '1px solid #E2E8F0',
-                    }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <FileText size={14} color="#64748B" />
-                        <span style={{ fontSize: 13, color: '#374151' }}>{doc.name}</span>
-                        <span style={{ fontSize: 11, color: '#94A3B8' }}>{doc.size}</span>
-                      </div>
-                      <button onClick={() => handleDeleteDoc(doc.id)}
-                        style={{ background: 'none', border: 'none', color: '#94A3B8', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
-                        <X size={14} />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-              <label style={{
-                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
-                padding: 20, border: '2px dashed #E2E8F0', borderRadius: 8, cursor: 'pointer',
-                background: '#FAFAFA', transition: 'all 0.15s',
-              }}
-              onMouseEnter={e => {
-                (e.currentTarget as HTMLElement).style.borderColor = '#2563EB';
-                (e.currentTarget as HTMLElement).style.background = '#EFF6FF';
-              }}
-              onMouseLeave={e => {
-                (e.currentTarget as HTMLElement).style.borderColor = '#E2E8F0';
-                (e.currentTarget as HTMLElement).style.background = '#FAFAFA';
-              }}
-              >
-                <Upload size={18} color="#94A3B8" />
-                <span style={{ fontSize: 12, color: '#64748B', textAlign: 'center' }}>
-                  <span style={{ color: '#2563EB', fontWeight: 500 }}>Click to upload</span> or drag & drop
-                </span>
-                <span style={{ fontSize: 11, color: '#94A3B8' }}>PDF, DOCX, XLSX up to 20MB</span>
-                <input type="file" multiple accept=".pdf,.docx,.xlsx,.doc,.ppt,.pptx" onChange={handleFileUpload} style={{ display: 'none' }} />
-              </label>
+          {/* Documents — side by side */}
+          <div style={{ borderTop: '1px solid #F1F5F9', padding: 24 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+              <DocumentSection
+                title="User Documents"
+                icon={<FileText size={14} color="#64748B" />}
+                documents={docs.filter(d => d.source === 'user' || !d.source)}
+                source="user"
+                canEdit={true}
+                canUpload={true}
+                onUpload={files => handleFileUpload(files, 'user')}
+                onDownload={doc => doc.filename && dealsApi.downloadDocument(doc.id, doc.name)}
+                onShare={() => {}}
+                onDelete={doc => handleDeleteDoc(doc.id)}
+                emptyText="No user documents attached to this deal."
+              />
+              <DocumentSection
+                title="AI Documents"
+                icon={<BrainCircuit size={14} color="#4F46E5" />}
+                documents={docs.filter(d => d.source === 'ai')}
+                source="ai"
+                canEdit={true}
+                canUpload={true}
+                onUpload={files => handleFileUpload(files, 'ai')}
+                onDownload={doc => doc.filename && dealsApi.downloadDocument(doc.id, doc.name)}
+                onShare={() => {}}
+                onDelete={doc => handleDeleteDoc(doc.id)}
+                badge="AI Context"
+                emptyText="No AI documents yet. Upload documents here to add them as AI context."
+              />
             </div>
           </div>
 

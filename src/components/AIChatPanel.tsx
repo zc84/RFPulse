@@ -1,18 +1,19 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Send, Bot, User as UserIcon, Loader2, FileText, CheckCircle } from 'lucide-react';
-import { AIMessage } from '../types';
+import { AIMessage, AIChatMessage } from '../types';
 import Button from './Button';
 
 interface AIChatPanelProps {
-  messages: AIMessage[];
+  messages: Array<AIMessage | AIChatMessage>;
   loading: boolean;
   runningAgents?: string[];
   extractedDocs?: { id: string; name: string; size: string; success: boolean }[];
   onSend: (content: string) => void;
   disabled?: boolean;
+  emptyMessage?: string;
 }
 
-function MessageBubble({ message }: { message: AIMessage }) {
+function MessageBubble({ message }: { message: AIMessage | AIChatMessage }) {
   const isCoordinator = message.role === 'coordinator';
   const isAgent = message.role === 'agent';
   const isUser = message.role === 'user';
@@ -44,7 +45,8 @@ function MessageBubble({ message }: { message: AIMessage }) {
   const bg = isCoordinator ? '#F8FAFC' : '#F0FDF4';
   const borderColor = isCoordinator ? '#E2E8F0' : '#BBF7D0';
   const color = '#0F172A';
-  const label = isCoordinator ? 'Coordinator' : message.agent_slug || 'Agent';
+  const agentSlug = 'agent_slug' in message ? message.agent_slug : undefined;
+  const label = isCoordinator ? 'Coordinator' : agentSlug || 'AI Assistant';
 
   return (
     <div style={{ display: 'flex', justifyContent: 'flex-start', marginBottom: 12 }}>
@@ -70,6 +72,7 @@ export default function AIChatPanel({
   extractedDocs,
   onSend,
   disabled,
+  emptyMessage,
 }: AIChatPanelProps) {
   const [input, setInput] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -118,7 +121,7 @@ export default function AIChatPanel({
         {messages.length === 0 && (
           <div style={{ textAlign: 'center', color: '#94A3B8', fontSize: 13, padding: '32px 0' }}>
             <Bot size={32} style={{ margin: '0 auto 12px', opacity: 0.5 }} />
-            <p>Press Start to analyse the deal and begin the conversation.</p>
+            <p>{emptyMessage || 'Press Start to analyse the deal and begin the conversation.'}</p>
           </div>
         )}
         {messages.map(message => (

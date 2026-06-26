@@ -43,6 +43,8 @@ function formatDeal(row) {
     clientName: row.client_name,
     classification: row.classification,
     description: row.description,
+    assigneeId: row.assignee_id ? String(row.assignee_id) : null,
+    assigneeName: row.assignee_name || null,
     createdAt: row.created_at,
   };
 }
@@ -53,6 +55,7 @@ function formatDocument(row) {
     name: row.name,
     size: row.size,
     filename: row.filename,
+    source: row.source || 'user',
     uploadedAt: row.uploaded_at,
   };
 }
@@ -60,7 +63,7 @@ function formatDocument(row) {
 router.get('/', authenticate, async (req, res, next) => {
   try {
     const result = await query(
-      'SELECT * FROM deals ORDER BY created_at DESC'
+      'SELECT d.*, u.name AS assignee_name FROM deals d LEFT JOIN users u ON d.assignee_id = u.id ORDER BY d.created_at DESC'
     );
 
     const dealIds = result.rows.map(r => r.id);
@@ -151,7 +154,7 @@ router.get('/:id', authenticate, async (req, res, next) => {
     const numericId = parseInt(req.params.id.replace('D-', ''), 10);
     if (isNaN(numericId)) return res.status(400).json({ error: 'Invalid deal id' });
 
-    const dealResult = await query('SELECT * FROM deals WHERE id = $1', [numericId]);
+    const dealResult = await query('SELECT d.*, u.name AS assignee_name FROM deals d LEFT JOIN users u ON d.assignee_id = u.id WHERE d.id = $1', [numericId]);
     if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Not found' });
 
     const docResult = await query('SELECT * FROM documents WHERE deal_id = $1', [numericId]);
@@ -167,28 +170,30 @@ router.get('/:id', authenticate, async (req, res, next) => {
 
 router.post('/', authenticate, requireRole('Superadmin', 'Editor'), async (req, res, next) => {
   try {
-    const { name, status, dueDate, budget, domain, clientName, classification, description, documents = [] } = req.body;
+    const { name, status, dueDate, budget, domain, clientName, classification, description, assigneeId, documents = [] } = req.body;
     if (!name || !status || !dueDate || !budget || !domain) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
+    const effectiveAssigneeId = assigneeId || req.user.userId;
+
     const result = await query(
-      `INSERT INTO deals (name, status, due_date, budget, domain, client_name, classification, description)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
-      [name.trim(), status, dueDate, budget, domain, clientName || null, classification || null, description || null]
+      `INSERT INTO deals (name, status, due_date, budget, domain, client_name, classification, description, assignee_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+      [name.trim(), status, dueDate, budget, domain, clientName || null, classification || null, description || null, effectiveAssigneeId]
     );
 
     const dealId = result.rows[0].id;
 
     for (const doc of documents) {
       await query(
-        `INSERT INTO documents (deal_id, name, size, filename, uploaded_at)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [dealId, doc.name, doc.size, doc.filename || null, doc.uploadedAt || doc.uploaded_at]
+        `INSERT INTO documents (deal_id, name, size, filename, source, uploaded_at)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [dealId, doc.name, doc.size, doc.filename || null, doc.source || 'user', doc.uploadedAt || doc.uploaded_at]
       );
     }
 
-    const deal = await query('SELECT * FROM deals WHERE id = $1', [dealId]);
+    const deal = await query('SELECT d.*, u.name AS assignee_name FROM deals d LEFT JOIN users u ON d.assignee_id = u.id WHERE d.id = $1', [dealId]);
     const docs = await query('SELECT * FROM documents WHERE deal_id = $1', [dealId]);
 
     res.status(201).json({
@@ -214,15 +219,16 @@ router.post('/:id/documents', authenticate, requireRole('Superadmin', 'Editor'),
     }
 
     const today = new Date().toISOString().split('T')[0];
+    const source = req.body.source === 'ai' ? 'ai' : 'user';
     const results = [];
     for (const file of files) {
       const size = file.size >= 1024 * 1024
         ? `${(file.size / (1024 * 1024)).toFixed(1)} MB`
         : `${(file.size / 1024).toFixed(0)} KB`;
       const docResult = await query(
-        `INSERT INTO documents (deal_id, name, size, filename, uploaded_at)
-         VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-        [dealId, file.originalname, size, file.filename, today]
+        `INSERT INTO documents (deal_id, name, size, filename, source, uploaded_at)
+         VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+        [dealId, file.originalname, size, file.filename, source, today]
       );
       const inserted = await query('SELECT * FROM documents WHERE id = $1', [docResult.rows[0].id]);
       results.push(formatDocument(inserted.rows[0]));
@@ -239,7 +245,7 @@ router.put('/:id', authenticate, requireRole('Superadmin', 'Editor'), async (req
     const numericId = parseInt(req.params.id.replace('D-', ''), 10);
     if (isNaN(numericId)) return res.status(400).json({ error: 'Invalid deal id' });
 
-    const { name, status, dueDate, budget, domain, clientName, classification, description } = req.body;
+    const { name, status, dueDate, budget, domain, clientName, classification, description, assigneeId } = req.body;
     const existing = await query('SELECT id FROM deals WHERE id = $1', [numericId]);
     if (existing.rows.length === 0) return res.status(404).json({ error: 'Not found' });
 
@@ -252,12 +258,13 @@ router.put('/:id', authenticate, requireRole('Superadmin', 'Editor'), async (req
            domain = $5,
            client_name = $6,
            classification = $7,
-           description = $8
-       WHERE id = $9`,
-      [name?.trim(), status, dueDate, budget, domain, clientName || null, classification || null, description || null, numericId]
+           description = $8,
+           assignee_id = $9
+       WHERE id = $10`,
+      [name?.trim(), status, dueDate, budget, domain, clientName || null, classification || null, description || null, assigneeId || null, numericId]
     );
 
-    const deal = await query('SELECT * FROM deals WHERE id = $1', [numericId]);
+    const deal = await query('SELECT d.*, u.name AS assignee_name FROM deals d LEFT JOIN users u ON d.assignee_id = u.id WHERE d.id = $1', [numericId]);
     const docs = await query('SELECT * FROM documents WHERE deal_id = $1', [numericId]);
 
     res.json({

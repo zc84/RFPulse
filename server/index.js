@@ -6,6 +6,7 @@ import dealsRoutes from './routes/deals.js';
 import usersRoutes from './routes/users.js';
 import agentsRoutes from './routes/agents.js';
 import aiRoutes from './routes/ai.js';
+import debugRoutes from './routes/debug.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -18,6 +19,7 @@ app.use('/api/deals', dealsRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/ai/agents', agentsRoutes);
 app.use('/api/deals/:id/ai', aiRoutes);
+app.use('/api/debug', debugRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok' });

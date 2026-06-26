@@ -11,6 +11,13 @@ const coordinatorSchema = z.object({
   context: z.string().optional(),
 });
 
+const dealPropertiesSchema = z.object({
+  dueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
+  budget: z.number().optional().nullable(),
+  clientName: z.string().optional().nullable(),
+  description: z.string().max(500).optional().nullable(),
+});
+
 const DEFAULT_AGENT_SLUGS = ['coordinator', 'legal', 'architect', 'estimator', 'frontend-dev'];
 
 export async function getOpenAIKey() {
@@ -274,6 +281,47 @@ export async function coordinatorReviewStep(context, draftReport) {
   const titleLine = draftReport.slice(0, titleLineEnd);
   const reportBody = draftReport.slice(titleLineEnd);
   return titleLine + '\n\n' + reviewSection.trim() + '\n' + reportBody;
+}
+
+const DEAL_PROPERTIES_EXTRACTION_PROMPT = `You are a deal-data extraction assistant. You receive the full extracted context of an RFP/tender (deal description plus text from uploaded documents). Your job is to read the context and extract the following deal properties, if they are explicitly stated or strongly implied.
+
+## Properties to extract
+1. **dueDate** — The submission deadline or proposal due date. Format as YYYY-MM-DD. Return null if not found or ambiguous.
+2. **budget** — The total budget or contract value in numeric USD (e.g. 850000). Return null if not found or ambiguous.
+3. **clientName** — The client/organization name issuing the RFP. Return null if not found.
+4. **description** — A concise, meaningful summary of the deal in **at most 3 sentences**. Capture the client's core need, scope, and any critical constraint. Return null if not enough information is available.
+
+## Output format
+Return a JSON object exactly matching this schema:
+{
+  "dueDate": "YYYY-MM-DD" | null,
+  "budget": number | null,
+  "clientName": "string" | null,
+  "description": "string" | null
+}
+
+## Rules
+- Only extract facts that are present in the context. Do not invent values.
+- For budget, ignore currency symbols and convert to a plain number.
+- If a date is relative (e.g. "30 days from now"), return null unless the document explicitly states a calendar date.
+- Keep description focused: what the client wants, why, and any major constraint.`;
+
+export async function extractDealProperties(contextBundle) {
+  const agent = await loadAgentConfig('coordinator');
+  if (!agent) throw new Error('Coordinator agent not found');
+
+  const messages = [
+    {
+      role: 'user',
+      content: ['## Extracted deal context', contextBundle].join('\n\n'),
+    },
+  ];
+
+  const systemPrompt = `${agent.system_prompt}\n\n${DEAL_PROPERTIES_EXTRACTION_PROMPT}`;
+  const raw = await callAgent('coordinator', messages, { systemPrompt, json: true });
+  const parsed = JSON.parse(raw);
+  const validated = dealPropertiesSchema.parse(parsed);
+  return validated;
 }
 
 export async function runAgentPlan(context, conversation, plan) {
