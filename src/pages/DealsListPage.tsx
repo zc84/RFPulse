@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Search, RefreshCw, Plus, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, FileText, Filter } from 'lucide-react';
+import { Search, RefreshCw, Plus, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, FileText, Filter, Lock } from 'lucide-react';
 import { useDeals } from '../context/DealsContext';
 import { useAuth } from '../context/AuthContext';
 import { Deal, DealStatus, User } from '../types';
@@ -34,6 +34,11 @@ export default function DealsListPage() {
   const [search, setSearch] = useState('');
   const [selectedStatuses, setSelectedStatuses] = useState<DealStatus[]>(ALL_STATUSES);
   const [showStatusFilter, setShowStatusFilter] = useState(false);
+  const [selectedAssignees, setSelectedAssignees] = useState<string[]>(() => [
+    ...users.map(u => u.id),
+    'unassigned',
+  ]);
+  const [showAssigneeFilter, setShowAssigneeFilter] = useState(false);
   const [sortField, setSortField] = useState<SortField | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>('asc');
   const [page, setPage] = useState(1);
@@ -66,6 +71,13 @@ export default function DealsListPage() {
     setPage(1);
   };
 
+  const toggleAssignee = (id: string) => {
+    setSelectedAssignees(prev =>
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    );
+    setPage(1);
+  };
+
   const filtered = useMemo(() => {
     let result = deals;
     if (search.trim()) {
@@ -79,8 +91,14 @@ export default function DealsListPage() {
     if (selectedStatuses.length > 0) {
       result = result.filter(d => selectedStatuses.includes(d.status));
     }
+    if (selectedAssignees.length > 0) {
+      result = result.filter(d => {
+        if (!d.assigneeId) return selectedAssignees.includes('unassigned');
+        return selectedAssignees.includes(d.assigneeId);
+      });
+    }
     return result;
-  }, [deals, search, selectedStatuses, refreshKey]);
+  }, [deals, search, selectedStatuses, selectedAssignees, refreshKey]);
 
   const sorted = useMemo(() => {
     const arr = [...filtered];
@@ -234,9 +252,72 @@ export default function DealsListPage() {
             )}
           </div>
 
-          {(search || selectedStatuses.length > 0) && (
+          <div style={{ position: 'relative' }}>
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={<Filter size={13} />}
+              onClick={() => setShowAssigneeFilter(p => !p)}
+            >
+              Assigned {selectedAssignees.length > 0 && `(${selectedAssignees.length})`}
+            </Button>
+            {showAssigneeFilter && (
+              <div style={{
+                position: 'absolute', top: '100%', left: 0, marginTop: 6, zIndex: 20,
+                background: '#fff', border: '1px solid #E2E8F0', borderRadius: 8,
+                padding: 8, boxShadow: '0 4px 12px rgba(0,0,0,0.1)', minWidth: 160,
+              }}>
+                {users.map(u => (
+                  <label key={u.id} style={{
+                    display: 'flex', alignItems: 'center', gap: 8,
+                    padding: '6px 8px', cursor: 'pointer', borderRadius: 5,
+                    fontSize: 13, color: '#374151',
+                  }}
+                  onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#F8FAFC'}
+                  onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = ''}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedAssignees.includes(u.id)}
+                      onChange={() => toggleAssignee(u.id)}
+                      style={{ cursor: 'pointer' }}
+                    />
+                    {u.name}
+                  </label>
+                ))}
+                <label key="unassigned" style={{
+                    display: 'flex', alignItems: 'center', gap: 8,
+                    padding: '6px 8px', cursor: 'pointer', borderRadius: 5,
+                    fontSize: 13, color: '#374151',
+                  }}
+                  onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#F8FAFC'}
+                  onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = ''}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedAssignees.includes('unassigned')}
+                      onChange={() => toggleAssignee('unassigned')}
+                      style={{ cursor: 'pointer' }}
+                    />
+                    Unassigned
+                  </label>
+                {selectedAssignees.length > 0 && (
+                  <button
+                    onClick={() => { setSelectedAssignees([]); setShowAssigneeFilter(false); }}
+                    style={{
+                      width: '100%', marginTop: 4, padding: '5px 8px',
+                      border: 'none', background: 'none', color: '#DC2626',
+                      fontSize: 12, cursor: 'pointer', textAlign: 'left', borderRadius: 5,
+                    }}
+                  >Clear filters</button>
+                )}
+              </div>
+            )}
+          </div>
+
+          {(search || selectedStatuses.length > 0 || selectedAssignees.length > 0) && (
             <button
-              onClick={() => { setSearch(''); setSelectedStatuses([]); setPage(1); }}
+              onClick={() => { setSearch(''); setSelectedStatuses([]); setSelectedAssignees([]); setPage(1); }}
               style={{
                 background: 'none', border: 'none', color: '#94A3B8',
                 fontSize: 12, cursor: 'pointer', padding: '4px 8px',
@@ -275,10 +356,10 @@ export default function DealsListPage() {
                 <FileText size={24} color="#94A3B8" />
               </div>
               <p style={{ color: '#374151', fontWeight: 600, fontSize: 15, marginBottom: 6 }}>
-                {search || selectedStatuses.length > 0 ? 'No deals match your criteria.' : 'No deals added yet.'}
+                {search || selectedStatuses.length > 0 || selectedAssignees.length > 0 ? 'No deals match your criteria.' : 'No deals added yet.'}
               </p>
               <p style={{ color: '#94A3B8', fontSize: 13, marginBottom: 16 }}>
-                {search || selectedStatuses.length > 0
+                {search || selectedStatuses.length > 0 || selectedAssignees.length > 0
                   ? 'Try adjusting your filters or search query.'
                   : 'Get started by adding your first deal.'}
               </p>
@@ -384,6 +465,7 @@ export default function DealsListPage() {
 
 function TableRow({ deal, i, onClick, users, canEdit, onAssigneeChange }: { deal: Deal; i: number; onClick: () => void; users: User[]; canEdit: boolean; onAssigneeChange: (dealId: string, userId: string) => void }) {
   const [hovered, setHovered] = useState(false);
+  const isLocked = !!deal.lock;
 
   const isFinal = deal.status === 'Won' || deal.status === 'Lost';
   const dueDay = new Date(deal.dueDate);
@@ -406,12 +488,13 @@ function TableRow({ deal, i, onClick, users, canEdit, onAssigneeChange }: { deal
 
   return (
     <tr
-      onClick={onClick}
+      onClick={isLocked ? undefined : onClick}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{
         background: hovered ? '#F8FAFC' : i % 2 === 0 ? '#fff' : '#FAFAFA',
-        cursor: 'pointer',
+        cursor: isLocked ? 'not-allowed' : 'pointer',
+        opacity: isLocked ? 0.7 : 1,
         borderBottom: '1px solid #F1F5F9',
         transition: 'background 0.1s',
         animation: 'fadeIn 0.2s ease',
@@ -421,7 +504,19 @@ function TableRow({ deal, i, onClick, users, canEdit, onAssigneeChange }: { deal
         {deal.id}
       </td>
       <td style={{ padding: '12px 16px', fontSize: 13, color: '#0F172A', fontWeight: 500, maxWidth: 260 }}>
-        <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{deal.name}</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden' }}>
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{deal.name}</span>
+          {isLocked && (
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', gap: 3, flexShrink: 0,
+              padding: '2px 6px', borderRadius: 999,
+              background: '#FEF3C7', color: '#B45309', fontSize: 10, fontWeight: 600,
+            }}>
+              <Lock size={10} />
+              {deal.lock?.userName}
+            </span>
+          )}
+        </div>
       </td>
       <td style={{ padding: '12px 16px' }}>
         <StatusBadge status={deal.status} size="sm" />
@@ -444,7 +539,7 @@ function TableRow({ deal, i, onClick, users, canEdit, onAssigneeChange }: { deal
         {deal.clientName || '-'}
       </td>
       <td style={{ padding: '12px 16px' }} onClick={e => e.stopPropagation()}>
-        {canEdit ? (
+        {canEdit && !isLocked ? (
           <select
             value={deal.assigneeId || ''}
             onChange={e => onAssigneeChange(deal.id, e.target.value)}

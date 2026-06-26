@@ -1,0 +1,10 @@
+CREATE TABLE IF NOT EXISTS deal_locks (
+  id SERIAL PRIMARY KEY,
+  deal_id INTEGER NOT NULL UNIQUE REFERENCES deals(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  locked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  last_heartbeat_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_deal_locks_deal_id ON deal_locks(deal_id);
+CREATE INDEX IF NOT EXISTS idx_deal_locks_user_id ON deal_locks(user_id);

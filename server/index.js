@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
+import { query } from './db.js';
 import authRoutes from './routes/auth.js';
 import dealsRoutes from './routes/deals.js';
 import usersRoutes from './routes/users.js';
@@ -30,6 +31,12 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Internal server error' });
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
+  try {
+    await query('DELETE FROM deal_locks');
+    console.log('Cleared deal locks on startup');
+  } catch (err) {
+    console.error('Failed to clear deal locks on startup:', err);
+  }
   console.log(`RFPulse API running on http://localhost:${PORT}`);
 });

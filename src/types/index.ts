@@ -12,6 +12,13 @@ export interface Document {
   uploadedAt: string;
 }
 
+export interface DealLock {
+  userId: string;
+  userName: string;
+  lockedAt: string;
+  lastHeartbeatAt: string;
+}
+
 export interface Deal {
   id: string;
   name: string;
@@ -24,6 +31,7 @@ export interface Deal {
   description?: string;
   assigneeId?: string | null;
   assigneeName?: string | null;
+  lock?: DealLock | null;
   documents: Document[];
   createdAt: string;
 }
@@ -111,6 +119,12 @@ export interface AIMessageResponse {
   finalReportDocumentId?: number;
   proposedUpdates?: ProposedDealUpdates;
   agentOutputs?: Record<string, string>;
+}
+
+export interface AIValidateResponse {
+  documentId: number;
+  documentName: string;
+  dealId: string;
 }
 
 export interface ProposedDealUpdates {

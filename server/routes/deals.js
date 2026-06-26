@@ -60,10 +60,87 @@ function formatDocument(row) {
   };
 }
 
+const LOCK_TTL_MS = 10 * 60 * 1000;
+
+function isLockExpired(lastHeartbeatAt) {
+  if (!lastHeartbeatAt) return true;
+  return Date.now() - new Date(lastHeartbeatAt).getTime() > LOCK_TTL_MS;
+}
+
+function formatLockFromRow(row) {
+  if (!row.lock_user_id || isLockExpired(row.lock_last_heartbeat_at)) return null;
+  return {
+    userId: String(row.lock_user_id),
+    userName: row.lock_user_name,
+    lockedAt: row.lock_locked_at,
+    lastHeartbeatAt: row.lock_last_heartbeat_at,
+  };
+}
+
+async function getActiveLock(dealId) {
+  const result = await query(
+    'SELECT dl.*, u.name AS user_name FROM deal_locks dl JOIN users u ON dl.user_id = u.id WHERE dl.deal_id = $1',
+    [dealId]
+  );
+  if (result.rows.length === 0) return null;
+  const row = result.rows[0];
+  if (isLockExpired(row.last_heartbeat_at)) return null;
+  return {
+    userId: String(row.user_id),
+    userName: row.user_name,
+    lockedAt: row.locked_at,
+    lastHeartbeatAt: row.last_heartbeat_at,
+  };
+}
+
+async function acquireLock(dealId, userId) {
+  const active = await getActiveLock(dealId);
+  if (active && active.userId !== String(userId)) {
+    return { success: false, lock: active };
+  }
+  await query(
+    `INSERT INTO deal_locks (deal_id, user_id, locked_at, last_heartbeat_at)
+     VALUES ($1, $2, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+     ON CONFLICT (deal_id) DO UPDATE
+     SET user_id = EXCLUDED.user_id, locked_at = EXCLUDED.locked_at, last_heartbeat_at = EXCLUDED.last_heartbeat_at`,
+    [dealId, userId]
+  );
+  return { success: true, lock: await getActiveLock(dealId) };
+}
+
+async function heartbeatLock(dealId, userId) {
+  const active = await getActiveLock(dealId);
+  if (!active || active.userId !== String(userId)) {
+    return { success: false, lock: active };
+  }
+  await query(
+    'UPDATE deal_locks SET last_heartbeat_at = CURRENT_TIMESTAMP WHERE deal_id = $1 AND user_id = $2',
+    [dealId, userId]
+  );
+  return { success: true, lock: await getActiveLock(dealId) };
+}
+
+async function releaseLock(dealId, userId) {
+  const active = await getActiveLock(dealId);
+  if (!active) return { success: true, lock: null };
+  if (active.userId !== String(userId)) {
+    return { success: false, lock: active };
+  }
+  await query('DELETE FROM deal_locks WHERE deal_id = $1', [dealId]);
+  return { success: true, lock: null };
+}
+
 router.get('/', authenticate, async (req, res, next) => {
   try {
     const result = await query(
-      'SELECT d.*, u.name AS assignee_name FROM deals d LEFT JOIN users u ON d.assignee_id = u.id ORDER BY d.created_at DESC'
+      `SELECT d.*, u.name AS assignee_name,
+              dl.user_id AS lock_user_id, lu.name AS lock_user_name,
+              dl.locked_at AS lock_locked_at, dl.last_heartbeat_at AS lock_last_heartbeat_at
+       FROM deals d
+       LEFT JOIN users u ON d.assignee_id = u.id
+       LEFT JOIN deal_locks dl ON d.id = dl.deal_id
+       LEFT JOIN users lu ON dl.user_id = lu.id
+       ORDER BY d.created_at DESC`
     );
 
     const dealIds = result.rows.map(r => r.id);
@@ -79,6 +156,7 @@ router.get('/', authenticate, async (req, res, next) => {
 
     const deals = result.rows.map(row => ({
       ...formatDeal(row),
+      lock: formatLockFromRow(row),
       documents: docsByDeal[row.id] || [],
     }));
 
@@ -149,18 +227,77 @@ router.delete('/documents/:id', authenticate, requireRole('Superadmin', 'Editor'
   }
 });
 
+router.post('/:id/lock', authenticate, async (req, res, next) => {
+  try {
+    const numericId = parseInt(req.params.id.replace('D-', ''), 10);
+    if (isNaN(numericId)) return res.status(400).json({ error: 'Invalid deal id' });
+
+    const existing = await query('SELECT id FROM deals WHERE id = $1', [numericId]);
+    if (existing.rows.length === 0) return res.status(404).json({ error: 'Not found' });
+
+    const result = await acquireLock(numericId, req.user.userId);
+    if (!result.success) {
+      return res.status(409).json({ error: 'Deal is locked', lock: result.lock });
+    }
+    res.json({ lock: result.lock });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/:id/unlock', authenticate, async (req, res, next) => {
+  try {
+    const numericId = parseInt(req.params.id.replace('D-', ''), 10);
+    if (isNaN(numericId)) return res.status(400).json({ error: 'Invalid deal id' });
+
+    const result = await releaseLock(numericId, req.user.userId);
+    if (!result.success) {
+      return res.status(409).json({ error: 'Deal is locked by another user', lock: result.lock });
+    }
+    res.json({ lock: null });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/:id/heartbeat', authenticate, async (req, res, next) => {
+  try {
+    const numericId = parseInt(req.params.id.replace('D-', ''), 10);
+    if (isNaN(numericId)) return res.status(400).json({ error: 'Invalid deal id' });
+
+    const result = await heartbeatLock(numericId, req.user.userId);
+    if (!result.success) {
+      return res.status(409).json({ error: 'Deal is locked by another user', lock: result.lock });
+    }
+    res.json({ lock: result.lock });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get('/:id', authenticate, async (req, res, next) => {
   try {
     const numericId = parseInt(req.params.id.replace('D-', ''), 10);
     if (isNaN(numericId)) return res.status(400).json({ error: 'Invalid deal id' });
 
-    const dealResult = await query('SELECT d.*, u.name AS assignee_name FROM deals d LEFT JOIN users u ON d.assignee_id = u.id WHERE d.id = $1', [numericId]);
+    const dealResult = await query(
+      `SELECT d.*, u.name AS assignee_name,
+              dl.user_id AS lock_user_id, lu.name AS lock_user_name,
+              dl.locked_at AS lock_locked_at, dl.last_heartbeat_at AS lock_last_heartbeat_at
+       FROM deals d
+       LEFT JOIN users u ON d.assignee_id = u.id
+       LEFT JOIN deal_locks dl ON d.id = dl.deal_id
+       LEFT JOIN users lu ON dl.user_id = lu.id
+       WHERE d.id = $1`,
+      [numericId]
+    );
     if (dealResult.rows.length === 0) return res.status(404).json({ error: 'Not found' });
 
     const docResult = await query('SELECT * FROM documents WHERE deal_id = $1', [numericId]);
 
     res.json({
       ...formatDeal(dealResult.rows[0]),
+      lock: formatLockFromRow(dealResult.rows[0]),
       documents: docResult.rows.map(formatDocument),
     });
   } catch (err) {

@@ -45,6 +45,17 @@ CREATE INDEX idx_deals_status ON deals(status);
 CREATE INDEX idx_deals_due_date ON deals(due_date);
 CREATE INDEX idx_deals_assignee_id ON deals(assignee_id);
 
+CREATE TABLE deal_locks (
+  id SERIAL PRIMARY KEY,
+  deal_id INTEGER NOT NULL UNIQUE REFERENCES deals(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  locked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  last_heartbeat_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_deal_locks_deal_id ON deal_locks(deal_id);
+CREATE INDEX idx_deal_locks_user_id ON deal_locks(user_id);
+
 CREATE TABLE global_settings (
   id SERIAL PRIMARY KEY,
   key VARCHAR(100) UNIQUE NOT NULL,

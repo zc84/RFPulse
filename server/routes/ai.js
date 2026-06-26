@@ -202,6 +202,59 @@ async function saveFinalReport(dealId, sessionId, markdown) {
   return documentId;
 }
 
+async function loadCompanyProfile() {
+  const result = await query('SELECT * FROM company_profile ORDER BY id LIMIT 1');
+  if (result.rows.length === 0) return null;
+  return result.rows[0].content;
+}
+
+async function deleteValidationReport(dealId) {
+  const validationDocs = await query(
+    'SELECT * FROM documents WHERE deal_id = $1 AND source = $2 AND name = $3',
+    [dealId, 'ai', 'Validation Report.md']
+  );
+  for (const doc of validationDocs.rows) {
+    if (doc.filename) {
+      const filePath = path.join(UPLOAD_DIR, String(dealId), doc.filename);
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    }
+  }
+  if (validationDocs.rows.length > 0) {
+    await query(
+      'DELETE FROM documents WHERE deal_id = $1 AND source = $2 AND name = $3',
+      [dealId, 'ai', 'Validation Report.md']
+    );
+  }
+  return validationDocs.rows;
+}
+
+async function saveValidationReport(dealId, dealName, markdown) {
+  const dealDir = path.join(UPLOAD_DIR, String(dealId));
+  if (!fs.existsSync(dealDir)) {
+    fs.mkdirSync(dealDir, { recursive: true });
+  }
+
+  const filename = `validation-report-${Date.now()}.md`;
+  const filePath = path.join(dealDir, filename);
+  await writeMarkdownChunks(filePath, markdown);
+
+  const sizeBytes = Buffer.byteLength(markdown, 'utf-8');
+  const size = sizeBytes >= 1024 * 1024
+    ? `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`
+    : `${(sizeBytes / 1024).toFixed(0)} KB`;
+  const today = new Date().toISOString().split('T')[0];
+
+  await deleteValidationReport(dealId);
+
+  const docResult = await query(
+    `INSERT INTO documents (deal_id, name, size, filename, source, uploaded_at)
+     VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+    [dealId, 'Validation Report.md', size, filename, 'ai', today]
+  );
+
+  return docResult.rows[0].id;
+}
+
 router.post('/start', authenticate, requireRole('Superadmin', 'Editor'), async (req, res, next) => {
   try {
     await ensureDefaultAgents();
@@ -257,6 +310,53 @@ router.post('/start', authenticate, requireRole('Superadmin', 'Editor'), async (
       extractedDocs: extractedDocs.map(d => ({ id: d.id, name: d.name, size: d.size, success: d.success })),
     });
   } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/validate', authenticate, requireRole('Superadmin', 'Editor'), async (req, res, next) => {
+  try {
+    await ensureDefaultAgents();
+    const dealId = parseDealId(req.params.id);
+    if (!dealId) return res.status(400).json({ error: 'Invalid deal id' });
+
+    const data = await getDealWithDocs(dealId);
+    if (!data) return res.status(404).json({ error: 'Deal not found' });
+
+    const companyProfile = await loadCompanyProfile();
+    if (!companyProfile) {
+      return res.status(500).json({ error: 'Company profile not configured' });
+    }
+
+    const extractedDocs = await buildDealContextBundle(req.params.id, data.documents);
+    const contextBundle = summarizeContextBundle(extractedDocs);
+    const dealName = data.deal.name || 'Untitled Deal';
+
+    const messages = [
+      {
+        role: 'user',
+        content: [
+          '## Company Profile',
+          companyProfile,
+          '## Deal Context',
+          contextBundle,
+          `## Deal Name\n${dealName}`,
+        ].join('\n\n'),
+      },
+    ];
+
+    const reportMarkdown = await callAgent('validator', messages);
+    const documentId = await saveValidationReport(dealId, dealName, reportMarkdown);
+
+    res.json({
+      documentId,
+      documentName: 'Validation Report.md',
+      dealId: req.params.id,
+    });
+  } catch (err) {
+    if (err.message?.includes('OpenAI API key not configured') || err.message?.includes('API key')) {
+      return res.status(400).json({ error: 'OpenAI API key is not configured. Ask a Superadmin to add it in AI Agent Configuration.' });
+    }
     next(err);
   }
 });

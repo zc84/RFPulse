@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { ArrowLeft, Edit2, Trash2, Download, FileText, Calendar, DollarSign, Tag, AlignLeft, Hash, Share2, Copy, X, Building, Sparkles, Bot, BrainCircuit, UserCircle } from 'lucide-react';
+import { ArrowLeft, Edit2, Trash2, Download, FileText, Calendar, DollarSign, Tag, AlignLeft, Hash, Share2, Copy, X, Building, Sparkles, Bot, BrainCircuit, UserCircle, ShieldCheck, Lock } from 'lucide-react';
 import { useDeals } from '../context/DealsContext';
 import { useAuth } from '../context/AuthContext';
 import { dealsApi, aiApi, agentsApi } from '../api';
-import { AIMessage, Document, AIChatMessage, ProposedDealUpdates } from '../types';
+import { AIMessage, Document, AIChatMessage, ProposedDealUpdates, DealLock } from '../types';
 import Header from '../components/Header';
 import StatusBadge from '../components/StatusBadge';
 import Button from '../components/Button';
@@ -53,6 +53,7 @@ export default function DealDetailPage() {
   const [aiMessages, setAiMessages] = useState<AIMessage[]>([]);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiRunningAgents, setAiRunningAgents] = useState<string[]>([]);
+  const [validating, setValidating] = useState(false);
   const [aiExtractedDocs, setAiExtractedDocs] = useState<{ id: string; name: string; size: string; success: boolean }[]>([]);
   const [aiKeyMissing, setAiKeyMissing] = useState(false);
   const [aiKeyValid, setAiKeyValid] = useState<boolean | null>(null);
@@ -65,11 +66,36 @@ export default function DealDetailPage() {
   const [proposedUpdates, setProposedUpdates] = useState<ProposedDealUpdates | null>(null);
 
   const [aiDocConfirm, setAiDocConfirm] = useState<{ show: boolean; names: string[] }>({ show: false, names: [] });
+  const [lockStatus, setLockStatus] = useState<'loading' | 'locked' | 'blocked' | 'error'>('loading');
+  const [lockInfo, setLockInfo] = useState<DealLock | null>(null);
 
   const deal = getDeal(id!);
   const canEdit = isRole('Superadmin', 'Editor');
   const canRunAI = canEdit && aiKeyValid === true;
   const hasAiDocs = deal ? deal.documents.some(d => d.source === 'ai') : false;
+
+  const loadAISession = async () => {
+    if (!id) return;
+    try {
+      const data = await aiApi.getSession(id);
+      if (data.session) {
+        setAiSessionId(data.session.id);
+        setAiMessages(data.messages);
+      }
+    } catch {
+      // No existing session is fine.
+    }
+  };
+
+  const loadAIChat = async () => {
+    if (!id) return;
+    try {
+      const data = await aiApi.getChat(id);
+      setAiChatMessages(data.messages);
+    } catch {
+      // No chat history is fine.
+    }
+  };
 
   useEffect(() => {
     if (id) loadAISession();
@@ -79,6 +105,68 @@ export default function DealDetailPage() {
   useEffect(() => {
     if (hasAiDocs && id) loadAIChat();
   }, [hasAiDocs, id]);
+
+  useEffect(() => {
+    if (!id) return;
+
+    let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
+    let hasLock = false;
+
+    const acquireLock = async () => {
+      try {
+        const data = await dealsApi.lock(id);
+        hasLock = true;
+        setLockStatus('locked');
+        setLockInfo(data.lock);
+        heartbeatInterval = setInterval(() => {
+          dealsApi.heartbeat(id).catch((err: any) => {
+            if (err.status === 409) {
+              setLockStatus('blocked');
+              setLockInfo(err.data?.lock || null);
+              if (heartbeatInterval) {
+                clearInterval(heartbeatInterval);
+                heartbeatInterval = null;
+              }
+            }
+          });
+        }, 2 * 60 * 1000);
+      } catch (err: any) {
+        if (err.status === 409) {
+          setLockStatus('blocked');
+          setLockInfo(err.data?.lock || null);
+        } else if (err.status === 404) {
+          setLockStatus('error');
+        } else {
+          setLockStatus('error');
+        }
+      }
+    };
+
+    acquireLock();
+
+    const handleBeforeUnload = () => {
+      if (!hasLock) return;
+      const apiBase = import.meta.env.VITE_API_URL || (window.location.origin + '/api');
+      const token = localStorage.getItem('rfpulse_token');
+      fetch(`${apiBase}/deals/${id}/unlock`, {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        keepalive: true,
+      }).catch(() => {});
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      if (heartbeatInterval) {
+        clearInterval(heartbeatInterval);
+      }
+      if (hasLock) {
+        dealsApi.unlock(id).catch(() => {});
+      }
+    };
+  }, [id]);
 
   const validateAIKey = async () => {
     try {
@@ -93,12 +181,66 @@ export default function DealDetailPage() {
     }
   };
 
-  if (!deal) {
+  if (lockStatus === 'loading') {
+    return (
+      <div style={{ minHeight: '100vh', background: '#F8FAFC' }}>
+        <Header />
+        <div style={{ padding: 64, textAlign: 'center' }}>
+          <div style={{
+            display: 'inline-block', width: 32, height: 32, borderRadius: '50%',
+            border: '3px solid #E2E8F0', borderTopColor: '#2563EB',
+            animation: 'spin 0.8s linear infinite', marginBottom: 12,
+          }} />
+          <div style={{ color: '#64748B', fontSize: 13 }}>Checking deal availability…</div>
+        </div>
+      </div>
+    );
+  }
+
+  if (lockStatus === 'blocked') {
+    return (
+      <div style={{ minHeight: '100vh', background: '#F8FAFC' }}>
+        <Header />
+        <main style={{ flex: 1, padding: '24px', maxWidth: 900, margin: '0 auto', width: '100%' }}>
+          <Link to="/deals" style={{
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+            color: '#64748B', fontSize: 13, marginBottom: 20,
+            textDecoration: 'none', fontWeight: 500,
+          }}
+          onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = '#2563EB'}
+          onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = '#64748B'}
+          >
+            <ArrowLeft size={14} /> Back to deals
+          </Link>
+          <div style={{
+            background: '#fff', border: '1px solid #E2E8F0', borderRadius: 12,
+            padding: '48px', textAlign: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+          }}>
+            <div style={{
+              width: 56, height: 56, borderRadius: '50%',
+              background: '#FEF3C7', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              margin: '0 auto 16px',
+            }}>
+              <Lock size={24} color="#B45309" />
+            </div>
+            <h2 style={{ fontSize: 16, fontWeight: 600, color: '#0F172A', marginBottom: 6 }}>
+              Deal is currently blocked
+            </h2>
+            <p style={{ color: '#64748B', fontSize: 14 }}>
+              {lockInfo?.userName ? `Opened by ${lockInfo.userName}.` : 'Opened by another user.'}
+            </p>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  if (lockStatus === 'error' || !deal) {
     return (
       <div style={{ minHeight: '100vh', background: '#F8FAFC' }}>
         <Header />
         <div style={{ padding: 48, textAlign: 'center' }}>
-          <p style={{ color: '#64748B', fontSize: 15 }}>Deal not found.</p>
+          <p style={{ color: '#64748B', fontSize: 15 }}>{lockStatus === 'error' ? 'Unable to open this deal.' : 'Deal not found.'}</p>
           <Link to="/deals" style={{ color: '#2563EB', fontSize: 13, marginTop: 12, display: 'inline-block' }}>
             ← Back to deals
           </Link>
@@ -138,29 +280,6 @@ export default function DealDetailPage() {
     toast.success('Share URL copied to clipboard');
   };
 
-  const loadAISession = async () => {
-    if (!id) return;
-    try {
-      const data = await aiApi.getSession(id);
-      if (data.session) {
-        setAiSessionId(data.session.id);
-        setAiMessages(data.messages);
-      }
-    } catch {
-      // No existing session is fine.
-    }
-  };
-
-  const loadAIChat = async () => {
-    if (!id) return;
-    try {
-      const data = await aiApi.getChat(id);
-      setAiChatMessages(data.messages);
-    } catch {
-      // No chat history is fine.
-    }
-  };
-
   const startAIWithForce = async (force: boolean) => {
     if (!id || !canRunAI) return;
     setShowAIPanel(true);
@@ -198,6 +317,29 @@ export default function DealDetailPage() {
   };
 
   const handleStartAI = async () => startAIWithForce(false);
+
+  const handleValidate = async () => {
+    if (!id || !canRunAI) return;
+    setShowAIPanel(true);
+    setValidating(true);
+    setAiRunningAgents(['validator']);
+    setAiKeyMissing(false);
+    const aiPanel = document.getElementById('ai-assistant-panel');
+    if (aiPanel) aiPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    try {
+      const result = await aiApi.validate(id);
+      await refreshDeals();
+      toast.success(`Validation report saved: ${result.documentName}`);
+    } catch (err: any) {
+      if (err.message?.includes('API key') || err.message?.includes('not configured')) {
+        setAiKeyMissing(true);
+      }
+      toast.error(err.message || 'Failed to validate deal');
+    } finally {
+      setValidating(false);
+      setAiRunningAgents([]);
+    }
+  };
 
   const handleConfirmAiDocRestart = async () => {
     setAiDocConfirm({ show: false, names: [] });
@@ -342,6 +484,18 @@ export default function DealDetailPage() {
                     {aiSessionId ? 'Continue AI' : 'Execute AI'}
                   </Button>
                 </span>
+                <span title={aiKeyValid === false ? (aiKeyError || 'OpenAI API key is not configured') : ''}>
+                  <Button
+                    variant="outline"
+                    icon={<ShieldCheck size={13} />}
+                    onClick={handleValidate}
+                    loading={validating}
+                    disabled={validating || aiKeyValid === false}
+                    style={{ width: '100%' }}
+                  >
+                    Validate
+                  </Button>
+                </span>
                 <Button
                   variant="secondary"
                   icon={<Edit2 size={13} />}
@@ -363,7 +517,7 @@ export default function DealDetailPage() {
 
         {/* AI assistant panel */}
         {showAIPanel && (
-          <div style={{
+          <div id="ai-assistant-panel" style={{
             background: '#fff', border: '1px solid #E2E8F0', borderRadius: 12,
             marginBottom: 16, boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
             overflow: 'hidden',
@@ -388,11 +542,12 @@ export default function DealDetailPage() {
             <div style={{ height: 420 }}>
               <AIChatPanel
                 messages={aiMessages}
-                loading={aiLoading}
+                loading={aiLoading || validating}
                 runningAgents={aiRunningAgents}
                 extractedDocs={aiExtractedDocs}
                 onSend={handleSendMessage}
-                disabled={aiKeyMissing}
+                disabled={aiKeyMissing || validating}
+                emptyMessage="Run Execute AI to generate an assessment report, or Validate to generate a fit-gap validation report against Andersen Lab capabilities."
               />
             </div>
             {aiKeyMissing && (
@@ -470,7 +625,7 @@ export default function DealDetailPage() {
             onShare={handleShare}
             onDelete={doc => setDocToDelete({ id: doc.id, name: doc.name })}
             badge="AI Context"
-            emptyText="No AI documents yet. Run Execute AI to generate an assessment report, or upload documents here to add them as AI context."
+            emptyText="No AI documents yet. Run Execute AI to generate an assessment report, or click Validate to generate a validation report against Andersen Lab capabilities. You can also upload documents here to add them as AI context."
           />
         </div>
 

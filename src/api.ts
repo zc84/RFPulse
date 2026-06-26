@@ -1,4 +1,4 @@
-import { User, Agent, GlobalAISettings, AIMessage, AIStartResponse, AIMessageResponse, AISessionResponse, AIChatMessage } from './types';
+import { User, Agent, GlobalAISettings, AIMessage, AIStartResponse, AIMessageResponse, AISessionResponse, AIChatMessage, AIValidateResponse, DealLock, Deal } from './types';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
@@ -23,8 +23,10 @@ async function apiFetch(path: string, options: RequestInit = {}) {
   const data = contentType.includes('application/json') ? await response.json() : null;
 
   if (!response.ok) {
-    const error = data?.error || `HTTP ${response.status}`;
-    throw new Error(error);
+    const error = new Error(data?.error || `HTTP ${response.status}`);
+    (error as any).data = data;
+    (error as any).status = response.status;
+    throw error;
   }
 
   return data;
@@ -49,6 +51,12 @@ export const dealsApi = {
     apiFetch(`/deals/${id}`, { method: 'PUT', body: JSON.stringify(updates) }),
   delete: (id: string) =>
     apiFetch(`/deals/${id}`, { method: 'DELETE' }),
+  lock: (id: string) =>
+    apiFetch(`/deals/${id}/lock`, { method: 'POST' }) as Promise<{ lock: DealLock | null }>,
+  unlock: (id: string) =>
+    apiFetch(`/deals/${id}/unlock`, { method: 'POST' }) as Promise<{ lock: DealLock | null }>,
+  heartbeat: (id: string) =>
+    apiFetch(`/deals/${id}/heartbeat`, { method: 'POST' }) as Promise<{ lock: DealLock | null }>,
   uploadDocuments: (dealId: string, files: File[], source: 'user' | 'ai' = 'user') => {
     const formData = new FormData();
     files.forEach(f => formData.append('files', f));
@@ -116,6 +124,8 @@ export const aiApi = {
     apiFetch(`/deals/${dealId}/ai/chat`) as Promise<{ messages: AIChatMessage[] }>,
   sendChat: (dealId: string, content: string) =>
     apiFetch(`/deals/${dealId}/ai/chat`, { method: 'POST', body: JSON.stringify({ content }) }) as Promise<{ messages: AIChatMessage[] }>,
+  validate: (dealId: string) =>
+    apiFetch(`/deals/${dealId}/ai/validate`, { method: 'POST' }) as Promise<AIValidateResponse>,
 };
 
 export interface AIDemoStartResponse {
