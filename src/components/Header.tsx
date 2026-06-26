@@ -1,6 +1,6 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { LogOut, Users, Zap, Bot, Bug } from 'lucide-react';
+import { LogOut, Settings, Zap, UserCircle } from 'lucide-react';
 
 export default function Header() {
   const { currentUser, logout } = useAuth();
@@ -40,7 +40,7 @@ export default function Header() {
       <nav style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
         {currentUser?.role === 'Superadmin' && (
           <>
-            <Link to="/users" style={{
+            <Link to="/platform-config" style={{
               display: 'flex', alignItems: 'center', gap: 6,
               padding: '6px 12px', borderRadius: 6,
               color: '#94A3B8', fontSize: 13, fontWeight: 500,
@@ -54,42 +54,8 @@ export default function Header() {
               (e.currentTarget as HTMLElement).style.background = 'transparent';
               (e.currentTarget as HTMLElement).style.color = '#94A3B8';
             }}>
-              <Users size={14} />
-              User Management
-            </Link>
-            <Link to="/agents" style={{
-              display: 'flex', alignItems: 'center', gap: 6,
-              padding: '6px 12px', borderRadius: 6,
-              color: '#94A3B8', fontSize: 13, fontWeight: 500,
-              textDecoration: 'none', transition: 'all 0.15s',
-            }}
-            onMouseEnter={e => {
-              (e.currentTarget as HTMLElement).style.background = '#1E293B';
-              (e.currentTarget as HTMLElement).style.color = '#F8FAFC';
-            }}
-            onMouseLeave={e => {
-              (e.currentTarget as HTMLElement).style.background = 'transparent';
-              (e.currentTarget as HTMLElement).style.color = '#94A3B8';
-            }}>
-              <Bot size={14} />
-              AI Settings
-            </Link>
-            <Link to="/ai-debug" style={{
-              display: 'flex', alignItems: 'center', gap: 6,
-              padding: '6px 12px', borderRadius: 6,
-              color: '#94A3B8', fontSize: 13, fontWeight: 500,
-              textDecoration: 'none', transition: 'all 0.15s',
-            }}
-            onMouseEnter={e => {
-              (e.currentTarget as HTMLElement).style.background = '#1E293B';
-              (e.currentTarget as HTMLElement).style.color = '#F8FAFC';
-            }}
-            onMouseLeave={e => {
-              (e.currentTarget as HTMLElement).style.background = 'transparent';
-              (e.currentTarget as HTMLElement).style.color = '#94A3B8';
-            }}>
-              <Bug size={14} />
-              AI Debug
+              <Settings size={14} />
+              Platform Configuration
             </Link>
           </>
         )}
@@ -100,18 +66,27 @@ export default function Header() {
           borderLeft: '1px solid #1E293B',
           marginLeft: 4,
         }}>
-          <div style={{ textAlign: 'right' }}>
-            <div style={{ color: '#F8FAFC', fontSize: 13, fontWeight: 500 }}>{currentUser?.name}</div>
-            <div style={{ color: '#64748B', fontSize: 11 }}>{currentUser?.role}</div>
-          </div>
-          <div style={{
-            width: 30, height: 30, borderRadius: '50%',
-            background: 'linear-gradient(135deg, #2563EB, #7C3AED)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            color: '#fff', fontSize: 12, fontWeight: 700,
-          }}>
-            {currentUser?.name.charAt(0)}
-          </div>
+          <Link to="/profile" style={{
+            display: 'flex', alignItems: 'center', gap: 10,
+            textDecoration: 'none', padding: '4px 6px', borderRadius: 8,
+          }}
+          title="My profile"
+          onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#1E293B'}
+          onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}
+          >
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ color: '#F8FAFC', fontSize: 13, fontWeight: 500 }}>{currentUser?.name}</div>
+              <div style={{ color: '#64748B', fontSize: 11 }}>{currentUser?.role}</div>
+            </div>
+            <div style={{
+              width: 30, height: 30, borderRadius: '50%',
+              background: 'linear-gradient(135deg, #2563EB, #7C3AED)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: '#fff', fontSize: 12, fontWeight: 700,
+            }}>
+              {currentUser?.name.charAt(0) || <UserCircle size={15} />}
+            </div>
+          </Link>
           <button
             onClick={handleLogout}
             title="Logout"

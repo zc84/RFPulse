@@ -12,7 +12,7 @@ export default function FormField({ label, error, required, children, hint }: Fo
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
       <label style={{
-        fontSize: 13, fontWeight: 500, color: '#374151',
+        fontSize: 13, fontWeight: 700, color: '#374151',
         display: 'flex', alignItems: 'center', gap: 4,
       }}>
         {label}

@@ -2,7 +2,7 @@ export const DEFAULT_AGENTS = [
   {
     slug: 'coordinator',
     name: 'Coordinator',
-    model: 'gpt-4.1',
+    model: 'gpt-5.5',
     system_prompt: `You are the Coordinator, an expert RFP/Tender response strategist. You receive the full extracted deal context from the system (deal description plus plain text extracted from uploaded documents). Your job is to read this context, extract the important facts, and produce a structured summary for the specialist agents.
 
 ## Your responsibilities
@@ -45,7 +45,7 @@ Think step-by-step before responding:
   {
     slug: 'legal',
     name: 'Legal',
-    model: 'gpt-4.5-preview',
+    model: 'gpt-5.5',
     system_prompt: `You are a Senior Legal & Procurement Analyst reviewing an RFP/Tender. You receive only the Coordinator's structured summary of the relevant facts; you do not have access to any other deal data or documents.
 
 ## Your responsibilities
@@ -95,7 +95,7 @@ Use this exact structure:
   {
     slug: 'architect',
     name: 'Architect',
-    model: 'gpt-4.5-preview',
+    model: 'gpt-5.5',
     system_prompt: `You are a Senior Solution Architect. You receive only the Coordinator's structured summary of the relevant technical, functional, and non-functional requirements; you do not have access to any other deal data or documents.
 
 ## Your responsibilities
@@ -165,7 +165,7 @@ Phase I, II, III... with duration, key deliverables, and major dependencies for 
   {
     slug: 'estimator',
     name: 'Estimator',
-    model: 'o4-mini',
+    model: 'gpt-5.5',
     system_prompt: `You are a Senior Estimator. You receive only the Coordinator's structured summary of the scope, deliverables, and constraints; you do not have access to any other deal data or documents. Your effort estimate and team composition are critical inputs to the bid decision, so be realistic, conservative, and transparent.
 
 ## Your responsibilities
@@ -231,7 +231,7 @@ Use this exact structure:
   {
     slug: 'copywriter',
     name: 'Copywriter',
-    model: 'gpt-4.5-preview',
+    model: 'gpt-5.5',
     system_prompt: `You are a Senior Proposal Writer. You receive the Coordinator's summary of the deal plus the outputs from the Legal, Architect, and Estimator agents; you do not have access to any other deal data or documents.
 
 ## Your responsibilities
@@ -312,13 +312,13 @@ Return a single Markdown document with this exact structure:
     top_p: 1,
     presence_penalty: 0,
     frequency_penalty: 0.1,
-    is_enabled: false,
+    is_enabled: true,
     sort_order: 4,
   },
   {
     slug: 'frontend-dev',
     name: 'UI Developer',
-    model: 'o4-mini',
+    model: 'gpt-5.5-codex',
     system_prompt: `You are a Senior Frontend Engineer. You receive the Coordinator's summary and the final assessment report; you do not have access to any other deal data or documents.
 
 ## Your responsibilities
@@ -372,7 +372,7 @@ One sentence describing what the prototype proves.
   {
     slug: 'validator',
     name: 'Validator',
-    model: 'o4-mini',
+    model: 'gpt-5.5',
     system_prompt: `You are a senior bid-validation strategist for Andersen Lab. You receive two inputs: (1) the full extracted context of an RFP/Tender opportunity, and (2) the Andersen Lab company profile. Your job is to compare the opportunity against Andersen Lab's actual capabilities, footprint, and experience, and produce a rigorous, professional validation report that helps leadership decide whether to pursue the tender.
 
 ## Your responsibilities
@@ -463,7 +463,7 @@ Use this exact structure:
   {
     slug: 'chat-agent',
     name: 'AI Document Assistant',
-    model: 'gpt-4.1',
+    model: 'gpt-5.4-mini',
     system_prompt: `You are an AI Document Assistant embedded in a deal management system. You help users understand and improve the AI-generated documents for an RFP/Tender opportunity.
 
 ## Your primary context

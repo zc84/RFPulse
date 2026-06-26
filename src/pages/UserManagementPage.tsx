@@ -40,7 +40,7 @@ interface UserForm {
 
 const emptyForm = (): UserForm => ({ name: '', email: '', password: '', confirmPassword: '', role: 'Editor' });
 
-export default function UserManagementPage() {
+export default function UserManagementPage({ embedded = false }: { embedded?: boolean } = {}) {
   const { users, currentUser, addUser, updateUser, deleteUser } = useAuth();
   const [showModal, setShowModal] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
@@ -118,11 +118,11 @@ export default function UserManagementPage() {
   };
 
   return (
-    <div style={{ minHeight: '100vh', background: '#F8FAFC', display: 'flex', flexDirection: 'column' }}>
-      <Header />
+    <div style={{ minHeight: embedded ? undefined : '100vh', background: '#F8FAFC', display: 'flex', flexDirection: 'column' }}>
+      {!embedded && <Header />}
 
-      <main style={{ flex: 1, padding: '24px', maxWidth: 900, margin: '0 auto', width: '100%' }}>
-        <Link to="/deals" style={{
+      <main style={{ flex: 1, padding: embedded ? 0 : '24px', maxWidth: embedded ? 'none' : 900, margin: '0 auto', width: '100%' }}>
+        {!embedded && <Link to="/deals" style={{
           display: 'inline-flex', alignItems: 'center', gap: 6,
           color: '#64748B', fontSize: 13, marginBottom: 20,
           textDecoration: 'none', fontWeight: 500,
@@ -131,7 +131,7 @@ export default function UserManagementPage() {
         onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = '#64748B'}
         >
           <ArrowLeft size={14} /> Back to deals
-        </Link>
+        </Link>}
 
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>
           <div>

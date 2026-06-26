@@ -7,7 +7,7 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const UPLOAD_DIR = path.join(__dirname, '..', 'uploads');
+const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(__dirname, '..', 'uploads');
 if (!fs.existsSync(UPLOAD_DIR)) {
   fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 }
@@ -32,18 +32,28 @@ const upload = multer({ storage, limits: { fileSize: 20 * 1024 * 1024 } });
 
 const router = Router();
 
+function formatUserId(id) {
+  return `U-${String(id).padStart(3, '0')}`;
+}
+
+function parseUserId(id) {
+  if (id === undefined || id === null || id === '') return null;
+  const numericId = parseInt(String(id).replace('U-', ''), 10);
+  return Number.isNaN(numericId) ? NaN : numericId;
+}
+
 function formatDeal(row) {
   return {
     id: `D-${String(row.id).padStart(3, '0')}`,
     name: row.name,
     status: row.status,
     dueDate: row.due_date ? (() => { const d = new Date(row.due_date); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; })() : null,
-    budget: Number(row.budget),
+    budget: row.budget === null ? null : Number(row.budget),
     domain: row.domain,
     clientName: row.client_name,
     classification: row.classification,
     description: row.description,
-    assigneeId: row.assignee_id ? String(row.assignee_id) : null,
+    assigneeId: row.assignee_id ? formatUserId(row.assignee_id) : null,
     assigneeName: row.assignee_name || null,
     createdAt: row.created_at,
   };
@@ -70,7 +80,7 @@ function isLockExpired(lastHeartbeatAt) {
 function formatLockFromRow(row) {
   if (!row.lock_user_id || isLockExpired(row.lock_last_heartbeat_at)) return null;
   return {
-    userId: String(row.lock_user_id),
+    userId: formatUserId(row.lock_user_id),
     userName: row.lock_user_name,
     lockedAt: row.lock_locked_at,
     lastHeartbeatAt: row.lock_last_heartbeat_at,
@@ -86,7 +96,7 @@ async function getActiveLock(dealId) {
   const row = result.rows[0];
   if (isLockExpired(row.last_heartbeat_at)) return null;
   return {
-    userId: String(row.user_id),
+    userId: formatUserId(row.user_id),
     userName: row.user_name,
     lockedAt: row.locked_at,
     lastHeartbeatAt: row.last_heartbeat_at,
@@ -95,7 +105,7 @@ async function getActiveLock(dealId) {
 
 async function acquireLock(dealId, userId) {
   const active = await getActiveLock(dealId);
-  if (active && active.userId !== String(userId)) {
+  if (active && active.userId !== formatUserId(userId)) {
     return { success: false, lock: active };
   }
   await query(
@@ -110,7 +120,7 @@ async function acquireLock(dealId, userId) {
 
 async function heartbeatLock(dealId, userId) {
   const active = await getActiveLock(dealId);
-  if (!active || active.userId !== String(userId)) {
+  if (!active || active.userId !== formatUserId(userId)) {
     return { success: false, lock: active };
   }
   await query(
@@ -123,7 +133,7 @@ async function heartbeatLock(dealId, userId) {
 async function releaseLock(dealId, userId) {
   const active = await getActiveLock(dealId);
   if (!active) return { success: true, lock: null };
-  if (active.userId !== String(userId)) {
+  if (active.userId !== formatUserId(userId)) {
     return { success: false, lock: active };
   }
   await query('DELETE FROM deal_locks WHERE deal_id = $1', [dealId]);
@@ -308,16 +318,24 @@ router.get('/:id', authenticate, async (req, res, next) => {
 router.post('/', authenticate, requireRole('Superadmin', 'Editor'), async (req, res, next) => {
   try {
     const { name, status, dueDate, budget, domain, clientName, classification, description, assigneeId, documents = [] } = req.body;
-    if (!name || !status || !dueDate || !budget || !domain) {
+    if (!name || !status || !dueDate || !domain) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
+    const normalizedBudget = budget === undefined || budget === null || budget === '' ? null : Number(budget);
+    if (normalizedBudget !== null && (!Number.isFinite(normalizedBudget) || normalizedBudget <= 0)) {
+      return res.status(400).json({ error: 'Invalid budget' });
+    }
 
-    const effectiveAssigneeId = assigneeId || req.user.userId;
+    const parsedAssigneeId = parseUserId(assigneeId);
+    if (Number.isNaN(parsedAssigneeId)) {
+      return res.status(400).json({ error: 'Invalid assignee id' });
+    }
+    const effectiveAssigneeId = parsedAssigneeId || req.user.userId;
 
     const result = await query(
       `INSERT INTO deals (name, status, due_date, budget, domain, client_name, classification, description, assignee_id)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
-      [name.trim(), status, dueDate, budget, domain, clientName || null, classification || null, description || null, effectiveAssigneeId]
+      [name.trim(), status, dueDate, normalizedBudget, domain, clientName || null, classification || null, description || null, effectiveAssigneeId]
     );
 
     const dealId = result.rows[0].id;
@@ -383,8 +401,31 @@ router.put('/:id', authenticate, requireRole('Superadmin', 'Editor'), async (req
     if (isNaN(numericId)) return res.status(400).json({ error: 'Invalid deal id' });
 
     const { name, status, dueDate, budget, domain, clientName, classification, description, assigneeId } = req.body;
-    const existing = await query('SELECT id FROM deals WHERE id = $1', [numericId]);
+    const existing = await query('SELECT * FROM deals WHERE id = $1', [numericId]);
     if (existing.rows.length === 0) return res.status(404).json({ error: 'Not found' });
+    const existingDeal = existing.rows[0];
+    const has = (field) => Object.prototype.hasOwnProperty.call(req.body, field);
+
+    const nextName = has('name') ? name?.trim() : existingDeal.name;
+    const nextStatus = has('status') ? status : existingDeal.status;
+    const nextDueDate = has('dueDate') ? dueDate : existingDeal.due_date;
+    const nextDomain = has('domain') ? domain : existingDeal.domain;
+    const nextClientName = has('clientName') ? clientName || null : existingDeal.client_name;
+    const nextClassification = has('classification') ? classification || null : existingDeal.classification;
+    const nextDescription = has('description') ? description || null : existingDeal.description;
+    const parsedAssigneeId = has('assigneeId') ? parseUserId(assigneeId) : existingDeal.assignee_id;
+    if (Number.isNaN(parsedAssigneeId)) {
+      return res.status(400).json({ error: 'Invalid assignee id' });
+    }
+    const normalizedBudget = has('budget')
+      ? (budget === undefined || budget === null || budget === '' ? null : Number(budget))
+      : (existingDeal.budget === null ? null : Number(existingDeal.budget));
+    if (normalizedBudget !== null && (!Number.isFinite(normalizedBudget) || normalizedBudget <= 0)) {
+      return res.status(400).json({ error: 'Invalid budget' });
+    }
+    if (!nextName || !nextStatus || !nextDueDate || !nextDomain) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
 
     await query(
       `UPDATE deals
@@ -398,7 +439,7 @@ router.put('/:id', authenticate, requireRole('Superadmin', 'Editor'), async (req
            description = $8,
            assignee_id = $9
        WHERE id = $10`,
-      [name?.trim(), status, dueDate, budget, domain, clientName || null, classification || null, description || null, assigneeId || null, numericId]
+      [nextName, nextStatus, nextDueDate, normalizedBudget, nextDomain, nextClientName, nextClassification, nextDescription, parsedAssigneeId, numericId]
     );
 
     const deal = await query('SELECT d.*, u.name AS assignee_name FROM deals d LEFT JOIN users u ON d.assignee_id = u.id WHERE d.id = $1', [numericId]);

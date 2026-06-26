@@ -1,15 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { ArrowLeft, Bot, Edit2, KeyRound, HelpCircle, Save, Loader2 } from 'lucide-react';
-import { Agent, GlobalAISettings } from '../types';
+import { ArrowLeft, Bot, Edit2, KeyRound, HelpCircle, Save, Loader2, RefreshCw } from 'lucide-react';
+import { Agent, GlobalAISettings, OpenAIModel } from '../types';
 import { agentsApi } from '../api';
 import Header from '../components/Header';
 import Button from '../components/Button';
 import Modal from '../components/Modal';
 import FormField, { Input, Select } from '../components/FormField';
-
-const MODEL_OPTIONS = ['gpt-4.1', 'gpt-4o', 'gpt-4o-mini', 'o4-mini', 'o3-mini', 'gpt-4.5-preview'];
 
 const LLM_PARAM_HINTS: Record<string, { text: string; range: string }> = {
   temperature: { text: 'Lower = more focused answers. Higher = more creative answers.', range: '0 – 2' },
@@ -53,11 +51,14 @@ function InfoTooltip({ text, range }: { text: string; range: string }) {
   );
 }
 
-export default function AgentManagementPage() {
+export default function AgentManagementPage({ embedded = false }: { embedded?: boolean } = {}) {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [loading, setLoading] = useState(true);
   const [settings, setSettings] = useState<GlobalAISettings | null>(null);
   const [apiKey, setApiKey] = useState('');
+  const [models, setModels] = useState<OpenAIModel[]>([]);
+  const [modelsLoading, setModelsLoading] = useState(false);
+  const [modelsError, setModelsError] = useState<string | null>(null);
   const [savingKey, setSavingKey] = useState(false);
   const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
   const [form, setForm] = useState<Partial<Agent>>({});
@@ -70,10 +71,31 @@ export default function AgentManagementPage() {
       setAgents(agentsData);
       setSettings(settingsData);
       setApiKey('');
+      if (settingsData.has_key) {
+        await loadModels();
+      } else {
+        setModels([]);
+        setModelsError(null);
+      }
     } catch (err) {
       toast.error('Failed to load agents.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadModels = async () => {
+    setModelsLoading(true);
+    setModelsError(null);
+    try {
+      const data = await agentsApi.getModels();
+      setModels(data.models);
+    } catch (err: any) {
+      const message = err.message || 'Failed to load OpenAI models.';
+      setModels([]);
+      setModelsError(message);
+    } finally {
+      setModelsLoading(false);
     }
   };
 
@@ -131,12 +153,18 @@ export default function AgentManagementPage() {
     setForm(p => ({ ...p, [field]: value }));
   };
 
-  return (
-    <div style={{ minHeight: '100vh', background: '#F8FAFC', display: 'flex', flexDirection: 'column' }}>
-      <Header />
+  const modelOptions = Array.from(new Set([
+    ...(form.model ? [form.model] : []),
+    ...agents.map(agent => agent.model).filter(Boolean),
+    ...models.map(model => model.id),
+  ])).sort((a, b) => a.localeCompare(b));
 
-      <main style={{ flex: 1, padding: '24px', maxWidth: 1000, margin: '0 auto', width: '100%' }}>
-        <Link to="/deals" style={{
+  return (
+    <div style={{ minHeight: embedded ? undefined : '100vh', background: '#F8FAFC', display: 'flex', flexDirection: 'column' }}>
+      {!embedded && <Header />}
+
+      <main style={{ flex: 1, padding: embedded ? 0 : '24px', maxWidth: embedded ? 'none' : 1000, margin: '0 auto', width: '100%' }}>
+        {!embedded && <Link to="/deals" style={{
           display: 'inline-flex', alignItems: 'center', gap: 6,
           color: '#64748B', fontSize: 13, marginBottom: 20,
           textDecoration: 'none', fontWeight: 500,
@@ -145,11 +173,11 @@ export default function AgentManagementPage() {
         onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = '#64748B'}
         >
           <ArrowLeft size={14} /> Back to deals
-        </Link>
+        </Link>}
 
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>
           <div>
-            <h1 style={{ fontSize: 22, fontWeight: 700, color: '#0F172A', letterSpacing: '-0.3px' }}>AI Agent Configuration</h1>
+            <h1 style={{ fontSize: 22, fontWeight: 700, color: '#0F172A', letterSpacing: '-0.3px' }}>AI Settings</h1>
             <p style={{ color: '#64748B', fontSize: 13, marginTop: 2 }}>Configure agents, models, and the global OpenAI API key.</p>
           </div>
         </div>
@@ -174,9 +202,27 @@ export default function AgentManagementPage() {
               <p style={{ fontSize: 11, color: '#94A3B8', marginTop: 6 }}>
                 {settings?.has_key ? 'A key is already saved. Enter a new one to replace it.' : 'Enter your OpenAI API key to enable AI agents.'}
               </p>
+              {settings?.has_key && (
+                <p style={{ fontSize: 11, color: modelsError ? '#B91C1C' : '#64748B', marginTop: 6 }}>
+                  {modelsLoading
+                    ? 'Loading available OpenAI models…'
+                    : modelsError
+                      ? modelsError
+                      : `${models.length} model${models.length === 1 ? '' : 's'} available for the saved key.`}
+                </p>
+              )}
             </div>
             <Button onClick={handleSaveKey} loading={savingKey} disabled={!apiKey} icon={<Save size={14} />}>
               Save Key
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={loadModels}
+              loading={modelsLoading}
+              disabled={!settings?.has_key || savingKey}
+              icon={<RefreshCw size={14} />}
+            >
+              Refresh Models
             </Button>
           </div>
         </div>
@@ -247,8 +293,17 @@ export default function AgentManagementPage() {
 
             <FormField label="Model" required>
               <Select value={form.model || ''} onChange={e => setField('model')(e.target.value)}>
-                {MODEL_OPTIONS.map(m => <option key={m} value={m}>{m}</option>)}
+                {modelsLoading && <option value={form.model || ''}>{form.model || 'Loading models…'}</option>}
+                {!modelsLoading && modelOptions.length === 0 && <option value="">No models available</option>}
+                {!modelsLoading && modelOptions.map(m => <option key={m} value={m}>{m}</option>)}
               </Select>
+              <div style={{ fontSize: 11, color: modelsError ? '#B91C1C' : '#94A3B8', marginTop: 6 }}>
+                {modelsError
+                  ? modelsError
+                  : settings?.has_key
+                    ? 'Model list is loaded from the saved OpenAI API key.'
+                    : 'Save an OpenAI API key to load available models automatically.'}
+              </div>
             </FormField>
 
             <FormField label="System Prompt / Skill" required>

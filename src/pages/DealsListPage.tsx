@@ -3,7 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { Search, RefreshCw, Plus, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, FileText, Filter, Lock } from 'lucide-react';
 import { useDeals } from '../context/DealsContext';
 import { useAuth } from '../context/AuthContext';
-import { Deal, DealStatus, User } from '../types';
+import { Deal, DealStatus } from '../types';
 import Header from '../components/Header';
 import StatusBadge from '../components/StatusBadge';
 import Button from '../components/Button';
@@ -16,7 +16,8 @@ const PAGE_SIZE = 10;
 
 const STATUS_ORDER: Record<DealStatus, number> = { New: 0, 'In Progress': 1, Won: 2, Lost: 3, TBC: 4 };
 
-function formatBudget(n: number) {
+function formatBudget(n: number | null) {
+  if (n === null) return 'Unknown';
   if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `$${(n / 1_000).toFixed(0)}K`;
   return `$${n}`;
@@ -27,17 +28,14 @@ function formatDate(d: string) {
 }
 
 export default function DealsListPage() {
-  const { deals, updateDeal } = useDeals();
-  const { isRole, users } = useAuth();
+  const { deals } = useDeals();
+  const { currentUser, isRole, users } = useAuth();
   const navigate = useNavigate();
 
   const [search, setSearch] = useState('');
   const [selectedStatuses, setSelectedStatuses] = useState<DealStatus[]>(ALL_STATUSES);
   const [showStatusFilter, setShowStatusFilter] = useState(false);
-  const [selectedAssignees, setSelectedAssignees] = useState<string[]>(() => [
-    ...users.map(u => u.id),
-    'unassigned',
-  ]);
+  const [selectedAssignees, setSelectedAssignees] = useState<string[]>([]);
   const [showAssigneeFilter, setShowAssigneeFilter] = useState(false);
   const [sortField, setSortField] = useState<SortField | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>('asc');
@@ -107,7 +105,7 @@ export default function DealsListPage() {
         let va: string | number = a[sortField] as string | number;
         let vb: string | number = b[sortField] as string | number;
         if (sortField === 'budget') {
-          va = a.budget; vb = b.budget;
+          va = a.budget ?? Number.POSITIVE_INFINITY; vb = b.budget ?? Number.POSITIVE_INFINITY;
         } else if (sortField === 'status') {
           va = STATUS_ORDER[a.status]; vb = STATUS_ORDER[b.status];
         }
@@ -388,7 +386,7 @@ export default function DealsListPage() {
                   </thead>
                   <tbody>
                     {paginated.map((deal, i) => (
-                      <TableRow key={deal.id} deal={deal} i={i} onClick={() => navigate(`/deals/${deal.id}`)} users={users} canEdit={canEdit} onAssigneeChange={async (dealId, userId) => { await updateDeal(dealId, { assigneeId: userId || undefined }); }} />
+                      <TableRow key={deal.id} deal={deal} i={i} onClick={() => navigate(`/deals/${deal.id}`)} currentUserId={currentUser?.id} />
                     ))}
                   </tbody>
                 </table>
@@ -463,9 +461,9 @@ export default function DealsListPage() {
   );
 }
 
-function TableRow({ deal, i, onClick, users, canEdit, onAssigneeChange }: { deal: Deal; i: number; onClick: () => void; users: User[]; canEdit: boolean; onAssigneeChange: (dealId: string, userId: string) => void }) {
+function TableRow({ deal, i, onClick, currentUserId }: { deal: Deal; i: number; onClick: () => void; currentUserId?: string }) {
   const [hovered, setHovered] = useState(false);
-  const isLocked = !!deal.lock;
+  const isLockedByOther = !!deal.lock && deal.lock.userId !== currentUserId;
 
   const isFinal = deal.status === 'Won' || deal.status === 'Lost';
   const dueDay = new Date(deal.dueDate);
@@ -488,13 +486,13 @@ function TableRow({ deal, i, onClick, users, canEdit, onAssigneeChange }: { deal
 
   return (
     <tr
-      onClick={isLocked ? undefined : onClick}
+      onClick={isLockedByOther ? undefined : onClick}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{
         background: hovered ? '#F8FAFC' : i % 2 === 0 ? '#fff' : '#FAFAFA',
-        cursor: isLocked ? 'not-allowed' : 'pointer',
-        opacity: isLocked ? 0.7 : 1,
+        cursor: isLockedByOther ? 'not-allowed' : 'pointer',
+        opacity: isLockedByOther ? 0.7 : 1,
         borderBottom: '1px solid #F1F5F9',
         transition: 'background 0.1s',
         animation: 'fadeIn 0.2s ease',
@@ -506,7 +504,7 @@ function TableRow({ deal, i, onClick, users, canEdit, onAssigneeChange }: { deal
       <td style={{ padding: '12px 16px', fontSize: 13, color: '#0F172A', fontWeight: 500, maxWidth: 260 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden' }}>
           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{deal.name}</span>
-          {isLocked && (
+          {isLockedByOther && (
             <span style={{
               display: 'inline-flex', alignItems: 'center', gap: 3, flexShrink: 0,
               padding: '2px 6px', borderRadius: 999,
@@ -538,23 +536,8 @@ function TableRow({ deal, i, onClick, users, canEdit, onAssigneeChange }: { deal
       <td style={{ padding: '12px 16px', fontSize: 13, color: '#374151', whiteSpace: 'nowrap' }}>
         {deal.clientName || '-'}
       </td>
-      <td style={{ padding: '12px 16px' }} onClick={e => e.stopPropagation()}>
-        {canEdit && !isLocked ? (
-          <select
-            value={deal.assigneeId || ''}
-            onChange={e => onAssigneeChange(deal.id, e.target.value)}
-            style={{
-              padding: '4px 8px', borderRadius: 6, border: '1px solid #E2E8F0',
-              fontSize: 12, color: '#374151', background: '#fff', cursor: 'pointer',
-              outline: 'none', maxWidth: 120,
-            }}
-          >
-            <option value="">Unassigned</option>
-            {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-          </select>
-        ) : (
-          <span style={{ fontSize: 13, color: '#374151' }}>{deal.assigneeName || '-'}</span>
-        )}
+      <td style={{ padding: '12px 16px', fontSize: 13, color: '#374151', whiteSpace: 'nowrap' }}>
+        {deal.assigneeName || '-'}
       </td>
       <td style={{ padding: '12px 16px' }}>
         {deal.classification && (

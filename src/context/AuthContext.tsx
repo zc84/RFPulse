@@ -12,6 +12,7 @@ interface AuthContextType {
   logout: () => void;
   addUser: (user: Omit<User, 'id'>) => Promise<void>;
   updateUser: (id: string, updates: Partial<User>) => Promise<void>;
+  updateProfile: (updates: { name?: string; email?: string; currentPassword?: string; newPassword?: string }) => Promise<User>;
   deleteUser: (id: string) => Promise<void>;
   isRole: (...roles: UserRole[]) => boolean;
   refreshUsers: () => Promise<void>;
@@ -83,6 +84,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
   }, [loadUsers]);
 
+  const updateProfile = useCallback(async (updates: { name?: string; email?: string; currentPassword?: string; newPassword?: string }): Promise<User> => {
+    const { user, token } = await authApi.updateMe(updates);
+    localStorage.setItem(TOKEN_KEY, token);
+    setCurrentUser(user);
+    await loadUsers();
+    return user;
+  }, [loadUsers]);
+
   const deleteUser = useCallback(async (id: string) => {
     await usersApi.delete(id);
     await loadUsers();
@@ -94,7 +103,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [currentUser]);
 
   return (
-    <AuthContext.Provider value={{ currentUser, users, loading, login, logout, addUser, updateUser, deleteUser, isRole, refreshUsers: loadUsers }}>
+    <AuthContext.Provider value={{ currentUser, users, loading, login, logout, addUser, updateUser, updateProfile, deleteUser, isRole, refreshUsers: loadUsers }}>
       {children}
     </AuthContext.Provider>
   );

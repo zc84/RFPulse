@@ -1,6 +1,6 @@
 import { DealStatus } from '../types';
 
-const statusConfig: Record<DealStatus, { label: string; color: string; bg: string }> = {
+const statusConfig: Record<string, { label: string; color: string; bg: string }> = {
   'New': { label: 'New', color: '#1D4ED8', bg: '#DBEAFE' },
   'In Progress': { label: 'In Progress', color: '#B45309', bg: '#FDE68A' },
   'Won': { label: 'Won', color: '#15803D', bg: '#BBF7D0' },
@@ -14,7 +14,7 @@ interface StatusBadgeProps {
 }
 
 export default function StatusBadge({ status, size = 'md' }: StatusBadgeProps) {
-  const cfg = statusConfig[status];
+  const cfg = statusConfig[status] || { label: status, color: '#475569', bg: '#F1F5F9' };
   return (
     <span style={{
       display: 'inline-flex',

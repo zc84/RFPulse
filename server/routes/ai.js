@@ -16,7 +16,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const UPLOAD_DIR = path.join(__dirname, '..', 'uploads');
+const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(__dirname, '..', 'uploads');
 
 const router = Router({ mergeParams: true });
 
@@ -24,6 +24,13 @@ function parseDealId(id) {
   const numericId = parseInt(id.replace('D-', ''), 10);
   if (isNaN(numericId)) return null;
   return numericId;
+}
+
+function createRouteError(message, status = 500) {
+  const error = new Error(message);
+  error.status = status;
+  error.expose = true;
+  return error;
 }
 
 async function getDealWithDocs(numericId) {
@@ -130,6 +137,96 @@ async function saveAgentOutput(sessionId, slug, content) {
   );
 }
 
+async function getWorkflowArtifacts(sessionId) {
+  const artifactSteps = ['legal', 'architect', 'estimator-brief', 'estimator', 'copywriter'];
+  let result;
+  try {
+    result = await query(
+      'SELECT * FROM ai_workflow_steps WHERE session_id = $1 AND status = $2 AND artifact IS NOT NULL AND step_key = ANY($3) ORDER BY id ASC',
+      [sessionId, 'completed', artifactSteps]
+    );
+  } catch (err) {
+    if (err.code === '42P01') {
+      console.warn('ai_workflow_steps table is missing. Run yarn db:setup to enable resumable AI workflow steps.');
+      return {};
+    }
+    throw err;
+  }
+  const outputs = {};
+  for (const row of result.rows) {
+    outputs[row.step_key] = row.artifact;
+  }
+  return outputs;
+}
+
+async function getWorkflowSteps(sessionId) {
+  let result;
+  try {
+    result = await query(
+      'SELECT * FROM ai_workflow_steps WHERE session_id = $1 ORDER BY created_at ASC, id ASC',
+      [sessionId]
+    );
+  } catch (err) {
+    if (err.code === '42P01') return [];
+    throw err;
+  }
+  return result.rows;
+}
+
+async function markWorkflowStepRunning(sessionId, dealId, stepKey, metadata = {}) {
+  try {
+    await query(
+      `INSERT INTO ai_workflow_steps (session_id, deal_id, step_key, status, metadata, started_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+       ON CONFLICT (session_id, step_key)
+       DO UPDATE SET status = EXCLUDED.status, metadata = EXCLUDED.metadata, error = NULL, started_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP`,
+      [sessionId, dealId, stepKey, 'running', JSON.stringify(metadata)]
+    );
+  } catch (err) {
+    if (err.code === '42P01') {
+      console.warn('Skipping AI workflow step tracking because ai_workflow_steps table is missing. Run yarn db:setup.');
+      return;
+    }
+    throw err;
+  }
+}
+
+async function markWorkflowStepCompleted(sessionId, dealId, stepKey, artifact = null, metadata = {}) {
+  try {
+    await query(
+      `INSERT INTO ai_workflow_steps (session_id, deal_id, step_key, status, artifact, metadata, started_at, completed_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+       ON CONFLICT (session_id, step_key)
+       DO UPDATE SET status = EXCLUDED.status, artifact = EXCLUDED.artifact, metadata = EXCLUDED.metadata, error = NULL, completed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP`,
+      [sessionId, dealId, stepKey, 'completed', artifact, JSON.stringify(metadata)]
+    );
+  } catch (err) {
+    if (err.code === '42P01') {
+      console.warn('Skipping AI workflow step tracking because ai_workflow_steps table is missing. Run yarn db:setup.');
+      return;
+    }
+    throw err;
+  }
+}
+
+async function markWorkflowStepFailed(sessionId, dealId, stepKey, error, metadata = {}) {
+  try {
+    await query(
+      `INSERT INTO ai_workflow_steps (session_id, deal_id, step_key, status, error, metadata, started_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+       ON CONFLICT (session_id, step_key)
+       DO UPDATE SET status = EXCLUDED.status, error = EXCLUDED.error, metadata = EXCLUDED.metadata, updated_at = CURRENT_TIMESTAMP`,
+      [sessionId, dealId, stepKey, 'failed', error?.message || String(error), JSON.stringify(metadata)]
+    );
+  } catch (err) {
+    if (err.code === '42P01') {
+      console.warn('Skipping AI workflow step tracking because ai_workflow_steps table is missing. Run yarn db:setup.');
+      return;
+    }
+    throw err;
+  }
+}
+
 function writeMarkdownChunks(filePath, markdown) {
   return new Promise((resolve, reject) => {
     const stream = fs.createWriteStream(filePath, { encoding: 'utf-8' });
@@ -157,49 +254,72 @@ function writeMarkdownChunks(filePath, markdown) {
   });
 }
 
-async function deleteAiDocuments(dealId) {
-  const aiDocs = await query('SELECT * FROM documents WHERE deal_id = $1 AND source = $2', [dealId, 'ai']);
-  for (const doc of aiDocs.rows) {
+async function deleteDocumentsByName(dealId, documentName) {
+  const docs = await query(
+    'SELECT * FROM documents WHERE deal_id = $1 AND source = $2 AND name = $3',
+    [dealId, 'ai', documentName]
+  );
+  for (const doc of docs.rows) {
     if (doc.filename) {
       const filePath = path.join(UPLOAD_DIR, String(dealId), doc.filename);
       if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
     }
   }
-  if (aiDocs.rows.length > 0) {
-    await query('DELETE FROM documents WHERE deal_id = $1 AND source = $2', [dealId, 'ai']);
+  if (docs.rows.length > 0) {
+    await query(
+      'DELETE FROM documents WHERE deal_id = $1 AND source = $2 AND name = $3',
+      [dealId, 'ai', documentName]
+    );
   }
-  return aiDocs.rows;
+  return docs.rows;
+}
+
+async function getAiDocumentsByName(dealId, documentName) {
+  const result = await query(
+    'SELECT * FROM documents WHERE deal_id = $1 AND source = $2 AND name = $3',
+    [dealId, 'ai', documentName]
+  );
+  return result.rows;
+}
+
+async function deleteAssessmentReport(dealId) {
+  return deleteDocumentsByName(dealId, 'AI Assessment Report.md');
 }
 
 async function saveFinalReport(dealId, sessionId, markdown) {
-  const dealDir = path.join(UPLOAD_DIR, String(dealId));
-  if (!fs.existsSync(dealDir)) {
-    fs.mkdirSync(dealDir, { recursive: true });
+  try {
+    const dealDir = path.join(UPLOAD_DIR, String(dealId));
+    if (!fs.existsSync(dealDir)) {
+      fs.mkdirSync(dealDir, { recursive: true });
+    }
+
+    const filename = `assessment-report-${Date.now()}.md`;
+    const filePath = path.join(dealDir, filename);
+    await writeMarkdownChunks(filePath, markdown);
+
+    const sizeBytes = Buffer.byteLength(markdown, 'utf-8');
+    const size = sizeBytes >= 1024 * 1024
+      ? `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`
+      : `${(sizeBytes / 1024).toFixed(0)} KB`;
+    const today = new Date().toISOString().split('T')[0];
+
+    const docResult = await query(
+      `INSERT INTO documents (deal_id, name, size, filename, source, uploaded_at)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+      [dealId, 'AI Assessment Report.md', size, filename, 'ai', today]
+    );
+
+    const documentId = docResult.rows[0].id;
+    await query(
+      'UPDATE ai_sessions SET final_report_document_id = $1, status = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3',
+      [documentId, 'completed', sessionId]
+    );
+
+    return documentId;
+  } catch (err) {
+    console.error('Failed to save final assessment report:', err);
+    throw createRouteError('Assessment report was generated but could not be saved. Check upload storage and database logs.');
   }
-
-  const filename = `assessment-report-${Date.now()}.md`;
-  const filePath = path.join(dealDir, filename);
-  await writeMarkdownChunks(filePath, markdown);
-
-  const sizeBytes = Buffer.byteLength(markdown, 'utf-8');
-  const size = sizeBytes >= 1024 * 1024
-    ? `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`
-    : `${(sizeBytes / 1024).toFixed(0)} KB`;
-  const today = new Date().toISOString().split('T')[0];
-
-  const docResult = await query(
-    `INSERT INTO documents (deal_id, name, size, filename, source, uploaded_at)
-     VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-    [dealId, 'AI Assessment Report.md', size, filename, 'ai', today]
-  );
-
-  const documentId = docResult.rows[0].id;
-  await query(
-    'UPDATE ai_sessions SET final_report_document_id = $1, status = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3',
-    [documentId, 'completed', sessionId]
-  );
-
-  return documentId;
 }
 
 async function loadCompanyProfile() {
@@ -209,23 +329,7 @@ async function loadCompanyProfile() {
 }
 
 async function deleteValidationReport(dealId) {
-  const validationDocs = await query(
-    'SELECT * FROM documents WHERE deal_id = $1 AND source = $2 AND name = $3',
-    [dealId, 'ai', 'Validation Report.md']
-  );
-  for (const doc of validationDocs.rows) {
-    if (doc.filename) {
-      const filePath = path.join(UPLOAD_DIR, String(dealId), doc.filename);
-      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-    }
-  }
-  if (validationDocs.rows.length > 0) {
-    await query(
-      'DELETE FROM documents WHERE deal_id = $1 AND source = $2 AND name = $3',
-      [dealId, 'ai', 'Validation Report.md']
-    );
-  }
-  return validationDocs.rows;
+  return deleteDocumentsByName(dealId, 'Validation Report.md');
 }
 
 async function saveValidationReport(dealId, dealName, markdown) {
@@ -256,6 +360,7 @@ async function saveValidationReport(dealId, dealName, markdown) {
 }
 
 router.post('/start', authenticate, requireRole('Superadmin', 'Editor'), async (req, res, next) => {
+  let sessionForError = null;
   try {
     await ensureDefaultAgents();
     const dealId = parseDealId(req.params.id);
@@ -264,34 +369,49 @@ router.post('/start', authenticate, requireRole('Superadmin', 'Editor'), async (
     const data = await getDealWithDocs(dealId);
     if (!data) return res.status(404).json({ error: 'Deal not found' });
 
-    const aiDocs = (await query('SELECT * FROM documents WHERE deal_id = $1 AND source = $2', [dealId, 'ai'])).rows;
+    const assessmentDocs = await getAiDocumentsByName(dealId, 'AI Assessment Report.md');
     const force = req.body.force === true;
-    if (aiDocs.length > 0 && !force) {
+    if (assessmentDocs.length > 0 && !force) {
       return res.status(409).json({
-        error: 'AI documents already exist for this deal.',
+        error: 'AI assessment report already exists for this deal.',
         hasExistingAiDocs: true,
-        aiDocs: aiDocs.map(d => ({ id: `doc-${d.id}`, name: d.name })),
+        aiDocs: assessmentDocs.map(d => ({ id: `doc-${d.id}`, name: d.name })),
       });
     }
-    if (aiDocs.length > 0 && force) {
-      await deleteAiDocuments(dealId);
+    if (assessmentDocs.length > 0 && force) {
+      await deleteAssessmentReport(dealId);
     }
+
+    const session = await getOrCreateSession(dealId, '');
+    sessionForError = session;
+    await addMessage(session.id, 'coordinator', 'Starting Execute AI flow. Reading deal documents and preparing context.');
 
     const extractedDocs = await buildDealContextBundle(req.params.id, data.documents);
     const contextBundle = summarizeContextBundle(extractedDocs);
-    const session = await getOrCreateSession(dealId, contextBundle);
+    await query('UPDATE ai_sessions SET extracted_context = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', [contextBundle, session.id]);
+    await markWorkflowStepCompleted(session.id, dealId, 'extracted-context', contextBundle, {
+      documents: extractedDocs.map(d => ({ id: d.id, name: d.name, success: d.success })),
+    });
+    const readableDocs = extractedDocs.filter(d => d.success).length;
+    await addMessage(session.id, 'coordinator', `Document extraction complete: ${readableDocs}/${extractedDocs.length} document(s) readable.`);
     const messages = await getSessionMessages(session.id);
 
+    await addMessage(session.id, 'coordinator', 'Coordinator is reviewing the deal context and choosing the next step.');
     const coordinatorResult = await coordinatorStep(contextBundle, messages);
 
     const coordinatorContext = coordinatorResult.status === 'routing' ? coordinatorResult.context : null;
     if (coordinatorContext) {
       await query('UPDATE ai_sessions SET coordinator_context = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', [coordinatorContext, session.id]);
+      await markWorkflowStepCompleted(session.id, dealId, 'coordinator-context', coordinatorContext);
     }
 
     if (coordinatorResult.status === 'clarifying' && coordinatorResult.questions?.length) {
       const content = coordinatorResult.questions.map((q, i) => `${i + 1}. ${q}`).join('\n');
       await addMessage(session.id, 'coordinator', content);
+    } else if (coordinatorResult.status === 'routing' && coordinatorResult.plan?.length) {
+      await addMessage(session.id, 'coordinator', `Coordinator selected agents: ${coordinatorResult.plan.join(', ')}.`);
+    } else if (coordinatorResult.status === 'ready_to_write') {
+      await addMessage(session.id, 'coordinator', 'Coordinator has enough context and is ready to draft the assessment report.');
     }
 
     await query('UPDATE ai_sessions SET current_agent_plan = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', [
@@ -310,6 +430,13 @@ router.post('/start', authenticate, requireRole('Superadmin', 'Editor'), async (
       extractedDocs: extractedDocs.map(d => ({ id: d.id, name: d.name, size: d.size, success: d.success })),
     });
   } catch (err) {
+    if (sessionForError?.id) {
+      try {
+        await addMessage(sessionForError.id, 'coordinator', `Execute AI stopped: ${err.message || 'Unexpected error while starting AI flow.'}`);
+      } catch (messageErr) {
+        console.error('Failed to save AI start error message:', messageErr);
+      }
+    }
     next(err);
   }
 });
@@ -341,11 +468,17 @@ router.post('/validate', authenticate, requireRole('Superadmin', 'Editor'), asyn
           '## Deal Context',
           contextBundle,
           `## Deal Name\n${dealName}`,
+          '## Output constraint',
+          'Keep the validation report under 2,200 words. Prioritize decision-critical fit gaps, constraints, risks, and proposal requirements. Do not repeat source documents verbatim.',
         ].join('\n\n'),
       },
     ];
 
-    const reportMarkdown = await callAgent('validator', messages);
+    const reportMarkdown = await callAgent('validator', messages, {
+      maxTokens: 8192,
+      allowPartialOnLength: true,
+      partialNote: 'The validation report reached the output limit and was capped. Treat omitted details as requiring manual review.',
+    });
     const documentId = await saveValidationReport(dealId, dealName, reportMarkdown);
 
     res.json({
@@ -355,13 +488,14 @@ router.post('/validate', authenticate, requireRole('Superadmin', 'Editor'), asyn
     });
   } catch (err) {
     if (err.message?.includes('OpenAI API key not configured') || err.message?.includes('API key')) {
-      return res.status(400).json({ error: 'OpenAI API key is not configured. Ask a Superadmin to add it in AI Agent Configuration.' });
+      return res.status(400).json({ error: 'OpenAI API key is not configured. Ask a Superadmin to add it in Platform Configuration.' });
     }
     next(err);
   }
 });
 
 router.post('/message', authenticate, requireRole('Superadmin', 'Editor'), async (req, res, next) => {
+  let sessionForError = null;
   try {
     const dealId = parseDealId(req.params.id);
     if (!dealId) return res.status(400).json({ error: 'Invalid deal id' });
@@ -372,13 +506,19 @@ router.post('/message', authenticate, requireRole('Superadmin', 'Editor'), async
     }
 
     const session = await getOrCreateSession(dealId, '');
+    sessionForError = session;
     await addMessage(session.id, 'user', content);
 
     const messages = await getSessionMessages(session.id);
     const contextBundle = session.extracted_context || '';
-    const agentOutputs = await getAgentOutputs(session.id);
+    const savedAgentOutputs = await getAgentOutputs(session.id);
+    const workflowArtifacts = await getWorkflowArtifacts(session.id);
+    const agentOutputs = {
+      ...workflowArtifacts,
+      ...savedAgentOutputs,
+    };
 
-    const coordinatorResult = await coordinatorStep(contextBundle, messages, agentOutputs);
+    const coordinatorResult = await coordinatorStep(contextBundle, messages, agentOutputs, session.coordinator_context);
 
     // Persist coordinator context when it is produced for routing.
     const coordinatorContext = coordinatorResult.status === 'routing' && coordinatorResult.context
@@ -393,13 +533,31 @@ router.post('/message', authenticate, requireRole('Superadmin', 'Editor'), async
     let newAgentOutputs = null;
     let finalReportDocumentId = null;
     let proposedUpdates = null;
+    const persistAgentOutput = async (slug, output) => {
+      await saveAgentOutput(session.id, slug, output);
+      await markWorkflowStepCompleted(session.id, dealId, slug, output, { source: 'agent-plan' });
+      const label = slug === 'estimator-brief' ? 'Coordinator estimation brief' : `Agent ${slug}`;
+      await addMessage(session.id, 'agent', `${label} completed.`, 'coordinator');
+    };
+    persistAgentOutput.existingOutputs = agentOutputs;
+    persistAgentOutput.onStepStart = async slug => {
+      await markWorkflowStepRunning(session.id, dealId, slug, { source: 'agent-plan' });
+    };
+    persistAgentOutput.onStepFailed = async (slug, err) => {
+      await markWorkflowStepFailed(session.id, dealId, slug, err, { source: 'agent-plan' });
+    };
 
     if (coordinatorResult.status === 'routing' && coordinatorResult.plan?.length) {
-      await addMessage(session.id, 'agent', `Running agents: ${coordinatorResult.plan.join(', ')}`, 'coordinator');
-      newAgentOutputs = await runAgentPlan(agentContext, messages, coordinatorResult.plan);
-      for (const [slug, output] of Object.entries(newAgentOutputs)) {
-        await saveAgentOutput(session.id, slug, output);
-        await addMessage(session.id, 'agent', `Agent ${slug} completed.`, 'coordinator');
+      const dealRow = await query('SELECT name FROM deals WHERE id = $1', [dealId]);
+      const dealName = dealRow.rows[0]?.name || 'Untitled Deal';
+      await addMessage(session.id, 'agent', 'Running Legal and Architect in parallel. Estimator and Copywriter will follow.', 'coordinator');
+      try {
+        await markWorkflowStepRunning(session.id, dealId, 'agent-plan', { plan: coordinatorResult.plan });
+        newAgentOutputs = await runAgentPlan(agentContext, messages, coordinatorResult.plan, dealName, persistAgentOutput);
+        await markWorkflowStepCompleted(session.id, dealId, 'agent-plan', JSON.stringify(Object.keys(newAgentOutputs)), { plan: coordinatorResult.plan });
+      } catch (planErr) {
+        await markWorkflowStepFailed(session.id, dealId, 'agent-plan', planErr, { plan: coordinatorResult.plan });
+        throw planErr;
       }
       await query('UPDATE ai_sessions SET current_agent_plan = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', [
         JSON.stringify([]),
@@ -408,13 +566,22 @@ router.post('/message', authenticate, requireRole('Superadmin', 'Editor'), async
       // After routing, automatically run coordinator again to decide next step.
       const updatedMessages = await getSessionMessages(session.id);
       const updatedOutputs = await getAgentOutputs(session.id);
-      const nextResult = await coordinatorStep(contextBundle, updatedMessages, updatedOutputs);
+      const nextResult = await coordinatorStep(contextBundle, updatedMessages, updatedOutputs, coordinatorContext);
       if (nextResult.status === 'ready_to_write') {
-        const dealRow = await query('SELECT name FROM deals WHERE id = $1', [dealId]);
-        const dealName = dealRow.rows[0]?.name || 'Untitled Deal';
+        await addMessage(session.id, 'agent', 'Agents complete. Coordinator is drafting and reviewing the assessment report.', 'coordinator');
         const draftReport = buildReportFromOutputs(dealName, agentContext, updatedOutputs);
-        const finalReport = await coordinatorReviewStep(contextBundle, draftReport);
-        finalReportDocumentId = await saveFinalReport(dealId, session.id, finalReport);
+        await markWorkflowStepCompleted(session.id, dealId, 'draft-report', draftReport, { source: updatedOutputs.copywriter ? 'copywriter' : 'assembled' });
+        try {
+          await markWorkflowStepRunning(session.id, dealId, 'coordinator-review');
+          const finalReport = await coordinatorReviewStep(contextBundle, draftReport);
+          await markWorkflowStepCompleted(session.id, dealId, 'coordinator-review', finalReport);
+          await markWorkflowStepRunning(session.id, dealId, 'save-final-report');
+          finalReportDocumentId = await saveFinalReport(dealId, session.id, finalReport);
+          await markWorkflowStepCompleted(session.id, dealId, 'save-final-report', String(finalReportDocumentId));
+        } catch (finalizeErr) {
+          await markWorkflowStepFailed(session.id, dealId, 'save-final-report', finalizeErr);
+          throw finalizeErr;
+        }
         try {
           proposedUpdates = await extractDealProperties(contextBundle);
         } catch (extractErr) {
@@ -430,18 +597,35 @@ router.post('/message', authenticate, requireRole('Superadmin', 'Editor'), async
       if (Object.keys(updatedOutputs).length === 0) {
         // No agent outputs yet, run the default plan.
         const defaultPlan = ['legal', 'architect', 'estimator'];
-        await addMessage(session.id, 'agent', `Running agents: ${defaultPlan.join(', ')}`, 'coordinator');
-        newAgentOutputs = await runAgentPlan(agentContext, messages, defaultPlan);
-        for (const [slug, output] of Object.entries(newAgentOutputs)) {
-          await saveAgentOutput(session.id, slug, output);
+        const dealRow = await query('SELECT name FROM deals WHERE id = $1', [dealId]);
+        const dealName = dealRow.rows[0]?.name || 'Untitled Deal';
+        await addMessage(session.id, 'agent', 'Running Legal and Architect in parallel. Estimator and Copywriter will follow.', 'coordinator');
+        try {
+          await markWorkflowStepRunning(session.id, dealId, 'agent-plan', { plan: defaultPlan });
+          newAgentOutputs = await runAgentPlan(agentContext, messages, defaultPlan, dealName, persistAgentOutput);
+          await markWorkflowStepCompleted(session.id, dealId, 'agent-plan', JSON.stringify(Object.keys(newAgentOutputs)), { plan: defaultPlan });
+        } catch (planErr) {
+          await markWorkflowStepFailed(session.id, dealId, 'agent-plan', planErr, { plan: defaultPlan });
+          throw planErr;
         }
       }
       const finalOutputs = await getAgentOutputs(session.id);
       const dealRow = await query('SELECT name FROM deals WHERE id = $1', [dealId]);
       const dealName = dealRow.rows[0]?.name || 'Untitled Deal';
+      await addMessage(session.id, 'agent', 'Agents complete. Coordinator is drafting and reviewing the assessment report.', 'coordinator');
       const draftReport = buildReportFromOutputs(dealName, agentContext, finalOutputs);
-      const finalReport = await coordinatorReviewStep(contextBundle, draftReport);
-      finalReportDocumentId = await saveFinalReport(dealId, session.id, finalReport);
+      await markWorkflowStepCompleted(session.id, dealId, 'draft-report', draftReport, { source: finalOutputs.copywriter ? 'copywriter' : 'assembled' });
+      try {
+        await markWorkflowStepRunning(session.id, dealId, 'coordinator-review');
+        const finalReport = await coordinatorReviewStep(contextBundle, draftReport);
+        await markWorkflowStepCompleted(session.id, dealId, 'coordinator-review', finalReport);
+        await markWorkflowStepRunning(session.id, dealId, 'save-final-report');
+        finalReportDocumentId = await saveFinalReport(dealId, session.id, finalReport);
+        await markWorkflowStepCompleted(session.id, dealId, 'save-final-report', String(finalReportDocumentId));
+      } catch (finalizeErr) {
+        await markWorkflowStepFailed(session.id, dealId, 'save-final-report', finalizeErr);
+        throw finalizeErr;
+      }
       try {
         proposedUpdates = await extractDealProperties(contextBundle);
       } catch (extractErr) {
@@ -465,6 +649,13 @@ router.post('/message', authenticate, requireRole('Superadmin', 'Editor'), async
       agentOutputs: newAgentOutputs || undefined,
     });
   } catch (err) {
+    if (sessionForError?.id) {
+      try {
+        await addMessage(sessionForError.id, 'coordinator', `AI workflow stopped: ${err.message || 'Unexpected error while processing the message.'}`);
+      } catch (messageErr) {
+        console.error('Failed to save AI message error:', messageErr);
+      }
+    }
     next(err);
   }
 });
@@ -481,12 +672,28 @@ router.get('/session', authenticate, requireRole('Superadmin', 'Editor'), async 
 
     const messages = await getSessionMessages(session.rows[0].id);
     const outputs = await getAgentOutputs(session.rows[0].id);
+    const workflowSteps = await getWorkflowSteps(session.rows[0].id);
 
     res.json({
       session: session.rows[0],
       messages,
       agentOutputs: outputs,
+      workflowSteps,
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.delete('/history', authenticate, requireRole('Superadmin', 'Editor'), async (req, res, next) => {
+  try {
+    const dealId = parseDealId(req.params.id);
+    if (!dealId) return res.status(400).json({ error: 'Invalid deal id' });
+
+    await query('DELETE FROM ai_sessions WHERE deal_id = $1', [dealId]);
+    await query('DELETE FROM ai_chat_messages WHERE deal_id = $1', [dealId]);
+
+    res.json({ ok: true });
   } catch (err) {
     next(err);
   }
@@ -535,11 +742,17 @@ router.post('/chat', authenticate, requireRole('Superadmin', 'Editor'), async (r
           '## Conversation history',
           ...history.map(m => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`),
           `User: ${content}`,
+          '## Output constraint',
+          'Answer concisely. Keep the response under 900 words unless the user explicitly asks for a long report.',
         ].join('\n\n'),
       },
     ];
 
-    const response = await callAgent('chat-agent', messages);
+    const response = await callAgent('chat-agent', messages, {
+      maxTokens: 2500,
+      allowPartialOnLength: true,
+      partialNote: 'The chat response reached the output limit and was capped. Ask a narrower follow-up if more detail is needed.',
+    });
     await addChatMessage(dealId, 'agent', response);
     const updatedHistory = await getChatMessages(dealId);
 

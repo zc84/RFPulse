@@ -1,4 +1,4 @@
-import { User, Agent, GlobalAISettings, AIMessage, AIStartResponse, AIMessageResponse, AISessionResponse, AIChatMessage, AIValidateResponse, DealLock, Deal } from './types';
+import { User, Agent, GlobalAISettings, OpenAIModel, AIMessage, AIStartResponse, AIMessageResponse, AISessionResponse, AIChatMessage, AIValidateResponse, DealLock, PlatformConfigOption } from './types';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
@@ -40,6 +40,8 @@ export const authApi = {
     }) as Promise<{ user: User; token: string }>,
   me: () =>
     apiFetch('/auth/me') as Promise<User>,
+  updateMe: (updates: { name?: string; email?: string; currentPassword?: string; newPassword?: string }) =>
+    apiFetch('/auth/me', { method: 'PUT', body: JSON.stringify(updates) }) as Promise<{ user: User; token: string }>,
 };
 
 export const dealsApi = {
@@ -108,6 +110,17 @@ export const agentsApi = {
   updateSettings: (settings: { openai_api_key: string }) =>
     apiFetch('/ai/agents/settings', { method: 'POST', body: JSON.stringify(settings) }) as Promise<GlobalAISettings>,
   validateKey: () => apiFetch('/ai/agents/validate') as Promise<{ valid: boolean; error: string | null }>,
+  getModels: () => apiFetch('/ai/agents/models') as Promise<{ models: OpenAIModel[] }>,
+};
+
+export const platformApi = {
+  getOptions: () => apiFetch('/platform/options') as Promise<PlatformConfigOption[]>,
+  createOption: (option: { type: 'status' | 'domain'; value: string }) =>
+    apiFetch('/platform/options', { method: 'POST', body: JSON.stringify(option) }) as Promise<PlatformConfigOption>,
+  updateOption: (id: number, updates: { value: string; sort_order?: number }) =>
+    apiFetch(`/platform/options/${id}`, { method: 'PUT', body: JSON.stringify(updates) }) as Promise<PlatformConfigOption>,
+  deleteOption: (id: number) =>
+    apiFetch(`/platform/options/${id}`, { method: 'DELETE' }) as Promise<void>,
 };
 
 export const aiApi = {
@@ -120,36 +133,12 @@ export const aiApi = {
     apiFetch(`/deals/${dealId}/ai/message`, { method: 'POST', body: JSON.stringify({ content }) }) as Promise<AIMessageResponse>,
   getSession: (dealId: string) =>
     apiFetch(`/deals/${dealId}/ai/session`) as Promise<AISessionResponse>,
+  clearHistory: (dealId: string) =>
+    apiFetch(`/deals/${dealId}/ai/history`, { method: 'DELETE' }) as Promise<{ ok: boolean }>,
   getChat: (dealId: string) =>
     apiFetch(`/deals/${dealId}/ai/chat`) as Promise<{ messages: AIChatMessage[] }>,
   sendChat: (dealId: string, content: string) =>
     apiFetch(`/deals/${dealId}/ai/chat`, { method: 'POST', body: JSON.stringify({ content }) }) as Promise<{ messages: AIChatMessage[] }>,
   validate: (dealId: string) =>
     apiFetch(`/deals/${dealId}/ai/validate`, { method: 'POST' }) as Promise<AIValidateResponse>,
-};
-
-export interface AIDemoStartResponse {
-  sessionId: number;
-  status: string;
-  plan?: string[];
-  reasoning?: string;
-  messages: AIMessage[];
-  extractedDocs: { id: string; name: string; size: string; success: boolean }[];
-}
-
-export interface AIDemoMessageResponse {
-  sessionId: number;
-  status: string;
-  messages: AIMessage[];
-  agentOutputs?: Record<string, string>;
-  finalReport?: string;
-}
-
-export const debugApi = {
-  startAIDemo: () =>
-    apiFetch('/debug/ai-demo/start', { method: 'POST' }) as Promise<AIDemoStartResponse>,
-  sendDemoMessage: (content: string) =>
-    apiFetch('/debug/ai-demo/message', { method: 'POST', body: JSON.stringify({ content }) }) as Promise<AIDemoMessageResponse>,
-  getDemoSession: () =>
-    apiFetch('/debug/ai-demo/session') as Promise<AISessionResponse>,
 };

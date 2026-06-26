@@ -14,7 +14,7 @@ function formatUser(row) {
   };
 }
 
-router.get('/', authenticate, requireRole('Superadmin'), async (req, res, next) => {
+router.get('/', authenticate, requireRole('Superadmin', 'Editor'), async (req, res, next) => {
   try {
     const result = await query('SELECT id, name, email, role FROM users ORDER BY created_at DESC');
     res.json(result.rows.map(formatUser));

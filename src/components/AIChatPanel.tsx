@@ -1,4 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { Send, Bot, User as UserIcon, Loader2, FileText, CheckCircle } from 'lucide-react';
 import { AIMessage, AIChatMessage } from '../types';
 import Button from './Button';
@@ -11,6 +13,16 @@ interface AIChatPanelProps {
   onSend: (content: string) => void;
   disabled?: boolean;
   emptyMessage?: string;
+}
+
+function MarkdownContent({ content }: { content: string }) {
+  return (
+    <div className="ai-markdown">
+      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+        {content}
+      </ReactMarkdown>
+    </div>
+  );
 }
 
 function MessageBubble({ message }: { message: AIMessage | AIChatMessage }) {
@@ -57,7 +69,7 @@ function MessageBubble({ message }: { message: AIMessage | AIChatMessage }) {
         <div style={{ flex: 1 }}>
           <div style={{ fontSize: 11, fontWeight: 600, color: '#64748B', marginBottom: 4 }}>{label}</div>
           <div style={{ ...bubbleStyle, background: bg, color, border: `1px solid ${borderColor}`, borderBottomLeftRadius: 4 }}>
-            {message.content}
+            <MarkdownContent content={message.content} />
           </div>
         </div>
       </div>
@@ -92,6 +104,101 @@ export default function AIChatPanel({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <style>{`
+        .ai-markdown {
+          font-size: 13px;
+          line-height: 1.6;
+          overflow-wrap: anywhere;
+        }
+        .ai-markdown > :first-child {
+          margin-top: 0;
+        }
+        .ai-markdown > :last-child {
+          margin-bottom: 0;
+        }
+        .ai-markdown p {
+          margin: 0 0 10px;
+        }
+        .ai-markdown h1,
+        .ai-markdown h2,
+        .ai-markdown h3 {
+          margin: 14px 0 8px;
+          color: #0F172A;
+          line-height: 1.3;
+        }
+        .ai-markdown h1 {
+          font-size: 17px;
+        }
+        .ai-markdown h2 {
+          font-size: 15px;
+        }
+        .ai-markdown h3 {
+          font-size: 14px;
+        }
+        .ai-markdown ul,
+        .ai-markdown ol {
+          margin: 0 0 10px;
+          padding-left: 20px;
+        }
+        .ai-markdown li {
+          margin: 3px 0;
+        }
+        .ai-markdown blockquote {
+          margin: 10px 0;
+          padding-left: 10px;
+          border-left: 3px solid #CBD5E1;
+          color: #475569;
+        }
+        .ai-markdown code {
+          font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+          font-size: 12px;
+          background: rgba(15, 23, 42, 0.06);
+          padding: 1px 4px;
+          border-radius: 4px;
+        }
+        .ai-markdown pre {
+          margin: 10px 0;
+          padding: 10px;
+          background: #0F172A;
+          color: #E2E8F0;
+          border-radius: 8px;
+          overflow-x: auto;
+        }
+        .ai-markdown pre code {
+          background: transparent;
+          color: inherit;
+          padding: 0;
+          border-radius: 0;
+          font-size: 12px;
+        }
+        .ai-markdown a {
+          color: #2563EB;
+          text-decoration: none;
+          font-weight: 500;
+        }
+        .ai-markdown a:hover {
+          text-decoration: underline;
+        }
+        .ai-markdown table {
+          width: 100%;
+          border-collapse: collapse;
+          margin: 10px 0;
+          font-size: 12px;
+          display: block;
+          overflow-x: auto;
+        }
+        .ai-markdown th,
+        .ai-markdown td {
+          border: 1px solid #CBD5E1;
+          padding: 6px 8px;
+          text-align: left;
+          vertical-align: top;
+        }
+        .ai-markdown th {
+          background: #F1F5F9;
+          font-weight: 600;
+        }
+      `}</style>
       {/* Extracted docs summary */}
       {extractedDocs && extractedDocs.length > 0 && (
         <div style={{
@@ -124,8 +231,8 @@ export default function AIChatPanel({
             <p>{emptyMessage || 'Press Start to analyse the deal and begin the conversation.'}</p>
           </div>
         )}
-        {messages.map(message => (
-          <MessageBubble key={message.id} message={message} />
+        {messages.map((message, index) => (
+          <MessageBubble key={`${message.role}-${message.id}-${index}`} message={message} />
         ))}
 
         {runningAgents && runningAgents.length > 0 && (

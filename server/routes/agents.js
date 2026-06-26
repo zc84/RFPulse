@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { query } from '../db.js';
 import { authenticate, requireRole } from '../middleware/auth.js';
-import { ensureDefaultAgents, getOpenAIKey, validateOpenAIKey } from '../services/aiOrchestrator.js';
+import { ensureDefaultAgents, getOpenAIKey, listOpenAIModels, validateOpenAIKey } from '../services/aiOrchestrator.js';
 
 const router = Router();
 
@@ -24,6 +24,18 @@ router.get('/validate', authenticate, async (req, res, next) => {
     const result = await validateOpenAIKey();
     res.json(result);
   } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/models', authenticate, requireRole('Superadmin'), async (req, res, next) => {
+  try {
+    const models = await listOpenAIModels();
+    res.json({ models });
+  } catch (err) {
+    if (err.message?.includes('OpenAI API key not configured') || err.message?.includes('API key')) {
+      return res.status(400).json({ error: err.message || 'OpenAI API key is not configured.' });
+    }
     next(err);
   }
 });

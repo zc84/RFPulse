@@ -1,23 +1,24 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { ArrowLeft, Upload, X, FileText } from 'lucide-react';
 import { useDeals } from '../context/DealsContext';
 import { useAuth } from '../context/AuthContext';
-import { DealStatus, DealDomain, DealClassification, Document } from '../types';
-import { dealsApi } from '../api';
+import { DealStatus, DealDomain, DealClassification, Document, PlatformConfigOption } from '../types';
+import { dealsApi, platformApi } from '../api';
 import Header from '../components/Header';
 import Button from '../components/Button';
 import FormField, { Input, Select, Textarea } from '../components/FormField';
 
-const STATUSES: DealStatus[] = ['New', 'In Progress', 'Won', 'Lost', 'TBC'];
-const DOMAINS: DealDomain[] = ['Healthcare', 'Fintech', 'Retail', 'Education', 'Government', 'Manufacturing', 'Technology', 'TBC'];
+const FALLBACK_STATUSES: DealStatus[] = ['New', 'In Progress', 'Won', 'Lost', 'TBC'];
+const FALLBACK_DOMAINS: DealDomain[] = ['Healthcare', 'Fintech', 'Retail', 'Education', 'Government', 'Manufacturing', 'Technology', 'TBC'];
 const CLASSIFICATIONS: DealClassification[] = ['A', 'B', 'C'];
 
 interface FormData {
   name: string;
   status: DealStatus;
   dueDate: string;
+  budgetMode: 'unknown' | 'known';
   budget: string;
   domain: DealDomain | '';
   clientName: string;
@@ -44,11 +45,26 @@ export default function AddDealPage() {
   const navigate = useNavigate();
 
   const [form, setForm] = useState<FormData>({
-    name: '', status: 'New', dueDate: '', budget: '', domain: '', clientName: '', classification: '', description: '', assigneeId: currentUser?.id || '',
+    name: '', status: 'New', dueDate: '', budgetMode: 'unknown', budget: '', domain: '', clientName: '', classification: '', description: '', assigneeId: currentUser?.id || '',
   });
   const [errors, setErrors] = useState<FormErrors>({});
   const [loading, setLoading] = useState(false);
   const [pendingDocs, setPendingDocs] = useState<PendingDoc[]>([]);
+  const [configOptions, setConfigOptions] = useState<PlatformConfigOption[]>([]);
+
+  useEffect(() => {
+    platformApi.getOptions().then(setConfigOptions).catch(() => setConfigOptions([]));
+  }, []);
+
+  const statuses = useMemo(() => {
+    const values = configOptions.filter(o => o.type === 'status').map(o => o.value);
+    return values.length ? values : FALLBACK_STATUSES;
+  }, [configOptions]);
+
+  const domains = useMemo(() => {
+    const values = configOptions.filter(o => o.type === 'domain').map(o => o.value);
+    return values.length ? values : FALLBACK_DOMAINS;
+  }, [configOptions]);
 
   const set = (field: keyof FormData) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     setForm(p => ({ ...p, [field]: e.target.value }));
@@ -60,8 +76,9 @@ export default function AddDealPage() {
     if (!form.name.trim()) e.name = 'Deal name is required';
     else if (form.name.trim().length < 3) e.name = 'Name must be at least 3 characters';
     if (!form.dueDate) e.dueDate = 'Due date is required';
-    if (!form.budget) e.budget = 'Budget is required';
-    else if (isNaN(Number(form.budget)) || Number(form.budget) <= 0) e.budget = 'Enter a valid positive number';
+    if (form.budgetMode === 'known' && (!form.budget || isNaN(Number(form.budget)) || Number(form.budget) <= 0)) {
+      e.budget = 'Enter a valid positive number';
+    }
     if (!form.domain) e.domain = 'Domain is required';
     return e;
   };
@@ -75,12 +92,12 @@ export default function AddDealPage() {
         name: form.name.trim(),
         status: form.status,
         dueDate: form.dueDate,
-        budget: Number(form.budget),
+        budget: form.budgetMode === 'unknown' ? null : Number(form.budget),
         domain: form.domain as DealDomain,
         clientName: form.clientName.trim() || undefined,
         classification: form.classification || undefined,
         description: form.description.trim() || undefined,
-        assigneeId: form.assigneeId || undefined,
+        assigneeId: form.assigneeId || null,
         documents: [],
       });
       if (pendingDocs.length > 0) {
@@ -151,7 +168,7 @@ export default function AddDealPage() {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
               <FormField label="Status" required>
                 <Select value={form.status} onChange={set('status')}>
-                  {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                  {statuses.map(s => <option key={s} value={s}>{s}</option>)}
                 </Select>
               </FormField>
 
@@ -167,28 +184,36 @@ export default function AddDealPage() {
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-              <FormField label="Budget" error={errors.budget} required hint="Enter amount in USD">
-                <div style={{ position: 'relative' }}>
-                  <span style={{
-                    position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)',
-                    color: '#94A3B8', fontSize: 14, fontWeight: 500, pointerEvents: 'none',
-                  }}>$</span>
-                  <Input
-                    type="number"
-                    value={form.budget}
-                    onChange={set('budget')}
-                    placeholder="0.00"
-                    error={!!errors.budget}
-                    min="0"
-                    style={{ paddingLeft: 24 }}
-                  />
+              <FormField label="Budget" error={errors.budget} hint="Enter amount in USD when known">
+                <div style={{ display: 'grid', gridTemplateColumns: form.budgetMode === 'known' ? '132px 1fr' : '1fr', gap: 8 }}>
+                  <Select value={form.budgetMode} onChange={set('budgetMode')}>
+                    <option value="unknown">Unknown</option>
+                    <option value="known">Known</option>
+                  </Select>
+                  {form.budgetMode === 'known' && (
+                    <div style={{ position: 'relative' }}>
+                      <span style={{
+                        position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)',
+                        color: '#94A3B8', fontSize: 14, fontWeight: 500, pointerEvents: 'none',
+                      }}>$</span>
+                      <Input
+                        type="number"
+                        value={form.budget}
+                        onChange={set('budget')}
+                        placeholder="0.00"
+                        error={!!errors.budget}
+                        min="0"
+                        style={{ paddingLeft: 24 }}
+                      />
+                    </div>
+                  )}
                 </div>
               </FormField>
 
               <FormField label="Domain" error={errors.domain} required>
                 <Select value={form.domain} onChange={set('domain')} error={!!errors.domain}>
                   <option value="">Select domain</option>
-                  {DOMAINS.map(d => <option key={d} value={d}>{d}</option>)}
+                  {domains.map(d => <option key={d} value={d}>{d}</option>)}
                 </Select>
               </FormField>
             </div>

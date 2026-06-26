@@ -1,5 +1,5 @@
-export type DealStatus = 'New' | 'In Progress' | 'Won' | 'Lost' | 'TBC';
-export type DealDomain = 'Healthcare' | 'Fintech' | 'Retail' | 'Education' | 'Government' | 'Manufacturing' | 'Technology' | 'TBC';
+export type DealStatus = string;
+export type DealDomain = string;
 export type DealClassification = 'A' | 'B' | 'C';
 export type UserRole = 'Superadmin' | 'Editor' | 'Viewer';
 
@@ -24,7 +24,7 @@ export interface Deal {
   name: string;
   status: DealStatus;
   dueDate: string;
-  budget: number;
+  budget: number | null;
   domain: DealDomain;
   clientName?: string;
   classification?: DealClassification;
@@ -42,6 +42,15 @@ export interface User {
   email?: string;
   role: UserRole;
   password?: string;
+}
+
+export interface PlatformConfigOption {
+  id: number;
+  type: 'status' | 'domain';
+  value: string;
+  sort_order: number;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface Agent {
@@ -94,10 +103,26 @@ export interface AIChatMessage {
   created_at?: string;
 }
 
+export interface AIWorkflowStep {
+  id: number;
+  session_id: number;
+  deal_id: number;
+  step_key: string;
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  artifact?: string | null;
+  error?: string | null;
+  metadata?: Record<string, unknown> | null;
+  started_at?: string | null;
+  completed_at?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
 export interface AISessionResponse {
   session: AISession | null;
   messages: AIMessage[];
   agentOutputs?: Record<string, string>;
+  workflowSteps?: AIWorkflowStep[];
 }
 
 export interface AIStartResponse {
@@ -137,4 +162,10 @@ export interface ProposedDealUpdates {
 export interface GlobalAISettings {
   openai_api_key: string;
   has_key: boolean;
+}
+
+export interface OpenAIModel {
+  id: string;
+  created?: number | null;
+  owned_by?: string | null;
 }
