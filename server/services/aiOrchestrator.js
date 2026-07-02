@@ -205,6 +205,8 @@ Include these sections when facts are available:
 
 Rules:
 - Use only facts from the supplied deal context and conversation.
+- Treat "High Priority AI Notes" as explicit user guidance. Preserve their intent in a dedicated section of the summary so downstream agents cannot miss them.
+- If AI notes conflict with document facts, retain both and flag the conflict clearly.
 - Preserve specific dates, numbers, named systems, mandatory requirements, and evaluation criteria.
 - Keep the summary concise but complete. Prefer bullets over prose.
 - Keep the entire response under 1,800 words. Do not repeat document text verbatim.
@@ -229,7 +231,7 @@ Rules:
 - Do not include specialist context, report text, Markdown sections, or any long-form content.
 - Do not include a "context" field.`;
 
-export async function buildCoordinatorContext(contextBundle, conversation) {
+export async function buildCoordinatorContext(contextBundle, conversation, priorityInstructions = '') {
   const conversationText = formatConversation(conversation);
   const messages = [
     {
@@ -247,6 +249,7 @@ export async function buildCoordinatorContext(contextBundle, conversation) {
   try {
     context = await callAgent('coordinator', messages, {
       systemPrompt: COORDINATOR_CONTEXT_PROMPT,
+      priorityInstructions,
       maxTokens: 8192,
       allowPartialOnLength: true,
       partialNote: 'The coordinator context reached the response limit, so this summary was capped. Continue using the facts above and flag any missing details as assumptions.',
@@ -270,7 +273,23 @@ export async function callAgent(slug, messages, options = {}) {
   if (!agent) throw new Error(`Agent ${slug} not found`);
   if (!agent.is_enabled) throw new Error(`Agent ${slug} is disabled`);
 
-  const systemPrompt = options.systemPrompt || agent.system_prompt;
+  const baseSystemPrompt = options.systemPrompt || agent.system_prompt;
+  const priorityInstructions = String(options.priorityInstructions || '').trim();
+  const systemPrompt = priorityInstructions
+    ? [
+        baseSystemPrompt,
+        '# HIGHEST-PRIORITY DEAL-SPECIFIC USER INSTRUCTIONS',
+        'The deal owner supplied the instructions below. Apply them directly to this task and preserve their intent in your output. They take priority over deal documents, extracted context, cached summaries, prior agent outputs, and default workflow preferences. If they conflict with source documents, explicitly report the conflict while still following the deal owner’s requested direction. Do not omit or dilute these instructions when creating a derived summary, brief, estimate, recommendation, or report.',
+        '<deal_ai_notes>',
+        priorityInstructions,
+        '</deal_ai_notes>',
+      ].join('\n\n')
+    : baseSystemPrompt;
+  console.info('Preparing AI agent request', {
+    agent: slug,
+    hasHighPriorityDealNotes: Boolean(priorityInstructions),
+    highPriorityDealNotesLength: priorityInstructions.length,
+  });
 
   let params = {
     model: agent.model,
@@ -350,7 +369,13 @@ export async function callAgent(slug, messages, options = {}) {
   throw createAiError(describeOpenAIError(lastError));
 }
 
-export async function coordinatorStep(contextBundle, conversation, agentOutputs = {}, existingCoordinatorContext = null) {
+export async function coordinatorStep(
+  contextBundle,
+  conversation,
+  agentOutputs = {},
+  existingCoordinatorContext = null,
+  priorityInstructions = ''
+) {
   const agent = await loadAgentConfig('coordinator');
   if (!agent) throw new Error('Coordinator agent not found');
 
@@ -358,13 +383,14 @@ export async function coordinatorStep(contextBundle, conversation, agentOutputs 
   const conversationText = formatConversation(conversation);
   const hasAgentOutputs = agentOutputs && Object.keys(agentOutputs).length > 0;
   const coordinatorContext = existingCoordinatorContext || (!hasAgentOutputs
-    ? await buildCoordinatorContext(contextBundle, conversation)
+    ? await buildCoordinatorContext(contextBundle, conversation, priorityInstructions)
     : null);
 
   const messages = [
     {
       role: 'user',
       content: [
+        priorityInstructions ? `## High Priority AI Notes\n${priorityInstructions}` : '',
         coordinatorContext ? '## Coordinator context summary' : '## Deal context',
         coordinatorContext || contextBundle,
         outputsSummary,
@@ -376,6 +402,7 @@ export async function coordinatorStep(contextBundle, conversation, agentOutputs 
 
   const raw = await callAgent('coordinator', messages, {
     systemPrompt: COORDINATOR_DECISION_PROMPT,
+    priorityInstructions,
     json: true,
     maxTokens: 1200,
   });
@@ -388,7 +415,7 @@ export async function coordinatorStep(contextBundle, conversation, agentOutputs 
   };
 }
 
-export async function runAgent(slug, context, conversation, priorOutputs = {}) {
+export async function runAgent(slug, context, conversation, priorOutputs = {}, priorityInstructions = '') {
   const outputsSummary = formatAgentOutputs(priorOutputs);
   const conversationText = formatConversation(conversation);
   const outputConstraint = slug === 'copywriter'
@@ -412,6 +439,7 @@ export async function runAgent(slug, context, conversation, priorOutputs = {}) {
 
   try {
     return await callAgent(slug, messages, {
+      priorityInstructions,
       maxTokens: 8192,
       allowPartialOnLength: true,
       partialNote: `The ${slug} agent response reached the output limit and was capped. Treat missing details as assumptions or manual review items.`,
@@ -449,7 +477,7 @@ Rules:
 - Keep the brief under 1,500 words.
 - Do not output JSON.`;
 
-export async function buildEstimatorBrief(context, conversation, agentOutputs) {
+export async function buildEstimatorBrief(context, conversation, agentOutputs, priorityInstructions = '') {
   const outputsSummary = formatAgentOutputs(agentOutputs);
   const conversationText = formatConversation(conversation);
   const messages = [
@@ -467,6 +495,7 @@ export async function buildEstimatorBrief(context, conversation, agentOutputs) {
 
   return await callAgent('coordinator', messages, {
     systemPrompt: ESTIMATOR_BRIEF_PROMPT,
+    priorityInstructions,
     maxTokens: 4096,
     allowPartialOnLength: true,
     partialNote: 'The estimator brief reached the output limit and was capped. Estimator should flag any missing details as assumptions.',
@@ -539,7 +568,7 @@ export function buildReportFromOutputs(dealName, coordinatorContext, agentOutput
   return parts.join('\n');
 }
 
-export async function coordinatorReviewStep(context, draftReport) {
+export async function coordinatorReviewStep(context, draftReport, priorityInstructions = '') {
   const messages = [
     {
       role: 'user',
@@ -556,7 +585,11 @@ export async function coordinatorReviewStep(context, draftReport) {
   try {
     reviewSection = await callAgent('coordinator', messages, {
       systemPrompt: REPORT_REVIEW_PROMPT,
-      maxTokens: 4096,
+      priorityInstructions,
+      // Reasoning models count internal reasoning and visible output against the
+      // same completion budget. A 4K limit can be exhausted before the review
+      // emits any text, which incorrectly triggers the "Not available" fallback.
+      maxTokens: 8192,
       allowPartialOnLength: true,
       partialNote: 'The coordinator review reached the output limit and was capped. Review any missing submission requirements manually.',
     });
@@ -609,7 +642,7 @@ Return a JSON object exactly matching this schema:
 - Return description as Markdown text, not HTML.
 - Keep description focused: what the client wants, why, and any major constraint.`;
 
-export async function extractDealProperties(contextBundle) {
+export async function extractDealProperties(contextBundle, priorityInstructions = '') {
   const agent = await loadAgentConfig('coordinator');
   if (!agent) throw new Error('Coordinator agent not found');
 
@@ -623,6 +656,7 @@ export async function extractDealProperties(contextBundle) {
   const systemPrompt = `${agent.system_prompt}\n\n${DEAL_PROPERTIES_EXTRACTION_PROMPT}`;
   const raw = await callAgent('coordinator', messages, {
     systemPrompt,
+    priorityInstructions,
     json: true,
     maxTokens: 1000,
   });
@@ -630,7 +664,14 @@ export async function extractDealProperties(contextBundle) {
   return validated;
 }
 
-export async function runAgentPlan(context, conversation, plan, dealName = null, onOutput = null) {
+export async function runAgentPlan(
+  context,
+  conversation,
+  plan,
+  dealName = null,
+  onOutput = null,
+  priorityInstructions = ''
+) {
   const outputs = {};
   if (onOutput?.existingOutputs) {
     Object.assign(outputs, onOutput.existingOutputs);
@@ -656,7 +697,10 @@ export async function runAgentPlan(context, conversation, plan, dealName = null,
   const parallelResults = await Promise.all(
     parallelSpecialists
       .filter(slug => !outputs[slug])
-      .map(async slug => [slug, await runTrackedStep(slug, () => runAgent(slug, context, conversation))])
+      .map(async slug => [
+        slug,
+        await runTrackedStep(slug, () => runAgent(slug, context, conversation, {}, priorityInstructions)),
+      ])
   );
   for (const [slug, output] of parallelResults) {
     await emitOutput(slug, output);
@@ -664,11 +708,22 @@ export async function runAgentPlan(context, conversation, plan, dealName = null,
 
   if (shouldRun('estimator')) {
     if (!outputs['estimator-brief']) {
-      const estimatorBrief = await runTrackedStep('estimator-brief', () => buildEstimatorBrief(context, conversation, outputs));
+      const estimatorBrief = await runTrackedStep(
+        'estimator-brief',
+        () => buildEstimatorBrief(context, conversation, outputs, priorityInstructions)
+      );
       await emitOutput('estimator-brief', estimatorBrief);
     }
     if (!outputs.estimator) {
-      const estimatorOutput = await runTrackedStep('estimator', () => runAgent('estimator', outputs['estimator-brief'], conversation, outputs));
+      const estimatorContext = [
+        context,
+        '## Coordinator Estimation Brief',
+        outputs['estimator-brief'],
+      ].filter(Boolean).join('\n\n');
+      const estimatorOutput = await runTrackedStep(
+        'estimator',
+        () => runAgent('estimator', estimatorContext, conversation, outputs, priorityInstructions)
+      );
       await emitOutput('estimator', estimatorOutput);
     }
   }
@@ -679,7 +734,10 @@ export async function runAgentPlan(context, conversation, plan, dealName = null,
       dealName ? `## Deal Name\n${dealName}` : '',
       context,
     ].filter(Boolean).join('\n\n');
-    const copywriterOutput = await runTrackedStep('copywriter', () => runAgent('copywriter', copywriterContext, conversation, outputs));
+    const copywriterOutput = await runTrackedStep(
+      'copywriter',
+      () => runAgent('copywriter', copywriterContext, conversation, outputs, priorityInstructions)
+    );
     await emitOutput('copywriter', copywriterOutput);
   }
 

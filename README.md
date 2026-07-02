@@ -85,7 +85,7 @@ Agent workflow progress is persisted per deal in `ai_workflow_steps`. The table 
 
 When Execute AI proposes deal property updates, generated deal descriptions are Markdown so they render cleanly on the deal page.
 
-Deals also include **AI Notes**, a separate field directly below the description. These notes are injected into Coordinator and Validator prompts as high-priority user guidance.
+Deals also include **AI Notes**, a separate field directly below the description. These notes are appended directly to every relevant agent's system prompt as highest-priority deal-owner instructions, while also remaining visible in the deal context. Each Execute AI run starts a fresh session so cached specialist outputs cannot bypass updated notes; editing notes in a live session invalidates its derived outputs.
 
 ## Configuring the AI Processor
 
