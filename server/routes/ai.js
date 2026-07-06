@@ -17,6 +17,7 @@ import {
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { randomUUID } from 'crypto';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(__dirname, '..', 'uploads');
@@ -24,6 +25,7 @@ const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(__dirname, '..', 'uploads
 const router = Router({ mergeParams: true });
 const aiSessionStreamSubscribers = new Map();
 const aiSessionStreamUpdateState = new Map();
+const activeAiOperations = new Map();
 const SESSION_STREAM_BATCH_MS = 150;
 
 function parseDealId(id) {
@@ -43,6 +45,30 @@ function createRouteError(message, status = 500) {
   error.status = status;
   error.expose = true;
   return error;
+}
+
+function createCancellationError(message = 'AI run cancelled.') {
+  const error = createRouteError(message, 499);
+  error.code = 'AI_RUN_CANCELLED';
+  error.isCancellation = true;
+  return error;
+}
+
+function isCancellationError(err) {
+  return Boolean(
+    err?.isCancellation
+      || err?.code === 'AI_RUN_CANCELLED'
+      || err?.name === 'AbortError'
+      || err?.code === 'ABORT_ERR'
+      || err?.status === 499
+  );
+}
+
+function throwIfAborted(signal) {
+  if (!signal?.aborted) return;
+  const reason = signal.reason;
+  if (reason instanceof Error) throw reason;
+  throw createCancellationError();
 }
 
 function createBusyWorkflowError(lock) {
@@ -65,6 +91,9 @@ async function getOrCreateSession(dealId, contextBundle, coordinatorContext) {
   const existing = await query('SELECT * FROM ai_sessions WHERE deal_id = $1 ORDER BY id DESC LIMIT 1', [dealId]);
   if (existing.rows.length > 0) {
     const session = existing.rows[0];
+    if (session.status === 'cancelled') {
+      return createSession(dealId, contextBundle, coordinatorContext);
+    }
     const updates = [];
     const params = [];
     let idx = 1;
@@ -95,29 +124,40 @@ async function createSession(dealId, contextBundle = '', coordinatorContext = nu
   return result.rows[0];
 }
 
-async function setSessionStatus(sessionId, status, dealId = null) {
-  await query(
-    'UPDATE ai_sessions SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
-    [status, sessionId]
+async function setSessionStatus(sessionId, status, dealId = null, options = {}) {
+  const allowCancelledOverwrite = options.allowCancelledOverwrite === true;
+  const result = await query(
+    `UPDATE ai_sessions
+     SET status = $1, updated_at = CURRENT_TIMESTAMP
+     WHERE id = $2
+       AND ($3::boolean = true OR status <> 'cancelled')`,
+    [status, sessionId, allowCancelledOverwrite]
   );
+  if (result.rowCount === 0) return false;
   await publishSessionUpdate(sessionId, dealId, { immediate: status !== 'running' });
+  return true;
 }
 
 async function setSessionPlan(sessionId, plan, dealId = null) {
-  await query(
-    'UPDATE ai_sessions SET current_agent_plan = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+  const result = await query(
+    `UPDATE ai_sessions
+     SET current_agent_plan = $1, updated_at = CURRENT_TIMESTAMP
+     WHERE id = $2 AND status <> 'cancelled'`,
     [JSON.stringify(plan), sessionId]
   );
+  if (result.rowCount === 0) return false;
   await publishSessionUpdate(sessionId, dealId);
+  return true;
 }
 
 async function acquireAiRunLock(dealId, operation, sessionId = null) {
+  const lockToken = randomUUID();
   const result = await query(
-    `INSERT INTO ai_run_locks (deal_id, session_id, operation, acquired_at, updated_at)
-     VALUES ($1, $2, $3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    `INSERT INTO ai_run_locks (deal_id, session_id, operation, lock_token, acquired_at, updated_at)
+     VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
      ON CONFLICT (deal_id) DO NOTHING
      RETURNING *`,
-    [dealId, sessionId, operation]
+    [dealId, sessionId, operation, lockToken]
   );
   if (result.rows.length > 0) {
     return { acquired: true, lock: result.rows[0] };
@@ -127,15 +167,86 @@ async function acquireAiRunLock(dealId, operation, sessionId = null) {
   return { acquired: false, lock: existing.rows[0] || null };
 }
 
-async function attachSessionToRunLock(dealId, sessionId) {
+async function attachSessionToRunLock(dealId, sessionId, lockToken) {
   await query(
-    'UPDATE ai_run_locks SET session_id = $1, updated_at = CURRENT_TIMESTAMP WHERE deal_id = $2',
-    [sessionId, dealId]
+    'UPDATE ai_run_locks SET session_id = $1, updated_at = CURRENT_TIMESTAMP WHERE deal_id = $2 AND lock_token = $3',
+    [sessionId, dealId, lockToken]
   );
 }
 
-async function releaseAiRunLock(dealId) {
+async function releaseAiRunLock(dealId, lockToken = null) {
+  if (lockToken) {
+    await query('DELETE FROM ai_run_locks WHERE deal_id = $1 AND lock_token = $2', [dealId, lockToken]);
+    return;
+  }
   await query('DELETE FROM ai_run_locks WHERE deal_id = $1', [dealId]);
+}
+
+function registerAiOperation(dealId, operation, lockToken = null) {
+  const controller = new AbortController();
+  const entry = { controller, operation, lockToken };
+  const active = activeAiOperations.get(dealId) || new Set();
+  active.add(entry);
+  activeAiOperations.set(dealId, active);
+  return entry;
+}
+
+function unregisterAiOperation(dealId, entry) {
+  const active = activeAiOperations.get(dealId);
+  if (!active) return;
+  active.delete(entry);
+  if (active.size === 0) {
+    activeAiOperations.delete(dealId);
+  }
+}
+
+function abortAiOperations(dealId, message = 'AI run cancelled by user.') {
+  const active = activeAiOperations.get(dealId);
+  if (!active || active.size === 0) return 0;
+  for (const entry of active) {
+    if (!entry.controller.signal.aborted) {
+      entry.controller.abort(createCancellationError(message));
+    }
+  }
+  return active.size;
+}
+
+async function cancelActiveAiWorkForDeal(dealId) {
+  const sessionResult = await query(
+    `SELECT id
+     FROM ai_sessions
+     WHERE deal_id = $1
+       AND status = 'running'
+     ORDER BY id DESC
+     LIMIT 1`,
+    [dealId]
+  );
+  const sessionId = sessionResult.rows[0]?.id || null;
+  if (!sessionId) return { sessionId: null, stepsCancelled: 0, sessionCancelled: false };
+
+  const stepsResult = await query(
+    `UPDATE ai_workflow_steps
+     SET status = 'cancelled',
+         error = NULL,
+         completed_at = CASE WHEN completed_at IS NULL THEN CURRENT_TIMESTAMP ELSE completed_at END,
+         updated_at = CURRENT_TIMESTAMP
+     WHERE deal_id = $1
+       AND session_id = $2
+       AND status IN ('pending', 'running')`,
+    [dealId, sessionId]
+  );
+  const sessionUpdated = await setSessionStatus(sessionId, 'cancelled', dealId, { allowCancelledOverwrite: true });
+  await query(
+    `UPDATE ai_sessions
+     SET current_agent_plan = NULL, updated_at = CURRENT_TIMESTAMP
+     WHERE id = $1`,
+    [sessionId]
+  );
+  return {
+    sessionId,
+    stepsCancelled: stepsResult.rowCount,
+    sessionCancelled: sessionUpdated,
+  };
 }
 
 async function getSessionMessages(sessionId) {
@@ -433,7 +544,8 @@ async function markWorkflowStepRunning(sessionId, dealId, stepKey, metadata = {}
       `INSERT INTO ai_workflow_steps (session_id, deal_id, step_key, status, metadata, started_at, updated_at)
        VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
        ON CONFLICT (session_id, step_key)
-       DO UPDATE SET status = EXCLUDED.status, metadata = EXCLUDED.metadata, error = NULL, started_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP`,
+       DO UPDATE SET status = EXCLUDED.status, metadata = EXCLUDED.metadata, error = NULL, started_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+       WHERE ai_workflow_steps.status <> 'cancelled'`,
       [sessionId, dealId, stepKey, 'running', JSON.stringify(metadata)]
     );
     await publishSessionUpdate(sessionId, dealId);
@@ -452,7 +564,8 @@ async function markWorkflowStepCompleted(sessionId, dealId, stepKey, artifact = 
       `INSERT INTO ai_workflow_steps (session_id, deal_id, step_key, status, artifact, metadata, started_at, completed_at, updated_at)
        VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
        ON CONFLICT (session_id, step_key)
-       DO UPDATE SET status = EXCLUDED.status, artifact = EXCLUDED.artifact, metadata = EXCLUDED.metadata, error = NULL, completed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP`,
+       DO UPDATE SET status = EXCLUDED.status, artifact = EXCLUDED.artifact, metadata = EXCLUDED.metadata, error = NULL, completed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+       WHERE ai_workflow_steps.status <> 'cancelled'`,
       [sessionId, dealId, stepKey, 'completed', artifact, JSON.stringify(metadata)]
     );
     await publishSessionUpdate(sessionId, dealId);
@@ -471,7 +584,8 @@ async function markWorkflowStepFailed(sessionId, dealId, stepKey, error, metadat
       `INSERT INTO ai_workflow_steps (session_id, deal_id, step_key, status, error, metadata, started_at, updated_at)
        VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
        ON CONFLICT (session_id, step_key)
-       DO UPDATE SET status = EXCLUDED.status, error = EXCLUDED.error, metadata = EXCLUDED.metadata, updated_at = CURRENT_TIMESTAMP`,
+       DO UPDATE SET status = EXCLUDED.status, error = EXCLUDED.error, metadata = EXCLUDED.metadata, updated_at = CURRENT_TIMESTAMP
+       WHERE ai_workflow_steps.status <> 'cancelled'`,
       [sessionId, dealId, stepKey, 'failed', error?.message || String(error), JSON.stringify(metadata)]
     );
     await publishSessionUpdate(sessionId, dealId);
@@ -631,7 +745,9 @@ async function saveFinalReport(dealId, sessionId, markdown) {
 
     const documentId = docResult.rows[0].id;
     await query(
-      'UPDATE ai_sessions SET final_report_document_id = $1, status = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3',
+      `UPDATE ai_sessions
+       SET final_report_document_id = $1, status = $2, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $3 AND status <> 'cancelled'`,
       [documentId, 'completed', sessionId]
     );
 
@@ -673,7 +789,41 @@ async function saveValidationReport(dealId, dealName, markdown) {
   return docResult.rows[0].id;
 }
 
-async function finalizeAssessmentArtifacts({ dealId, sessionId, dealName, contextBundle, agentContext, outputs, aiNotes }) {
+function buildGapAssessmentReport(dealName, coordinatorContext, missingItems) {
+  const gaps = Array.isArray(missingItems) ? missingItems.filter(Boolean) : [];
+  return [
+    `# Assessment Report: ${dealName || 'Untitled Deal'}`,
+    '',
+    '## Executive Summary',
+    'The assessment cannot be fully completed from the current source package. The report below captures the available evidence and the material gaps that remain.',
+    '',
+    '## Current Evidence',
+    coordinatorContext?.trim() || 'No consolidated coordinator context was produced before the run stopped.',
+    '',
+    '## Gaps and Missing Inputs',
+    gaps.length > 0 ? gaps.map((gap, index) => `${index + 1}. ${gap}`).join('\n') : 'No explicit blocking gaps were identified.',
+    '',
+    '## Assessment Impact',
+    'These gaps prevent a reliable final assessment, detailed WBS, and pricing baseline. Treat them as blockers until the source package is completed.',
+  ].join('\n');
+}
+
+function buildClarifyingSummaryMessage(reasoning, questions) {
+  const lines = [];
+  if (reasoning) lines.push(`Coordinator reason: ${reasoning}`);
+  if (Array.isArray(questions) && questions.length > 0) {
+    lines.push('Blocking inputs:');
+    questions.slice(0, 3).forEach((question, index) => {
+      lines.push(`${index + 1}. ${question}`);
+    });
+  }
+  return lines.length > 0
+    ? lines.join('\n')
+    : 'Coordinator requires clarification before the workflow can continue.';
+}
+
+async function finalizeAssessmentArtifacts({ dealId, sessionId, dealName, contextBundle, agentContext, outputs, aiNotes, signal }) {
+  throwIfAborted(signal);
   const draftReport = buildReportFromOutputs(dealName, agentContext, outputs);
   await markWorkflowStepCompleted(sessionId, dealId, 'draft-report', draftReport, {
     source: outputs.copywriter ? 'copywriter' : 'assembled',
@@ -683,28 +833,36 @@ async function finalizeAssessmentArtifacts({ dealId, sessionId, dealName, contex
   let wbsDocumentId = null;
 
   try {
+    throwIfAborted(signal);
     await markWorkflowStepRunning(sessionId, dealId, 'generate-architecture-diagrams');
-    const diagramImages = await generateArchitectureDiagramImages(draftReport);
+    const diagramImages = await generateArchitectureDiagramImages(draftReport, signal);
+    throwIfAborted(signal);
     const diagramDocs = await saveArchitectureDiagramImages(dealId, sessionId, diagramImages);
     await markWorkflowStepCompleted(sessionId, dealId, 'generate-architecture-diagrams', JSON.stringify(diagramDocs.map(doc => doc.name)), {
       count: diagramDocs.length,
       model: 'gpt-image-2',
     });
+    throwIfAborted(signal);
     await markWorkflowStepRunning(sessionId, dealId, 'save-wbs-workbook');
     wbsDocumentId = await saveDetailedWbs(dealId, sessionId, outputs.estimator);
     await markWorkflowStepCompleted(sessionId, dealId, 'save-wbs-workbook', String(wbsDocumentId));
+    throwIfAborted(signal);
     await markWorkflowStepRunning(sessionId, dealId, 'save-final-report');
     finalReportDocumentId = await saveFinalReport(dealId, sessionId, draftReport);
     await markWorkflowStepCompleted(sessionId, dealId, 'save-final-report', String(finalReportDocumentId));
   } catch (finalizeErr) {
-    await markWorkflowStepFailed(sessionId, dealId, 'save-final-report', finalizeErr);
+    if (!isCancellationError(finalizeErr)) {
+      await markWorkflowStepFailed(sessionId, dealId, 'save-final-report', finalizeErr);
+    }
     throw finalizeErr;
   }
 
   let proposedUpdates = null;
   try {
-    proposedUpdates = await extractDealProperties(contextBundle, aiNotes);
+    throwIfAborted(signal);
+    proposedUpdates = await extractDealProperties(contextBundle, aiNotes, signal);
   } catch (extractErr) {
+    if (isCancellationError(extractErr)) throw extractErr;
     console.error('Property extraction failed:', extractErr);
   }
 
@@ -717,11 +875,13 @@ async function finalizeAssessmentArtifacts({ dealId, sessionId, dealName, contex
 }
 
 router.post('/start', authenticate, requireRole('Superadmin', 'Editor'), async (req, res, next) => {
+  let dealId = null;
   let sessionForError = null;
-  let lockHeld = false;
+  let lockToken = null;
+  let operationEntry = null;
   try {
     await ensureDefaultAgents();
-    const dealId = parseDealId(req.params.id);
+    dealId = parseDealId(req.params.id);
     if (!dealId) return res.status(400).json({ error: 'Invalid deal id' });
 
     const data = await getDealWithDocs(dealId);
@@ -731,7 +891,9 @@ router.post('/start', authenticate, requireRole('Superadmin', 'Editor'), async (
     if (!lockResult.acquired) {
       throw createBusyWorkflowError(lockResult.lock);
     }
-    lockHeld = true;
+    lockToken = lockResult.lock.lock_token;
+    operationEntry = registerAiOperation(dealId, 'start', lockToken);
+    const { signal } = operationEntry.controller;
 
     const assessmentDocs = await getAiDocumentsByName(dealId, 'AI Assessment Report.md');
     const force = req.body.force === true;
@@ -750,11 +912,15 @@ router.post('/start', authenticate, requireRole('Superadmin', 'Editor'), async (
     // Otherwise updated AI notes can be skipped because cached outputs look done.
     const session = await createSession(dealId);
     sessionForError = session;
-    await attachSessionToRunLock(dealId, session.id);
+    let finalReportDocumentId = null;
+    let sessionStatusAfterRun = 'active';
+    await attachSessionToRunLock(dealId, session.id, lockToken);
     await addMessage(session.id, 'coordinator', 'Starting Execute AI flow. Reading deal documents and preparing context.');
 
     const sourceDocuments = data.documents.filter(doc => doc.source === 'user' || !doc.source);
+    throwIfAborted(signal);
     const extractedDocs = await buildDealContextBundle(req.params.id, sourceDocuments);
+    throwIfAborted(signal);
     const contextBundle = withAiNotes(summarizeContextBundle(extractedDocs), data.deal);
     await query('UPDATE ai_sessions SET extracted_context = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', [contextBundle, session.id]);
     await markWorkflowStepCompleted(session.id, dealId, 'extracted-context', contextBundle, {
@@ -764,13 +930,17 @@ router.post('/start', authenticate, requireRole('Superadmin', 'Editor'), async (
     await addMessage(session.id, 'coordinator', `Document extraction complete: ${readableDocs}/${extractedDocs.length} document(s) readable.`);
     const messages = await getSessionMessages(session.id);
 
+    await markWorkflowStepRunning(session.id, dealId, 'coordinator-routing', {
+      documents: extractedDocs.map(d => ({ id: d.id, name: d.name, success: d.success })),
+    });
     await addMessage(session.id, 'coordinator', 'Coordinator is reviewing the deal context and choosing the next step.');
     const coordinatorResult = await coordinatorStep(
       contextBundle,
       messages,
       {},
       null,
-      getAiNotes(data.deal)
+      getAiNotes(data.deal),
+      signal
     );
 
     const coordinatorContext = coordinatorResult.status === 'routing' ? coordinatorResult.context : null;
@@ -778,10 +948,29 @@ router.post('/start', authenticate, requireRole('Superadmin', 'Editor'), async (
       await query('UPDATE ai_sessions SET coordinator_context = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', [coordinatorContext, session.id]);
       await markWorkflowStepCompleted(session.id, dealId, 'coordinator-context', coordinatorContext);
     }
+    await markWorkflowStepCompleted(session.id, dealId, 'coordinator-routing', coordinatorResult.status, {
+      plan: coordinatorResult.plan || [],
+      reasoning: coordinatorResult.reasoning || null,
+    });
 
     if (coordinatorResult.status === 'clarifying' && coordinatorResult.questions?.length) {
-      const content = coordinatorResult.questions.map((q, i) => `${i + 1}. ${q}`).join('\n');
-      await addMessage(session.id, 'coordinator', content);
+      await addMessage(
+        session.id,
+        'coordinator',
+        buildClarifyingSummaryMessage(coordinatorResult.reasoning, coordinatorResult.questions)
+      );
+      const gapReport = buildGapAssessmentReport(
+        data.deal.name || 'Untitled Deal',
+        coordinatorContext || contextBundle,
+        coordinatorResult.questions
+      );
+      finalReportDocumentId = await saveFinalReport(dealId, session.id, gapReport);
+      await markWorkflowStepCompleted(session.id, dealId, 'draft-report', gapReport, {
+        source: 'gap-assessment',
+        missingInputs: coordinatorResult.questions.length,
+      });
+      await markWorkflowStepCompleted(session.id, dealId, 'save-final-report', String(finalReportDocumentId));
+      sessionStatusAfterRun = 'completed';
     } else if (coordinatorResult.status === 'routing' && coordinatorResult.plan?.length) {
       await addMessage(session.id, 'coordinator', `Coordinator selected agents: ${coordinatorResult.plan.join(', ')}.`);
     } else if (coordinatorResult.status === 'ready_to_write') {
@@ -791,7 +980,7 @@ router.post('/start', authenticate, requireRole('Superadmin', 'Editor'), async (
     await setSessionPlan(session.id, coordinatorResult.status === 'routing' ? (coordinatorResult.plan || []) : null, dealId);
 
     const updatedMessages = await getSessionMessages(session.id);
-    await setSessionStatus(session.id, 'active', dealId);
+    await setSessionStatus(session.id, sessionStatusAfterRun, dealId);
 
     res.json({
       sessionId: session.id,
@@ -802,6 +991,14 @@ router.post('/start', authenticate, requireRole('Superadmin', 'Editor'), async (
       extractedDocs: extractedDocs.map(d => ({ id: d.id, name: d.name, size: d.size, success: d.success })),
     });
   } catch (err) {
+    if (isCancellationError(err)) {
+      if (sessionForError?.id) {
+        try {
+          await setSessionPlan(sessionForError.id, null, dealId);
+        } catch {}
+      }
+      return res.status(409).json({ error: 'AI run cancelled.', code: 'AI_RUN_CANCELLED' });
+    }
     if (sessionForError?.id) {
       try {
         await setSessionStatus(sessionForError.id, 'failed', dealId);
@@ -812,8 +1009,11 @@ router.post('/start', authenticate, requireRole('Superadmin', 'Editor'), async (
     }
     next(err);
   } finally {
-    if (lockHeld) {
-      await releaseAiRunLock(parseDealId(req.params.id)).catch(releaseErr => {
+    if (operationEntry && dealId) {
+      unregisterAiOperation(dealId, operationEntry);
+    }
+    if (lockToken && dealId) {
+      await releaseAiRunLock(dealId, lockToken).catch(releaseErr => {
         console.error('Failed to release AI start lock:', releaseErr);
       });
     }
@@ -821,12 +1021,14 @@ router.post('/start', authenticate, requireRole('Superadmin', 'Editor'), async (
 });
 
 router.post('/validate', authenticate, requireRole('Superadmin', 'Editor'), async (req, res, next) => {
+  let dealId = null;
   let sessionForError = null;
-  let lockHeld = false;
+  let lockToken = null;
+  let operationEntry = null;
   let currentStepKey = null;
   try {
     await ensureDefaultAgents();
-    const dealId = parseDealId(req.params.id);
+    dealId = parseDealId(req.params.id);
     if (!dealId) return res.status(400).json({ error: 'Invalid deal id' });
 
     const data = await getDealWithDocs(dealId);
@@ -838,7 +1040,9 @@ router.post('/validate', authenticate, requireRole('Superadmin', 'Editor'), asyn
     if (!lockResult.acquired) {
       throw createBusyWorkflowError(lockResult.lock);
     }
-    lockHeld = true;
+    lockToken = lockResult.lock.lock_token;
+    operationEntry = registerAiOperation(dealId, 'validate', lockToken);
+    const { signal } = operationEntry.controller;
 
     const clientDocuments = data.documents.filter(doc => doc.source === 'user' || !doc.source);
     const aiDocuments = data.documents.filter(doc => doc.source === 'ai');
@@ -886,7 +1090,7 @@ router.post('/validate', authenticate, requireRole('Superadmin', 'Editor'), asyn
 
     const session = await getOrCreateSession(dealId);
     sessionForError = session;
-    await attachSessionToRunLock(dealId, session.id);
+    await attachSessionToRunLock(dealId, session.id, lockToken);
     await setSessionStatus(session.id, 'running', dealId);
     await setSessionPlan(session.id, null, dealId);
     await addMessage(session.id, 'coordinator', 'Validation started. Reviewing the selected supplier package against the client requirements.');
@@ -895,7 +1099,9 @@ router.post('/validate', authenticate, requireRole('Superadmin', 'Editor'), asyn
     await markWorkflowStepRunning(session.id, dealId, currentStepKey, {
       documents: clientDocuments.map(doc => ({ id: doc.id, name: doc.name })),
     });
+    throwIfAborted(signal);
     const clientExtracted = await buildDealContextBundle(req.params.id, clientDocuments);
+    throwIfAborted(signal);
     const clientContext = summarizeContextBundle(clientExtracted);
     await markWorkflowStepCompleted(session.id, dealId, currentStepKey, clientContext, {
       documents: clientExtracted.map(doc => ({ id: doc.id, name: doc.name, success: doc.success })),
@@ -905,7 +1111,9 @@ router.post('/validate', authenticate, requireRole('Superadmin', 'Editor'), asyn
     await markWorkflowStepRunning(session.id, dealId, currentStepKey, {
       documents: selectedSupplierDocuments.map(doc => ({ id: doc.id, name: doc.name })),
     });
+    throwIfAborted(signal);
     const supplierExtracted = await buildDealContextBundle(req.params.id, selectedSupplierDocuments);
+    throwIfAborted(signal);
     const supplierContext = summarizeContextBundle(supplierExtracted);
     await markWorkflowStepCompleted(session.id, dealId, currentStepKey, supplierContext, {
       documents: supplierExtracted.map(doc => ({ id: doc.id, name: doc.name, success: doc.success })),
@@ -946,6 +1154,7 @@ router.post('/validate', authenticate, requireRole('Superadmin', 'Editor'), asyn
     const reportMarkdown = await callAgent('validator', messages, {
       priorityInstructions: getAiNotes(data.deal),
       maxTokens: 32768,
+      signal,
     });
 
     await markWorkflowStepCompleted(session.id, dealId, currentStepKey, reportMarkdown, {
@@ -956,6 +1165,7 @@ router.post('/validate', authenticate, requireRole('Superadmin', 'Editor'), asyn
 
     currentStepKey = 'save-validation-report';
     await markWorkflowStepRunning(session.id, dealId, currentStepKey);
+    throwIfAborted(signal);
     const documentId = await saveValidationReport(dealId, dealName, reportMarkdown);
     await markWorkflowStepCompleted(session.id, dealId, currentStepKey, String(documentId));
     await addMessage(session.id, 'coordinator', 'Validation report saved to AI documents.');
@@ -967,10 +1177,13 @@ router.post('/validate', authenticate, requireRole('Superadmin', 'Editor'), asyn
       dealId: req.params.id,
     });
   } catch (err) {
+    if (isCancellationError(err)) {
+      return res.status(409).json({ error: 'AI run cancelled.', code: 'AI_RUN_CANCELLED' });
+    }
     if (sessionForError?.id) {
       try {
         if (currentStepKey) {
-          await markWorkflowStepFailed(sessionForError.id, parseDealId(req.params.id), currentStepKey, err);
+          await markWorkflowStepFailed(sessionForError.id, dealId, currentStepKey, err);
         }
         await setSessionStatus(sessionForError.id, 'failed', dealId);
         await addMessage(sessionForError.id, 'coordinator', `Validation stopped: ${err.message || 'Unexpected error while validating the package.'}`);
@@ -983,8 +1196,11 @@ router.post('/validate', authenticate, requireRole('Superadmin', 'Editor'), asyn
     }
     next(err);
   } finally {
-    if (lockHeld) {
-      await releaseAiRunLock(parseDealId(req.params.id)).catch(releaseErr => {
+    if (operationEntry && dealId) {
+      unregisterAiOperation(dealId, operationEntry);
+    }
+    if (lockToken && dealId) {
+      await releaseAiRunLock(dealId, lockToken).catch(releaseErr => {
         console.error('Failed to release AI validation lock:', releaseErr);
       });
     }
@@ -992,10 +1208,12 @@ router.post('/validate', authenticate, requireRole('Superadmin', 'Editor'), asyn
 });
 
 router.post('/message', authenticate, requireRole('Superadmin', 'Editor'), async (req, res, next) => {
+  let dealId = null;
   let sessionForError = null;
-  let lockHeld = false;
+  let lockToken = null;
+  let operationEntry = null;
   try {
-    const dealId = parseDealId(req.params.id);
+    dealId = parseDealId(req.params.id);
     if (!dealId) return res.status(400).json({ error: 'Invalid deal id' });
 
     const { content } = req.body;
@@ -1007,11 +1225,13 @@ router.post('/message', authenticate, requireRole('Superadmin', 'Editor'), async
     if (!lockResult.acquired) {
       throw createBusyWorkflowError(lockResult.lock);
     }
-    lockHeld = true;
+    lockToken = lockResult.lock.lock_token;
+    operationEntry = registerAiOperation(dealId, 'message', lockToken);
+    const { signal } = operationEntry.controller;
 
     const session = await getOrCreateSession(dealId, '');
     sessionForError = session;
-    await attachSessionToRunLock(dealId, session.id);
+    await attachSessionToRunLock(dealId, session.id, lockToken);
     await setSessionStatus(session.id, 'running', dealId);
     await addMessage(session.id, 'user', content);
 
@@ -1033,13 +1253,19 @@ router.post('/message', authenticate, requireRole('Superadmin', 'Editor'), async
       ...savedAgentOutputs,
     };
     const aiNotes = getAiNotes(dealData?.deal);
+    const sourceDocuments = (dealData?.documents || []).filter(doc => doc.source === 'user' || !doc.source);
 
+    await markWorkflowStepRunning(session.id, dealId, 'coordinator-routing', {
+      mode: session.coordinator_context ? 'resume' : 'start',
+      documents: sourceDocuments.map(doc => ({ id: doc.id, name: doc.name })),
+    });
     const coordinatorResult = await coordinatorStep(
       contextBundle,
       messages,
       agentOutputs,
       session.coordinator_context,
-      aiNotes
+      aiNotes,
+      signal
     );
 
     // Persist coordinator context when it is produced for routing.
@@ -1047,13 +1273,17 @@ router.post('/message', authenticate, requireRole('Superadmin', 'Editor'), async
       ? coordinatorResult.context
       : session.coordinator_context || null;
     if (!coordinatorContext && coordinatorResult.status !== 'clarifying') {
-      coordinatorContext = await buildCoordinatorContext(contextBundle, messages, aiNotes);
+      coordinatorContext = await buildCoordinatorContext(contextBundle, messages, aiNotes, signal);
     }
     if (coordinatorResult.context && coordinatorResult.status === 'routing') {
       await query('UPDATE ai_sessions SET coordinator_context = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', [coordinatorResult.context, session.id]);
     } else if (coordinatorContext && coordinatorContext !== session.coordinator_context) {
       await query('UPDATE ai_sessions SET coordinator_context = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', [coordinatorContext, session.id]);
     }
+    await markWorkflowStepCompleted(session.id, dealId, 'coordinator-routing', coordinatorResult.status, {
+      plan: coordinatorResult.plan || [],
+      reasoning: coordinatorResult.reasoning || null,
+    });
 
     // Specialists normally receive only the cached Coordinator summary. Attach
     // the current notes directly so they cannot be lost in summarization or when
@@ -1066,6 +1296,7 @@ router.post('/message', authenticate, requireRole('Superadmin', 'Editor'), async
     let finalReportDocumentId = null;
     let wbsDocumentId = null;
     let proposedUpdates = null;
+    let sessionStatusAfterRun = 'active';
     const persistAgentOutput = async (slug, output) => {
       await saveAgentOutput(session.id, slug, output);
       await markWorkflowStepCompleted(session.id, dealId, slug, output, { source: 'agent-plan' });
@@ -1094,7 +1325,8 @@ router.post('/message', authenticate, requireRole('Superadmin', 'Editor'), async
           dealName,
           persistAgentOutput,
           aiNotes,
-          contextBundle
+          contextBundle,
+          signal
         );
         await markWorkflowStepCompleted(session.id, dealId, 'agent-plan', JSON.stringify(Object.keys(newAgentOutputs)), { plan: coordinatorResult.plan });
       } catch (planErr) {
@@ -1110,7 +1342,8 @@ router.post('/message', authenticate, requireRole('Superadmin', 'Editor'), async
         updatedMessages,
         updatedOutputs,
         coordinatorContext,
-        aiNotes
+        aiNotes,
+        signal
       );
       if (nextResult.status === 'ready_to_write') {
         await addMessage(session.id, 'agent', 'Agents complete. Copywriter is finalizing the draft assessment report.', 'coordinator');
@@ -1126,11 +1359,28 @@ router.post('/message', authenticate, requireRole('Superadmin', 'Editor'), async
           agentContext,
           outputs: updatedOutputs,
           aiNotes,
+          signal,
         }));
         await addMessage(session.id, 'agent', 'Draft assessment report and WBS generated. Use Validate to run the compliance audit.', 'coordinator');
       } else if (nextResult.status === 'clarifying' && nextResult.questions?.length) {
         const qContent = nextResult.questions.map((q, i) => `${i + 1}. ${q}`).join('\n');
-        await addMessage(session.id, 'coordinator', qContent);
+        const gapReport = buildGapAssessmentReport(
+          data.deal.name || 'Untitled Deal',
+          coordinatorContext || contextBundle,
+          nextResult.questions
+        );
+        finalReportDocumentId = await saveFinalReport(dealId, session.id, gapReport);
+        await markWorkflowStepCompleted(session.id, dealId, 'draft-report', gapReport, {
+          source: 'gap-assessment',
+          missingInputs: nextResult.questions.length,
+        });
+        await markWorkflowStepCompleted(session.id, dealId, 'save-final-report', String(finalReportDocumentId));
+        await addMessage(
+          session.id,
+          'coordinator',
+          buildClarifyingSummaryMessage(nextResult.reasoning, nextResult.questions)
+        );
+        sessionStatusAfterRun = 'completed';
       }
     } else if (coordinatorResult.status === 'ready_to_write') {
       const updatedOutputs = await getAgentOutputs(session.id);
@@ -1151,7 +1401,8 @@ router.post('/message', authenticate, requireRole('Superadmin', 'Editor'), async
             dealName,
             persistAgentOutput,
             aiNotes,
-            contextBundle
+            contextBundle,
+            signal
           );
           await markWorkflowStepCompleted(session.id, dealId, 'agent-plan', JSON.stringify(Object.keys(newAgentOutputs)), { plan: defaultPlan });
         } catch (planErr) {
@@ -1175,15 +1426,26 @@ router.post('/message', authenticate, requireRole('Superadmin', 'Editor'), async
         agentContext,
         outputs: finalOutputs,
         aiNotes,
+        signal,
       }));
       await addMessage(session.id, 'agent', 'Draft assessment report and WBS generated. Use Validate to run the compliance audit.', 'coordinator');
     } else if (coordinatorResult.status === 'clarifying' && coordinatorResult.questions?.length) {
-      const qContent = coordinatorResult.questions.map((q, i) => `${i + 1}. ${q}`).join('\n');
-      await addMessage(session.id, 'coordinator', qContent);
+      const gapReport = buildGapAssessmentReport(
+        data.deal.name || 'Untitled Deal',
+        coordinatorContext || contextBundle,
+        coordinatorResult.questions
+      );
+      finalReportDocumentId = await saveFinalReport(dealId, session.id, gapReport);
+      await markWorkflowStepCompleted(session.id, dealId, 'draft-report', gapReport, {
+        source: 'gap-assessment',
+        missingInputs: coordinatorResult.questions.length,
+      });
+      await markWorkflowStepCompleted(session.id, dealId, 'save-final-report', String(finalReportDocumentId));
+      sessionStatusAfterRun = 'completed';
     }
 
     if (!finalReportDocumentId) {
-      await setSessionStatus(session.id, 'active', dealId);
+      await setSessionStatus(session.id, sessionStatusAfterRun, dealId);
     }
     const updatedMessages = await getSessionMessages(session.id);
     const updatedSession = await query('SELECT * FROM ai_sessions WHERE id = $1', [session.id]);
@@ -1198,6 +1460,9 @@ router.post('/message', authenticate, requireRole('Superadmin', 'Editor'), async
       agentOutputs: newAgentOutputs || undefined,
     });
   } catch (err) {
+    if (isCancellationError(err)) {
+      return res.status(409).json({ error: 'AI run cancelled.', code: 'AI_RUN_CANCELLED' });
+    }
     if (sessionForError?.id) {
       try {
         await setSessionStatus(sessionForError.id, 'failed', dealId);
@@ -1208,11 +1473,41 @@ router.post('/message', authenticate, requireRole('Superadmin', 'Editor'), async
     }
     next(err);
   } finally {
-    if (lockHeld) {
-      await releaseAiRunLock(parseDealId(req.params.id)).catch(releaseErr => {
+    if (operationEntry && dealId) {
+      unregisterAiOperation(dealId, operationEntry);
+    }
+    if (lockToken && dealId) {
+      await releaseAiRunLock(dealId, lockToken).catch(releaseErr => {
         console.error('Failed to release AI message lock:', releaseErr);
       });
     }
+  }
+});
+
+router.post('/stop', authenticate, requireRole('Superadmin', 'Editor'), async (req, res, next) => {
+  try {
+    const dealId = parseDealId(req.params.id);
+    if (!dealId) return res.status(400).json({ error: 'Invalid deal id' });
+
+    const abortedOperations = abortAiOperations(dealId, 'AI run cancelled by user.');
+    const cancellation = await cancelActiveAiWorkForDeal(dealId);
+    if (cancellation.sessionId && cancellation.sessionCancelled) {
+      await addMessage(cancellation.sessionId, 'coordinator', 'AI run stopped. Active steps were cancelled.');
+      await publishSessionUpdate(cancellation.sessionId, dealId, { immediate: true });
+    }
+    await releaseAiRunLock(dealId).catch(releaseErr => {
+      console.error('Failed to clear AI stop lock:', releaseErr);
+    });
+
+    res.json({
+      ok: true,
+      sessionId: cancellation.sessionId,
+      abortedOperations,
+      cancelledSteps: cancellation.stepsCancelled,
+      cancelled: Boolean(cancellation.sessionCancelled || abortedOperations > 0),
+    });
+  } catch (err) {
+    next(err);
   }
 });
 
@@ -1282,9 +1577,11 @@ router.get('/chat', authenticate, requireRole('Superadmin', 'Editor'), async (re
 });
 
 router.post('/chat', authenticate, requireRole('Superadmin', 'Editor'), async (req, res, next) => {
+  let dealId = null;
+  let operationEntry = null;
   try {
     await ensureDefaultAgents();
-    const dealId = parseDealId(req.params.id);
+    dealId = parseDealId(req.params.id);
     if (!dealId) return res.status(400).json({ error: 'Invalid deal id' });
 
     const { content } = req.body;
@@ -1294,9 +1591,13 @@ router.post('/chat', authenticate, requireRole('Superadmin', 'Editor'), async (r
 
     const data = await getDealWithDocs(dealId);
     if (!data) return res.status(404).json({ error: 'Deal not found' });
+    operationEntry = registerAiOperation(dealId, 'chat');
+    const { signal } = operationEntry.controller;
 
     const dealContext = formatDealForChat(data.deal);
+    throwIfAborted(signal);
     const docContext = await buildChatContext(dealId, data.documents);
+    throwIfAborted(signal);
 
     await addChatMessage(dealId, 'user', content);
     const history = await getChatMessages(dealId);
@@ -1325,13 +1626,22 @@ router.post('/chat', authenticate, requireRole('Superadmin', 'Editor'), async (r
       maxTokens: 2500,
       allowPartialOnLength: true,
       partialNote: 'The chat response reached the output limit and was capped. Ask a narrower follow-up if more detail is needed.',
+      signal,
     });
+    throwIfAborted(signal);
     await addChatMessage(dealId, 'agent', response);
     const updatedHistory = await getChatMessages(dealId);
 
     res.json({ messages: updatedHistory });
   } catch (err) {
+    if (isCancellationError(err)) {
+      return res.status(409).json({ error: 'AI run cancelled.', code: 'AI_RUN_CANCELLED' });
+    }
     next(err);
+  } finally {
+    if (operationEntry && dealId) {
+      unregisterAiOperation(dealId, operationEntry);
+    }
   }
 });
 

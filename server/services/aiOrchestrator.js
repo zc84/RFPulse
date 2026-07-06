@@ -20,6 +20,43 @@ function createAiError(message, status = 502) {
   return error;
 }
 
+function createCancellationError(message = 'AI run cancelled.') {
+  const error = createAiError(message, 499);
+  error.code = 'AI_RUN_CANCELLED';
+  error.isCancellation = true;
+  return error;
+}
+
+function isCancellationError(err) {
+  return Boolean(
+    err?.isCancellation
+      || err?.code === 'AI_RUN_CANCELLED'
+      || err?.name === 'AbortError'
+      || err?.code === 'ABORT_ERR'
+      || err?.status === 499
+  );
+}
+
+function throwIfAborted(signal) {
+  if (!signal?.aborted) return;
+  const reason = signal.reason;
+  if (reason instanceof Error) throw reason;
+  throw createCancellationError();
+}
+
+async function abortableDelay(ms, signal) {
+  if (!signal) {
+    await new Promise(resolve => setTimeout(resolve, ms));
+    return;
+  }
+  await Promise.race([
+    new Promise(resolve => setTimeout(resolve, ms)),
+    new Promise((_, reject) => {
+      signal.addEventListener('abort', () => reject(signal.reason instanceof Error ? signal.reason : createCancellationError()), { once: true });
+    }),
+  ]);
+}
+
 function isServerError(err) {
   return (
     err.status >= 500 ||
@@ -220,6 +257,66 @@ function formatConversation(messages) {
     .join('\n\n');
 }
 
+function compactCoordinatorSourceContext(text, maxChars = 16000) {
+  if (!text) return '';
+  const trimmed = String(text).trim();
+  if (trimmed.length <= maxChars) return trimmed;
+
+  const lines = trimmed.split('\n');
+  const keepPatterns = [
+    /^--- .+ ---$/,
+    /^## Page \d+/,
+    /^#{1,6}\s+/,
+    /^\d+(?:\.\d+)*\s+[A-Z]/,
+    /TABLE OF CONTENTS/i,
+    /(?:scope|objective|deliverable|submission|deadline|timetable|evaluation|weight|appendix|technical|security|integration|data|workflow|architecture|deployment|pricing|cost|license|support|maintenance|acceptance|sla|audit|question|clarification|mandatory|language|residency|confidentiality|liability|insurance|bond|termination|ip|compliance)/i,
+  ];
+
+  const selected = [];
+  let selectedLength = 0;
+  let lastWasBlank = false;
+  for (const line of lines) {
+    const value = line.trim();
+    if (!value) {
+      if (!lastWasBlank && selected.length > 0) selected.push('');
+      lastWasBlank = true;
+      continue;
+    }
+    lastWasBlank = false;
+    if (keepPatterns.some(pattern => pattern.test(value))) {
+      selected.push(value);
+      selectedLength += value.length + 1;
+      if (selectedLength >= maxChars) break;
+    }
+  }
+
+  const compacted = selected.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  return compacted.slice(0, maxChars).trim();
+}
+
+function buildCoordinatorFallbackDecision(contextBundle, existingCoordinatorContext = null, reasoning = null) {
+  const context = existingCoordinatorContext || compactCoordinatorSourceContext(contextBundle);
+  return {
+    status: 'routing',
+    questions: null,
+    plan: REQUIRED_SPECIALIST_SLUGS,
+    reasoning: reasoning || 'Coordinator timed out while preparing the routing decision. Using default specialist routing for the available RFP evidence.',
+    context,
+    raw: null,
+  };
+}
+
+function shouldForceCoordinatorRouting(validated, contextBundle) {
+  if (!validated || validated.status !== 'clarifying') return false;
+  const text = [validated.reasoning, ...(validated.questions || []), contextBundle]
+    .filter(Boolean)
+    .join('\n')
+    .toLowerCase();
+  const tenderPackGap = /appendix|boq|bill of quantities|technical specifications|delivery schedule|sla|submission|evaluation|pricing rules|commercial terms|legal terms|procurement platform|response format|terms and conditions/.test(text);
+  const substantialRfp = /scope|requirements|workflow|architecture|integration|security|compliance|deliverable/.test(text) && String(contextBundle || '').length > 5000;
+  return tenderPackGap && substantialRfp;
+}
+
 export function splitCoordinatorSourceContext(text, maxChars = 45000) {
   if (!text || text.length <= maxChars) return [text || ''];
   const sections = text.split(/(?=^--- .+ ---$)/gm).filter(Boolean);
@@ -246,11 +343,13 @@ export function splitCoordinatorSourceContext(text, maxChars = 45000) {
   return chunks.filter(Boolean);
 }
 
-export async function buildCoordinatorContext(contextBundle, conversation, priorityInstructions = '') {
+export async function buildCoordinatorContext(contextBundle, conversation, priorityInstructions = '', signal = null) {
+  throwIfAborted(signal);
   const conversationText = formatConversation(conversation);
   const chunks = splitCoordinatorSourceContext(contextBundle);
   const summaries = [];
   for (let index = 0; index < chunks.length; index++) {
+    throwIfAborted(signal);
     const messages = [{
       role: 'user',
       content: [
@@ -266,6 +365,7 @@ export async function buildCoordinatorContext(contextBundle, conversation, prior
       maxTokens: 16384,
       allowPartialOnLength: true,
       partialNote: `Coordinator source summary part ${index + 1} reached its output limit.`,
+      signal,
     });
     if (!summary.trim()) throw createAiError(`Coordinator returned an empty source summary for part ${index + 1}.`);
     summaries.push(summary.trim());
@@ -286,6 +386,7 @@ export async function buildCoordinatorContext(contextBundle, conversation, prior
         maxTokens: 16384,
         allowPartialOnLength: true,
         partialNote: 'The consolidated Coordinator summary reached its output limit.',
+        signal,
       });
   if (!context.trim()) {
     throw createAiError('Coordinator returned an empty specialist context. Please try again.');
@@ -301,6 +402,7 @@ export function requireCoordinatorContext(context) {
 }
 
 export async function callAgent(slug, messages, options = {}) {
+  throwIfAborted(options.signal);
   const agent = await loadAgentConfig(slug);
   if (!agent) throw new Error(`Agent ${slug} not found`);
   if (!agent.is_enabled) throw new Error(`Agent ${slug} is disabled`);
@@ -345,8 +447,9 @@ export async function callAgent(slug, messages, options = {}) {
   let lastError;
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
+      throwIfAborted(options.signal);
       const client = await getOpenAIClient();
-      const response = await client.chat.completions.create(params);
+      const response = await client.chat.completions.create(params, options.signal ? { signal: options.signal } : undefined);
       const choice = response.choices?.[0];
       if (!choice) {
         throw createAiError(`OpenAI returned no choices for agent ${slug}.`);
@@ -362,6 +465,9 @@ export async function callAgent(slug, messages, options = {}) {
       return content;
     } catch (err) {
       lastError = err;
+      if (isCancellationError(err)) {
+        throw err;
+      }
       if (err.expose) {
         throw err;
       }
@@ -371,7 +477,7 @@ export async function callAgent(slug, messages, options = {}) {
         err.code === 'ERR_HTTP2_STREAM_ERROR';
       const isTransientServerError = isServerError(err);
       if ((isStreamError || isTransientServerError) && attempt < MAX_RETRIES) {
-        await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+        await abortableDelay(1000 * attempt, options.signal);
         continue;
       }
       if (isServerError(err)) {
@@ -414,8 +520,10 @@ export async function coordinatorStep(
   conversation,
   agentOutputs = {},
   existingCoordinatorContext = null,
-  priorityInstructions = ''
+  priorityInstructions = '',
+  signal = null
 ) {
+  throwIfAborted(signal);
   const agent = await loadAgentConfig('coordinator');
   if (!agent) throw new Error('Coordinator agent not found');
 
@@ -433,9 +541,7 @@ export async function coordinatorStep(
       raw: null,
     };
   }
-  const coordinatorContext = existingCoordinatorContext || (!hasAgentOutputs
-    ? await buildCoordinatorContext(contextBundle, conversation, priorityInstructions)
-    : null);
+  const coordinatorContext = existingCoordinatorContext || compactCoordinatorSourceContext(contextBundle);
 
   const messages = [
     {
@@ -451,23 +557,50 @@ export async function coordinatorStep(
     },
   ];
 
-  const raw = await callAgent('coordinator', messages, {
-    taskPromptKey: 'coordinator.decision',
-    priorityInstructions,
-    schema: coordinatorDecisionSchema,
-    schemaName: 'coordinator_decision',
-    maxTokens: 1200,
-  });
-  const validated = parseAgentJson(raw, 'Coordinator', coordinatorDecisionSchema);
-  const normalized = validated.status === 'routing'
-    ? { ...validated, questions: null, plan: REQUIRED_SPECIALIST_SLUGS }
-    : { ...validated, plan: null };
+  const timeoutMs = Number(process.env.AI_COORDINATOR_TIMEOUT_MS || 90000);
+  const timeoutController = new AbortController();
+  let timeoutTriggered = false;
+  const timeout = setTimeout(() => {
+    timeoutTriggered = true;
+    timeoutController.abort(createCancellationError('Coordinator routing timed out. Using a fallback specialist route.'));
+  }, timeoutMs);
 
-  return {
-    ...normalized,
-    context: coordinatorContext || undefined,
-    raw,
-  };
+  if (signal) {
+    if (signal.aborted) {
+      timeoutController.abort(signal.reason);
+    } else {
+      signal.addEventListener('abort', () => timeoutController.abort(signal.reason), { once: true });
+    }
+  }
+
+  try {
+    const raw = await callAgent('coordinator', messages, {
+      taskPromptKey: 'coordinator.decision',
+      priorityInstructions,
+      schema: coordinatorDecisionSchema,
+      schemaName: 'coordinator_decision',
+      maxTokens: 1200,
+      signal: timeoutController.signal,
+    });
+    const validated = parseAgentJson(raw, 'Coordinator', coordinatorDecisionSchema);
+    const forcedRouting = shouldForceCoordinatorRouting(validated, contextBundle);
+    const normalized = (validated.status === 'routing' || forcedRouting)
+      ? { ...validated, status: 'routing', questions: null, plan: REQUIRED_SPECIALIST_SLUGS }
+      : { ...validated, plan: null };
+
+    return {
+      ...normalized,
+      context: coordinatorContext || undefined,
+      raw,
+    };
+  } catch (err) {
+    if (timeoutTriggered) {
+      return buildCoordinatorFallbackDecision(contextBundle, coordinatorContext, 'Coordinator decision exceeded the time limit. Using fallback specialist routing.');
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 export function buildSpecialistMessages(context, priorOutputs = {}) {
@@ -484,14 +617,15 @@ export function buildSpecialistMessages(context, priorOutputs = {}) {
   ];
 }
 
-export async function runAgent(slug, context, conversation, priorOutputs = {}, priorityInstructions = '') {
+export async function runAgent(slug, context, conversation, priorOutputs = {}, priorityInstructions = '', signal = null) {
   return await callAgent(slug, buildSpecialistMessages(context, priorOutputs), {
     priorityInstructions,
     maxTokens: slug === 'architect' ? 32768 : slug === 'copywriter' ? 16384 : 8192,
+    signal,
   });
 }
 
-export async function buildEstimatorBrief(context, conversation, agentOutputs, priorityInstructions = '') {
+export async function buildEstimatorBrief(context, conversation, agentOutputs, priorityInstructions = '', signal = null) {
   const outputsSummary = formatAgentOutputs(agentOutputs);
   const conversationText = formatConversation(conversation);
   const messages = [
@@ -513,10 +647,11 @@ export async function buildEstimatorBrief(context, conversation, agentOutputs, p
     maxTokens: 4096,
     allowPartialOnLength: true,
     partialNote: 'The estimator brief reached the output limit and was capped. Estimator should flag any missing details as assumptions.',
+    signal,
   });
 }
 
-export async function runEstimator(context, conversation, priorityInstructions = '') {
+export async function runEstimator(context, conversation, priorityInstructions = '', signal = null) {
   const messages = [
     {
       role: 'user',
@@ -531,11 +666,12 @@ export async function runEstimator(context, conversation, priorityInstructions =
     schema: estimatorResultSchema,
     schemaName: 'estimator_result',
     maxTokens: 16384,
+    signal,
   });
   return JSON.stringify(parseAgentJson(raw, 'Estimator', estimatorResultSchema), null, 2);
 }
 
-export async function buildRoleBrief(role, sourceContext, conversation, priorityInstructions = '') {
+export async function buildRoleBrief(role, sourceContext, conversation, priorityInstructions = '', signal = null) {
   const conversationText = formatConversation(conversation);
   return callAgent('coordinator', [{
     role: 'user',
@@ -544,6 +680,7 @@ export async function buildRoleBrief(role, sourceContext, conversation, priority
     taskPromptKey: role === 'legal' ? 'coordinator.legal-brief' : 'coordinator.architect-brief',
     priorityInstructions,
     maxTokens: 16384,
+    signal,
   });
 }
 
@@ -587,7 +724,8 @@ function stripArchitectureDiagramPrompt(report) {
   return idx >= 0 ? report.slice(0, idx).trim() : report.trim();
 }
 
-export async function generateArchitectureDiagramImages(report) {
+export async function generateArchitectureDiagramImages(report, signal = null) {
+  throwIfAborted(signal);
   const client = await getOpenAIClient();
   const reportBody = stripArchitectureDiagramPrompt(report);
   const images = [];
@@ -597,6 +735,7 @@ export async function generateArchitectureDiagramImages(report) {
   ];
 
   for (const variant of variants) {
+    throwIfAborted(signal);
     const response = await client.images.generate({
       model: 'gpt-image-2',
       prompt: buildArchitectureDiagramImagePrompt(reportBody, variant.key),
@@ -605,7 +744,7 @@ export async function generateArchitectureDiagramImages(report) {
       output_format: 'png',
       background: 'opaque',
       n: 1,
-    });
+    }, signal ? { signal } : undefined);
     const image = response.data?.[0];
     if (!image?.b64_json) {
       throw createAiError(`Image generation for "${variant.title}" returned no PNG output. Please try again.`);
@@ -651,7 +790,7 @@ export function buildReportFromOutputs(dealName, coordinatorContext, agentOutput
   return appendArchitectureDiagramPrompt(report);
 }
 
-export async function extractDealProperties(contextBundle, priorityInstructions = '') {
+export async function extractDealProperties(contextBundle, priorityInstructions = '', signal = null) {
   const messages = [
     {
       role: 'user',
@@ -665,6 +804,7 @@ export async function extractDealProperties(contextBundle, priorityInstructions 
     schema: dealPropertiesSchema,
     schemaName: 'deal_properties',
     maxTokens: 1000,
+    signal,
   });
   const validated = parseAgentJson(raw, 'Deal property extractor', dealPropertiesSchema);
   return validated;
@@ -677,8 +817,10 @@ export async function runAgentPlan(
   dealName = null,
   onOutput = null,
   priorityInstructions = '',
-  sourceContext = context
+  sourceContext = context,
+  signal = null
 ) {
+  throwIfAborted(signal);
   const outputs = {};
   if (onOutput?.existingOutputs) {
     Object.assign(outputs, onOutput.existingOutputs);
@@ -703,7 +845,7 @@ export async function runAgentPlan(
   const briefResults = await Promise.all(['legal', 'architect'].map(async slug => {
     const key = `${slug}-brief`;
     if (outputs[key]) return [key, outputs[key]];
-    const brief = await runTrackedStep(key, () => buildRoleBrief(slug, sourceContext, conversation, priorityInstructions));
+    const brief = await runTrackedStep(key, () => buildRoleBrief(slug, sourceContext, conversation, priorityInstructions, signal));
     return [key, brief];
   }));
   for (const [slug, output] of briefResults) await emitOutput(slug, output);
@@ -714,7 +856,7 @@ export async function runAgentPlan(
       .filter(slug => !outputs[slug])
       .map(async slug => [
         slug,
-        await runTrackedStep(slug, () => runAgent(slug, outputs[`${slug}-brief`], conversation, {}, priorityInstructions)),
+        await runTrackedStep(slug, () => runAgent(slug, outputs[`${slug}-brief`], conversation, {}, priorityInstructions, signal)),
       ])
   );
   for (const [slug, output] of parallelResults) {
@@ -725,14 +867,14 @@ export async function runAgentPlan(
     if (!outputs['estimator-brief']) {
       const estimatorBrief = await runTrackedStep(
         'estimator-brief',
-        () => buildEstimatorBrief(context, conversation, outputs, priorityInstructions)
+        () => buildEstimatorBrief(context, conversation, outputs, priorityInstructions, signal)
       );
       await emitOutput('estimator-brief', estimatorBrief);
     }
     if (!outputs.estimator) {
       const estimatorOutput = await runTrackedStep(
         'estimator',
-        () => runEstimator(outputs['estimator-brief'], conversation, priorityInstructions)
+        () => runEstimator(outputs['estimator-brief'], conversation, priorityInstructions, signal)
       );
       parseEstimatorOutput(estimatorOutput);
       await emitOutput('estimator', estimatorOutput);
@@ -751,7 +893,7 @@ export async function runAgentPlan(
         legal: outputs.legal,
         architect: outputs.architect,
         estimator: buildEstimatorReportSummary(outputs.estimator),
-      }, priorityInstructions)
+      }, priorityInstructions, signal)
     );
     await emitOutput('copywriter', copywriterOutput);
   }

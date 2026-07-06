@@ -35,6 +35,18 @@ const EXECUTE_STAGES: WorkflowStage[] = [
     },
   },
   {
+    label: 'Coordinator routing',
+    stepKeys: ['coordinator-routing'],
+    detail: steps => {
+      const status = steps.get('coordinator-routing')?.status;
+      if (status === 'running') return 'preparing routing brief';
+      if (status === 'completed') return 'routing decision recorded';
+      if (status === 'failed') return 'routing failed';
+      if (status === 'cancelled') return 'routing cancelled';
+      return null;
+    },
+  },
+  {
     label: 'Coordinator plan created',
     stepKeys: ['coordinator-context', 'agent-plan'],
   },
@@ -93,6 +105,7 @@ function formatAgentStatus(status?: AIWorkflowStep['status']) {
   if (status === 'completed') return 'done';
   if (status === 'running') return 'running';
   if (status === 'failed') return 'failed';
+  if (status === 'cancelled') return 'cancelled';
   return null;
 }
 
@@ -118,6 +131,7 @@ function getWorkflowMode(workflowSteps: AIWorkflowStep[]) {
 function getStageStatus(steps: Map<string, AIWorkflowStep>, stepKeys: string[]) {
   const stageSteps = stepKeys.map(stepKey => steps.get(stepKey)).filter(Boolean) as AIWorkflowStep[];
   if (stageSteps.some(step => step.status === 'failed')) return 'failed';
+  if (stageSteps.some(step => step.status === 'cancelled')) return 'cancelled';
   if (stepKeys.every(stepKey => steps.get(stepKey)?.status === 'completed')) return 'completed';
   if (stageSteps.some(step => step.status === 'running') || stageSteps.some(step => step.status === 'completed')) return 'running';
   return 'pending';
@@ -164,6 +178,17 @@ function getStreamBadge(streamStatus: AIChatPanelProps['streamStatus']) {
   return { label: 'Offline', color: '#64748B', background: '#F8FAFC', border: '#CBD5E1' };
 }
 
+function getPinnedNotice(messages: Array<AIMessage | AIChatMessage>) {
+  const interesting = [...messages].reverse().find(message => {
+    if (message.role === 'user') return false;
+    const content = typeof message.content === 'string' ? message.content : '';
+    return /Validation report saved to AI documents\.|Draft assessment report and WBS generated\.|AI run stopped\.|Validation stopped:/.test(content);
+  });
+
+  if (!interesting || typeof interesting.content !== 'string') return null;
+  return interesting.content;
+}
+
 function WorkflowStatusPanel({
   workflowSteps,
   messages,
@@ -178,7 +203,7 @@ function WorkflowStatusPanel({
   loading: boolean;
 }) {
   const [now, setNow] = useState(() => Date.now());
-  const [showCompletedStages, setShowCompletedStages] = useState(false);
+  const [showDetails, setShowDetails] = useState(false);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
@@ -191,13 +216,14 @@ function WorkflowStatusPanel({
   const mode = getWorkflowMode(workflowSteps);
   const stages = mode === 'validation' ? VALIDATION_STAGES : EXECUTE_STAGES;
   const failedStep = workflowSteps.find(step => step.status === 'failed');
+  const cancelledStep = workflowSteps.find(step => step.status === 'cancelled');
   const elapsed = formatElapsed(workflowSteps);
   const hasRunningSteps = workflowSteps.some(step => step.status === 'running');
   const lastUpdatedAt = getLastWorkflowUpdate(workflowSteps, messages, sessionStatus);
   const lastUpdatedLabel = formatRelativeTime(lastUpdatedAt, now);
   const runFinished = !hasRunningSteps && !loading;
   const completedStages = stages.filter(stage => getStageStatus(stepsByKey, stage.stepKeys) === 'completed');
-  const visibleStages = runFinished && !failedStep && !showCompletedStages
+  const visibleStages = showDetails && runFinished && !failedStep
     ? stages.filter(stage => getStageStatus(stepsByKey, stage.stepKeys) !== 'completed').length > 0
       ? stages.filter(stage => getStageStatus(stepsByKey, stage.stepKeys) !== 'completed')
       : stages.slice(-2)
@@ -206,24 +232,59 @@ function WorkflowStatusPanel({
   const title = hasRunningSteps || loading
     ? mode === 'validation' ? 'Validation running' : 'Workflow running'
     : mode === 'validation' ? 'Latest validation run' : 'Latest workflow run';
+  const progressLabel = `${completedStages.length}/${stages.length} steps`;
+  const pinnedNotice = getPinnedNotice(messages);
 
   return (
     <div style={{
-      padding: '14px 16px',
+      padding: '10px 12px',
       borderBottom: '1px solid #E2E8F0',
-      background: '#FCFCFD',
+      background: 'linear-gradient(180deg, #FFFFFF 0%, #FAFBFF 100%)',
       display: 'flex',
       flexDirection: 'column',
-      gap: 10,
+      gap: 8,
     }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: 1 }}>
           {hasRunningSteps || loading
             ? <Loader2 size={14} color="#2563EB" style={{ animation: 'spin 0.8s linear infinite' }} />
             : failedStep
               ? <AlertCircle size={14} color="#DC2626" />
+              : cancelledStep
+                ? <AlertCircle size={14} color="#92400E" />
               : <CheckCircle size={14} color="#16A34A" />}
-          <div style={{ fontSize: 12, fontWeight: 700, color: '#0F172A' }}>{title}</div>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: '#0F172A', lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {cancelledStep && !hasRunningSteps && !loading ? 'Workflow cancelled' : title}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 3 }}>
+              <span style={{
+                fontSize: 10,
+                fontWeight: 700,
+                color: hasRunningSteps || loading ? '#1D4ED8' : '#475569',
+                background: hasRunningSteps || loading ? '#EFF6FF' : '#F8FAFC',
+                border: '1px solid #DBEAFE',
+                borderRadius: 999,
+                padding: '2px 7px',
+                letterSpacing: '0.02em',
+                textTransform: 'uppercase',
+              }}>
+                {progressLabel}
+              </span>
+              <span style={{
+                fontSize: 10,
+                fontWeight: 700,
+                color: cancelledStep ? '#92400E' : failedStep ? '#991B1B' : '#475569',
+                background: cancelledStep ? '#FFFBEB' : failedStep ? '#FEF2F2' : '#F8FAFC',
+                border: `1px solid ${cancelledStep ? '#FDE68A' : failedStep ? '#FECACA' : '#E2E8F0'}`,
+                borderRadius: 999,
+                padding: '2px 7px',
+                textTransform: 'uppercase',
+              }}>
+                {mode}
+              </span>
+            </div>
+          </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
           <span style={{
@@ -243,17 +304,35 @@ function WorkflowStatusPanel({
           <div style={{ fontSize: 11, color: '#64748B' }}>
             {elapsed || (lastUpdatedLabel ? `Updated ${lastUpdatedLabel}` : sessionStatus ? sessionStatus.replace('_', ' ') : '')}
           </div>
+          {stages.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowDetails(prev => !prev)}
+              style={{
+                border: '1px solid #E2E8F0',
+                background: '#fff',
+                borderRadius: 999,
+                padding: '4px 9px',
+                fontSize: 11,
+                fontWeight: 600,
+                color: '#334155',
+                cursor: 'pointer',
+              }}
+            >
+              {showDetails ? 'Hide details' : 'Show details'}
+            </button>
+          )}
         </div>
       </div>
 
-      {runFinished && completedStages.length > 2 && !failedStep && (
+      {runFinished && completedStages.length > 2 && !failedStep && showDetails && (
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
           <div style={{ fontSize: 11, color: '#64748B' }}>
             {completedStages.length} stages completed
           </div>
           <button
             type="button"
-            onClick={() => setShowCompletedStages(prev => !prev)}
+            onClick={() => setShowDetails(prev => !prev)}
             style={{
               border: 'none',
               background: 'transparent',
@@ -264,12 +343,13 @@ function WorkflowStatusPanel({
               cursor: 'pointer',
             }}
           >
-            {showCompletedStages ? 'Collapse completed' : 'Show full run'}
+            Collapse run
           </button>
         </div>
       )}
 
-      <div style={{ display: 'grid', gap: 8 }}>
+      {showDetails && (
+        <div style={{ display: 'grid', gap: 8, paddingTop: 4 }}>
         {visibleStages.map(stage => {
           const status = getStageStatus(stepsByKey, stage.stepKeys);
           const detail = stage.detail?.(stepsByKey) || null;
@@ -280,7 +360,7 @@ function WorkflowStatusPanel({
                 height: 8,
                 borderRadius: '50%',
                 flexShrink: 0,
-                background: status === 'completed' ? '#16A34A' : status === 'running' ? '#2563EB' : status === 'failed' ? '#DC2626' : '#CBD5E1',
+                background: status === 'completed' ? '#16A34A' : status === 'running' ? '#2563EB' : status === 'failed' ? '#DC2626' : status === 'cancelled' ? '#D97706' : '#CBD5E1',
               }}
               />
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, flexWrap: 'wrap' }}>
@@ -292,11 +372,31 @@ function WorkflowStatusPanel({
             </div>
           );
         })}
-      </div>
+        </div>
+      )}
+
+      {pinnedNotice && (
+        <div style={{
+          fontSize: 12,
+          color: '#1E3A8A',
+          background: '#EFF6FF',
+          border: '1px solid #BFDBFE',
+          borderRadius: 10,
+          padding: '10px 12px',
+        }}>
+          {pinnedNotice}
+        </div>
+      )}
 
       {failedStep?.error && (
         <div style={{ fontSize: 11, color: '#991B1B', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 8, padding: '8px 10px' }}>
           {failedStep.error}
+        </div>
+      )}
+
+      {cancelledStep && !failedStep && showDetails && (
+        <div style={{ fontSize: 11, color: '#92400E', background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: 8, padding: '8px 10px' }}>
+          Run cancelled before all active steps finished.
         </div>
       )}
     </div>

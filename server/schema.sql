@@ -1,3 +1,5 @@
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
 CREATE TABLE IF NOT EXISTS users (
   id SERIAL PRIMARY KEY,
   name VARCHAR(255) UNIQUE NOT NULL,
@@ -111,7 +113,7 @@ CREATE TABLE IF NOT EXISTS agent_prompt_templates (
 CREATE TABLE IF NOT EXISTS ai_sessions (
   id SERIAL PRIMARY KEY,
   deal_id INTEGER NOT NULL REFERENCES deals(id) ON DELETE CASCADE,
-  status VARCHAR(50) NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'running', 'completed', 'failed')),
+  status VARCHAR(50) NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'running', 'completed', 'failed', 'cancelled')),
   current_agent_plan JSONB,
   extracted_context TEXT,
   coordinator_context TEXT,
@@ -143,7 +145,7 @@ CREATE TABLE IF NOT EXISTS ai_workflow_steps (
   session_id INTEGER NOT NULL REFERENCES ai_sessions(id) ON DELETE CASCADE,
   deal_id INTEGER NOT NULL REFERENCES deals(id) ON DELETE CASCADE,
   step_key VARCHAR(80) NOT NULL,
-  status VARCHAR(50) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'running', 'completed', 'failed')),
+  status VARCHAR(50) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'running', 'completed', 'failed', 'cancelled')),
   artifact TEXT,
   error TEXT,
   metadata JSONB,
@@ -165,7 +167,8 @@ CREATE TABLE IF NOT EXISTS ai_chat_messages (
 CREATE TABLE IF NOT EXISTS ai_run_locks (
   deal_id INTEGER PRIMARY KEY REFERENCES deals(id) ON DELETE CASCADE,
   session_id INTEGER REFERENCES ai_sessions(id) ON DELETE SET NULL,
-  operation VARCHAR(20) NOT NULL CHECK (operation IN ('start', 'message')),
+  operation VARCHAR(20) NOT NULL CHECK (operation IN ('start', 'message', 'validate')),
+  lock_token UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
   acquired_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

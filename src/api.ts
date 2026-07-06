@@ -207,6 +207,8 @@ export const aiApi = {
     }) as Promise<AIStartResponse>,
   sendMessage: (dealId: string, content: string) =>
     apiFetch(`/deals/${dealId}/ai/message`, { method: 'POST', body: JSON.stringify({ content }) }) as Promise<AIMessageResponse>,
+  stop: (dealId: string) =>
+    apiFetch(`/deals/${dealId}/ai/stop`, { method: 'POST' }) as Promise<{ ok: boolean; sessionId: number | null; cancelled: boolean; cancelledSteps: number; abortedOperations: number }>,
   getSession: (dealId: string) =>
     apiFetch(`/deals/${dealId}/ai/session`) as Promise<AISessionResponse>,
   streamSession: (

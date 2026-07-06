@@ -98,7 +98,7 @@ export interface AIMessage {
 export interface AISession {
   id: number;
   deal_id: number;
-  status: 'active' | 'running' | 'completed' | 'failed';
+  status: 'active' | 'running' | 'completed' | 'failed' | 'cancelled';
   current_agent_plan?: string[] | null;
   extracted_context?: string;
   final_report_document_id?: number | null;
@@ -124,7 +124,7 @@ export interface AIWorkflowStep {
   session_id: number;
   deal_id: number;
   step_key: string;
-  status: 'pending' | 'running' | 'completed' | 'failed';
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
   artifact?: string | null;
   error?: string | null;
   metadata?: Record<string, unknown> | null;

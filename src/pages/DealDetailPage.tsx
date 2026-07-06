@@ -3,7 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import toast from 'react-hot-toast';
-import { ArrowLeft, Trash2, FileText, Calendar, DollarSign, Tag, AlignLeft, Hash, Building, Sparkles, BrainCircuit, UserCircle, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, Trash2, FileText, Calendar, DollarSign, Tag, AlignLeft, Hash, Building, Sparkles, BrainCircuit, UserCircle, ShieldCheck, Square } from 'lucide-react';
 import { useDeals } from '../context/DealsContext';
 import { useAuth } from '../context/AuthContext';
 import { dealsApi, aiApi, agentsApi, platformApi } from '../api';
@@ -51,6 +51,7 @@ function DealDescriptionMarkdown({ content }: { content: string }) {
 }
 
 export default function DealDetailPage() {
+  const validationToastId = 'validation-report-toast';
   const { id } = useParams<{ id: string }>();
   const { getDeal, deleteDeal, refreshDeals } = useDeals();
   const { isRole, users } = useAuth();
@@ -68,6 +69,7 @@ export default function DealDetailPage() {
   const [aiMessages, setAiMessages] = useState<AIMessage[]>([]);
   const [aiWorkflowSteps, setAiWorkflowSteps] = useState<AIWorkflowStep[]>([]);
   const [aiLoading, setAiLoading] = useState(false);
+  const [aiStopping, setAiStopping] = useState(false);
   const [validating, setValidating] = useState(false);
   const [showValidationModal, setShowValidationModal] = useState(false);
   const [primaryAssessmentDocId, setPrimaryAssessmentDocId] = useState('');
@@ -117,6 +119,9 @@ export default function DealDetailPage() {
   const domains = useMemo(() => {
     return configOptions.filter(o => o.type === 'domain').map(o => o.value);
   }, [configOptions]);
+  const isAiBusy = aiLoading || validating || aiChatLoading || aiStopping || aiSessionStatus === 'running';
+
+  const isAiCancelledError = (err: any) => err?.data?.code === 'AI_RUN_CANCELLED' || err?.message === 'AI run cancelled.';
 
   const readExtractedDocsFromWorkflow = (steps: AIWorkflowStep[]) => {
     const extractedStep = steps.find(step => step.step_key === 'extracted-context');
@@ -420,6 +425,10 @@ export default function DealDetailPage() {
         await handleSendMessage('Proceed with the analysis.', true);
       }
     } catch (err: any) {
+      if (isAiCancelledError(err)) {
+        await loadAISession();
+        return;
+      }
       if (err.message?.includes('assessment report already exists') || err.message?.includes('AI documents already exist')) {
         const names = err.data?.aiDocs?.map((d: any) => d.name) || [];
         setAiDocConfirm({ show: true, names });
@@ -474,6 +483,7 @@ export default function DealDetailPage() {
       toast.error('Select both a primary assessment report and a primary WBS workbook.');
       return;
     }
+    toast.dismiss(validationToastId);
     setShowAIPanel(true);
     setValidating(true);
     setAiKeyMissing(false);
@@ -487,12 +497,23 @@ export default function DealDetailPage() {
       await refreshDeals();
       await loadAISession();
       setShowValidationModal(false);
-      toast.success(`Validation report saved: ${result.documentName}`);
+      toast.success(`Validation report saved: ${result.documentName}`, {
+        id: validationToastId,
+        duration: 4000,
+      });
     } catch (err: any) {
+      if (isAiCancelledError(err)) {
+        toast.dismiss(validationToastId);
+        await loadAISession();
+        return;
+      }
       if (err.message?.includes('API key') || err.message?.includes('not configured')) {
         setAiKeyMissing(true);
       }
-      toast.error(err.message || 'Failed to validate deal');
+      toast.error(err.message || 'Failed to validate deal', {
+        id: validationToastId,
+        duration: 5000,
+      });
     } finally {
       setValidating(false);
       stopAISessionPolling();
@@ -527,12 +548,36 @@ export default function DealDetailPage() {
         toast.success(data.finalReportDocumentId ? 'Report saved.' : 'Message sent.');
       }
     } catch (err: any) {
+      if (isAiCancelledError(err)) {
+        await loadAISession();
+        return;
+      }
       if (err.message?.includes('API key') || err.message?.includes('not configured')) {
         setAiKeyMissing(true);
       }
       toast.error(err.message || 'Failed to send message');
     } finally {
       setAiLoading(false);
+      stopAISessionPolling();
+      loadAISession();
+    }
+  };
+
+  const handleStopAI = async () => {
+    if (!id || !isAiBusy) return;
+    setAiStopping(true);
+    try {
+      await aiApi.stop(id);
+      setAiLoading(false);
+      setValidating(false);
+      setAiChatLoading(false);
+      setAiTransientMessages([]);
+      await loadAISession();
+      toast.success('AI run stopped.');
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to stop AI run');
+    } finally {
+      setAiStopping(false);
       stopAISessionPolling();
       loadAISession();
     }
@@ -564,6 +609,9 @@ export default function DealDetailPage() {
       setAiTransientMessages([]);
     } catch (err: any) {
       setAiTransientMessages([]);
+      if (isAiCancelledError(err)) {
+        return;
+      }
       if (err.message?.includes('API key') || err.message?.includes('not configured')) {
         setAiChatKeyMissing(true);
       }
@@ -943,10 +991,20 @@ export default function DealDetailPage() {
                   size="sm"
                   icon={<Trash2 size={13} />}
                   onClick={() => setShowClearAiHistoryModal(true)}
-                  disabled={aiLoading || validating || aiChatLoading || aiWorkspaceMessages.length === 0}
+                  disabled={isAiBusy || aiWorkspaceMessages.length === 0}
                   title="Clear AI chat history"
                 >
                   Clear
+                </Button>
+                <Button
+                  variant="danger"
+                  size="sm"
+                  icon={<Square size={12} />}
+                  onClick={handleStopAI}
+                  loading={aiStopping}
+                  disabled={!isAiBusy}
+                >
+                  Stop AI
                 </Button>
                 <span title={aiKeyValid === false ? (aiKeyError || 'OpenAI API key is not configured') : ''}>
                   <Button
@@ -955,7 +1013,7 @@ export default function DealDetailPage() {
                     icon={<Sparkles size={13} />}
                     onClick={handleStartAI}
                     loading={aiLoading}
-                    disabled={aiLoading || validating || aiKeyValid !== true}
+                    disabled={isAiBusy || aiKeyValid !== true}
                   >
                     {aiSessionId ? 'Continue AI' : 'Execute AI'}
                   </Button>
@@ -967,7 +1025,7 @@ export default function DealDetailPage() {
                     icon={<ShieldCheck size={13} />}
                     onClick={openValidationModal}
                     loading={validating}
-                    disabled={aiLoading || validating || aiKeyValid !== true || !validationReady}
+                    disabled={isAiBusy || aiKeyValid !== true || !validationReady}
                   >
                     Validate
                   </Button>
@@ -983,7 +1041,7 @@ export default function DealDetailPage() {
                 sessionStatus={aiSessionStatus}
                 streamStatus={aiStreamStatus}
                 onSend={handleSendAIWorkspaceMessage}
-                disabled={aiWorkspaceKeyMissing || validating}
+                disabled={aiWorkspaceKeyMissing || validating || aiStopping}
                 emptyMessage="Run Execute AI to generate the supplier package. Then click Validate to choose which AI files should be audited."
               />
             </div>
