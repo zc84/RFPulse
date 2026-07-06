@@ -10,40 +10,8 @@ function parseOptionId(id) {
   return Number.isNaN(numericId) ? null : numericId;
 }
 
-async function ensurePlatformOptionsReady() {
-  await query(`
-    CREATE TABLE IF NOT EXISTS platform_config_options (
-      id SERIAL PRIMARY KEY,
-      type VARCHAR(50) NOT NULL CHECK (type IN ('status', 'domain')),
-      value VARCHAR(100) NOT NULL,
-      sort_order INTEGER DEFAULT 0,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE (type, value)
-    )
-  `);
-
-  await syncDealValuesToOptions();
-}
-
-async function syncDealValuesToOptions() {
-  await query(`
-    INSERT INTO platform_config_options (type, value, sort_order)
-    SELECT type, value, sort_order
-    FROM (
-      SELECT 'status' AS type, status AS value, 1000 + ROW_NUMBER() OVER (ORDER BY status) * 10 AS sort_order
-      FROM (SELECT DISTINCT status FROM deals WHERE status IS NOT NULL AND TRIM(status) <> '') deal_statuses
-      UNION ALL
-      SELECT 'domain' AS type, domain AS value, 1000 + ROW_NUMBER() OVER (ORDER BY domain) * 10 AS sort_order
-      FROM (SELECT DISTINCT domain FROM deals WHERE domain IS NOT NULL AND TRIM(domain) <> '') deal_domains
-    ) existing_values
-    ON CONFLICT (type, value) DO NOTHING
-  `);
-}
-
 router.get('/options', authenticate, async (req, res, next) => {
   try {
-    await ensurePlatformOptionsReady();
     const result = await query('SELECT * FROM platform_config_options ORDER BY type, sort_order, value');
     res.json(result.rows);
   } catch (err) {
@@ -53,7 +21,6 @@ router.get('/options', authenticate, async (req, res, next) => {
 
 router.post('/options', authenticate, requireRole('Superadmin'), async (req, res, next) => {
   try {
-    await ensurePlatformOptionsReady();
     const { type, value } = req.body;
     if (!OPTION_TYPES.has(type)) return res.status(400).json({ error: 'Invalid option type' });
     if (!value || !String(value).trim()) return res.status(400).json({ error: 'Value is required' });
@@ -75,7 +42,6 @@ router.post('/options', authenticate, requireRole('Superadmin'), async (req, res
 router.put('/options/:id', authenticate, requireRole('Superadmin'), async (req, res, next) => {
   const client = await pool.connect();
   try {
-    await ensurePlatformOptionsReady();
     const id = parseOptionId(req.params.id);
     if (!id) return res.status(400).json({ error: 'Invalid option id' });
     const { value, sort_order } = req.body;
@@ -127,7 +93,6 @@ router.put('/options/:id', authenticate, requireRole('Superadmin'), async (req, 
 
 router.delete('/options/:id', authenticate, requireRole('Superadmin'), async (req, res, next) => {
   try {
-    await ensurePlatformOptionsReady();
     const id = parseOptionId(req.params.id);
     if (!id) return res.status(400).json({ error: 'Invalid option id' });
 

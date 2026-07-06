@@ -7,7 +7,7 @@ import { ArrowLeft, Trash2, FileText, Calendar, DollarSign, Tag, AlignLeft, Hash
 import { useDeals } from '../context/DealsContext';
 import { useAuth } from '../context/AuthContext';
 import { dealsApi, aiApi, agentsApi, platformApi } from '../api';
-import { AIMessage, Document, AIChatMessage, ProposedDealUpdates, PlatformConfigOption } from '../types';
+import { AIMessage, Document, AIChatMessage, ProposedDealUpdates, PlatformConfigOption, AIWorkflowStep, AISession } from '../types';
 import Header from '../components/Header';
 import StatusBadge from '../components/StatusBadge';
 import Button from '../components/Button';
@@ -64,10 +64,15 @@ export default function DealDetailPage() {
 
   const [showAIPanel, setShowAIPanel] = useState(false);
   const [aiSessionId, setAiSessionId] = useState<number | null>(null);
+  const [aiSessionStatus, setAiSessionStatus] = useState<AISession['status'] | null>(null);
   const [aiMessages, setAiMessages] = useState<AIMessage[]>([]);
+  const [aiWorkflowSteps, setAiWorkflowSteps] = useState<AIWorkflowStep[]>([]);
   const [aiLoading, setAiLoading] = useState(false);
-  const [aiRunningAgents, setAiRunningAgents] = useState<string[]>([]);
   const [validating, setValidating] = useState(false);
+  const [showValidationModal, setShowValidationModal] = useState(false);
+  const [primaryAssessmentDocId, setPrimaryAssessmentDocId] = useState('');
+  const [primaryWbsDocId, setPrimaryWbsDocId] = useState('');
+  const [additionalValidationDocIds, setAdditionalValidationDocIds] = useState<string[]>([]);
   const [aiExtractedDocs, setAiExtractedDocs] = useState<{ id: string; name: string; size: string; success: boolean }[]>([]);
   const [aiKeyMissing, setAiKeyMissing] = useState(false);
   const [aiKeyValid, setAiKeyValid] = useState<boolean | null>(null);
@@ -76,7 +81,8 @@ export default function DealDetailPage() {
   const [aiChatMessages, setAiChatMessages] = useState<AIChatMessage[]>([]);
   const [aiChatLoading, setAiChatLoading] = useState(false);
   const [aiChatKeyMissing, setAiChatKeyMissing] = useState(false);
-  const [localAiProgress, setLocalAiProgress] = useState<AIMessage[]>([]);
+  const [aiTransientMessages, setAiTransientMessages] = useState<Array<AIMessage | AIChatMessage>>([]);
+  const [aiStreamStatus, setAiStreamStatus] = useState<'connecting' | 'connected' | 'reconnecting' | 'offline'>('connecting');
   const [showClearAiHistoryModal, setShowClearAiHistoryModal] = useState(false);
   const [clearingAiHistory, setClearingAiHistory] = useState(false);
   const [editingField, setEditingField] = useState<string | null>(null);
@@ -88,13 +94,17 @@ export default function DealDetailPage() {
 
   const [aiDocConfirm, setAiDocConfirm] = useState<{ show: boolean; names: string[] }>({ show: false, names: [] });
   const aiPollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const aiStreamConnectedRef = useRef(false);
+  const aiLoadingRef = useRef(false);
+  const validatingRef = useRef(false);
+  const aiSessionStatusRef = useRef<AISession['status'] | null>(null);
   const deal = getDeal(id!);
   const canEdit = isRole('Superadmin', 'Editor');
   const canRunAI = canEdit && aiKeyValid === true;
   const hasAiDocs = deal ? deal.documents.some(d => d.source === 'ai') : false;
-  const persistedProgressContent = new Set(aiMessages.map(message => message.content));
-  const visibleLocalProgress = localAiProgress.filter(message => !persistedProgressContent.has(message.content));
-  const aiWorkspaceMessages = [...aiMessages, ...aiChatMessages, ...visibleLocalProgress].sort((a, b) => {
+  const aiDocuments = useMemo(() => deal?.documents.filter(d => d.source === 'ai') || [], [deal]);
+  const validationReady = aiDocuments.length >= 2;
+  const aiWorkspaceMessages = [...aiMessages, ...aiChatMessages, ...aiTransientMessages].sort((a, b) => {
     const aTime = a.created_at ? new Date(a.created_at).getTime() : 0;
     const bTime = b.created_at ? new Date(b.created_at).getTime() : 0;
     if (aTime !== bTime) return aTime - bTime;
@@ -108,17 +118,23 @@ export default function DealDetailPage() {
     return configOptions.filter(o => o.type === 'domain').map(o => o.value);
   }, [configOptions]);
 
-  const addLocalAiProgress = (content: string) => {
-    setLocalAiProgress(prev => [
-      ...prev,
-      {
-        id: -Date.now() - prev.length,
-        session_id: aiSessionId || 0,
-        role: 'coordinator',
-        content,
-        created_at: new Date().toISOString(),
-      },
-    ]);
+  const readExtractedDocsFromWorkflow = (steps: AIWorkflowStep[]) => {
+    const extractedStep = steps.find(step => step.step_key === 'extracted-context');
+    const docs = extractedStep?.metadata?.documents;
+    if (!Array.isArray(docs)) return [];
+    return docs
+      .filter((doc): doc is { id: string; name: string; success: boolean } => (
+        !!doc && typeof doc === 'object'
+        && typeof (doc as { id?: unknown }).id === 'string'
+        && typeof (doc as { name?: unknown }).name === 'string'
+        && typeof (doc as { success?: unknown }).success === 'boolean'
+      ))
+      .map(doc => ({
+        id: doc.id,
+        name: doc.name,
+        success: doc.success,
+        size: '',
+      }));
   };
 
   const stopAISessionPolling = () => {
@@ -129,23 +145,38 @@ export default function DealDetailPage() {
   };
 
   const startAISessionPolling = () => {
+    if (aiStreamConnectedRef.current) return;
     stopAISessionPolling();
     aiPollingRef.current = setInterval(() => {
       loadAISession();
     }, 1500);
   };
 
+  const applyAISessionSnapshot = (data: { session: AISession | null; messages: AIMessage[]; workflowSteps?: AIWorkflowStep[] }) => {
+    if (data.session) {
+      setAiSessionId(data.session.id);
+      setAiSessionStatus(data.session.status);
+      setAiMessages(data.messages);
+      setAiWorkflowSteps(data.workflowSteps || []);
+      setAiExtractedDocs(readExtractedDocsFromWorkflow(data.workflowSteps || []));
+      if (data.session.status !== 'running' && !aiLoadingRef.current && !validatingRef.current) {
+        stopAISessionPolling();
+      }
+    } else {
+      setAiSessionId(null);
+      setAiSessionStatus(null);
+      setAiMessages([]);
+      setAiWorkflowSteps([]);
+      setAiExtractedDocs([]);
+      if (!aiLoadingRef.current && !validatingRef.current) stopAISessionPolling();
+    }
+  };
+
   const loadAISession = async () => {
     if (!id) return;
     try {
       const data = await aiApi.getSession(id);
-      if (data.session) {
-        setAiSessionId(data.session.id);
-        setAiMessages(data.messages);
-        if (Array.isArray(data.session.current_agent_plan)) {
-          setAiRunningAgents(data.session.current_agent_plan);
-        }
-      }
+      applyAISessionSnapshot(data);
     } catch {
       // No existing session is fine.
     }
@@ -168,6 +199,74 @@ export default function DealDetailPage() {
   }, [id]);
 
   useEffect(() => () => stopAISessionPolling(), []);
+
+  useEffect(() => {
+    aiStreamConnectedRef.current = aiStreamStatus === 'connected';
+  }, [aiStreamStatus]);
+
+  useEffect(() => {
+    aiLoadingRef.current = aiLoading;
+  }, [aiLoading]);
+
+  useEffect(() => {
+    validatingRef.current = validating;
+  }, [validating]);
+
+  useEffect(() => {
+    aiSessionStatusRef.current = aiSessionStatus;
+  }, [aiSessionStatus]);
+
+  useEffect(() => {
+    if (!id || !canEdit) return;
+
+    const controller = new AbortController();
+    let cancelled = false;
+    const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+    const runStreamLoop = async () => {
+      let attempt = 0;
+      while (!cancelled) {
+        setAiStreamStatus(attempt === 0 ? 'connecting' : 'reconnecting');
+        try {
+          await aiApi.streamSession(id, {
+            signal: controller.signal,
+            onOpen: () => {
+              if (cancelled) return;
+              setAiStreamStatus('connected');
+              stopAISessionPolling();
+            },
+            onSession: payload => {
+              if (cancelled) return;
+              applyAISessionSnapshot(payload);
+            },
+            onError: () => {
+              if (cancelled) return;
+              setAiStreamStatus('reconnecting');
+            },
+          });
+        } catch {
+          if (cancelled) return;
+          setAiStreamStatus('reconnecting');
+          if (aiLoadingRef.current || validatingRef.current || aiSessionStatusRef.current === 'running') {
+            startAISessionPolling();
+          }
+        }
+
+        attempt += 1;
+        if (!cancelled) {
+          await sleep(Math.min(5000, 1000 * attempt));
+        }
+      }
+    };
+
+    runStreamLoop();
+
+    return () => {
+      cancelled = true;
+      setAiStreamStatus('offline');
+      controller.abort();
+    };
+  }, [id, canEdit]);
 
   useEffect(() => {
     if (hasAiDocs && id) loadAIChat();
@@ -308,26 +407,16 @@ export default function DealDetailPage() {
     setShowAIPanel(true);
     setAiLoading(true);
     setAiKeyMissing(false);
-    setLocalAiProgress([]);
-    addLocalAiProgress('Starting Execute AI flow. Reading deal documents and preparing context.');
+    setAiTransientMessages([]);
     startAISessionPolling();
     try {
       const data = await aiApi.start(id, force);
       setAiSessionId(data.sessionId);
       setAiMessages(data.messages);
       setAiExtractedDocs(data.extractedDocs);
-      addLocalAiProgress('Coordinator is routing the work and preparing specialist agents.');
-      if (data.status === 'routing' && data.plan?.length) {
-        setAiRunningAgents(data.plan);
-        addLocalAiProgress(`Coordinator selected agents: ${data.plan.join(', ')}.`);
-      }
-      if (data.status === 'ready_to_write') {
-        setAiRunningAgents(['coordinator']);
-        addLocalAiProgress('Coordinator has enough context and is ready to draft the assessment report.');
-      }
+      await loadAISession();
       // If the coordinator already routed, we need to trigger a message to run agents.
       if (data.status === 'routing' || data.status === 'ready_to_write') {
-        addLocalAiProgress('Proceeding with analysis. Agent execution is starting.');
         await handleSendMessage('Proceed with the analysis.', true);
       }
     } catch (err: any) {
@@ -340,7 +429,6 @@ export default function DealDetailPage() {
       if (err.message?.includes('API key') || err.message?.includes('not configured')) {
         setAiKeyMissing(true);
       }
-      addLocalAiProgress(`Execute AI stopped: ${err.message || 'Failed to start AI assistant'}`);
       toast.error(err.message || 'Failed to start AI assistant');
     } finally {
       setAiLoading(false);
@@ -351,15 +439,54 @@ export default function DealDetailPage() {
 
   const handleStartAI = async () => startAIWithForce(false);
 
+  const looksLikeAssessment = (doc: Document) => {
+    const label = `${doc.name} ${doc.filename || ''}`.toLowerCase();
+    return doc.artifactType === 'assessment-report'
+      || (label.includes('assessment') && (label.includes('.md') || label.includes('.doc') || label.includes('report')));
+  };
+
+  const looksLikeWbs = (doc: Document) => {
+    const label = `${doc.name} ${doc.filename || ''}`.toLowerCase();
+    return doc.artifactType === 'wbs'
+      || (label.includes('wbs') && (label.includes('.xls') || label.includes('.xlsx')))
+      || label.includes('work breakdown');
+  };
+
+  const getLatestMatchingDocument = (predicate: (doc: Document) => boolean) => {
+    return [...aiDocuments]
+      .filter(predicate)
+      .sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime())[0] || null;
+  };
+
+  const openValidationModal = () => {
+    if (!validationReady) return;
+    const latestAssessment = getLatestMatchingDocument(looksLikeAssessment);
+    const latestWbs = getLatestMatchingDocument(doc => looksLikeWbs(doc) && doc.id !== latestAssessment?.id);
+    setPrimaryAssessmentDocId(latestAssessment?.id || '');
+    setPrimaryWbsDocId(latestWbs?.id || '');
+    setAdditionalValidationDocIds([]);
+    setShowValidationModal(true);
+  };
+
   const handleValidate = async () => {
     if (!id || !canRunAI) return;
+    if (!primaryAssessmentDocId || !primaryWbsDocId) {
+      toast.error('Select both a primary assessment report and a primary WBS workbook.');
+      return;
+    }
     setShowAIPanel(true);
     setValidating(true);
-    setAiRunningAgents(['validator']);
     setAiKeyMissing(false);
+    startAISessionPolling();
     try {
-      const result = await aiApi.validate(id);
+      const result = await aiApi.validate(id, {
+        primaryAssessmentDocumentId: primaryAssessmentDocId,
+        primaryWbsDocumentId: primaryWbsDocId,
+        additionalDocumentIds: additionalValidationDocIds,
+      });
       await refreshDeals();
+      await loadAISession();
+      setShowValidationModal(false);
       toast.success(`Validation report saved: ${result.documentName}`);
     } catch (err: any) {
       if (err.message?.includes('API key') || err.message?.includes('not configured')) {
@@ -368,7 +495,8 @@ export default function DealDetailPage() {
       toast.error(err.message || 'Failed to validate deal');
     } finally {
       setValidating(false);
-      setAiRunningAgents([]);
+      stopAISessionPolling();
+      loadAISession();
     }
   };
 
@@ -380,25 +508,17 @@ export default function DealDetailPage() {
   const handleSendMessage = async (content: string, silent: boolean = false) => {
     if (!id || !canRunAI) return;
     setAiLoading(true);
-    setAiRunningAgents([]);
-    if (!silent) {
-      addLocalAiProgress('Coordinator received your message and is thinking.');
-    } else {
-      addLocalAiProgress('Coordinator is continuing the assessment workflow.');
-    }
     startAISessionPolling();
     try {
       const data = await aiApi.sendMessage(id, content);
       setAiSessionId(data.sessionId);
       setAiMessages(data.messages);
-      if (data.agentOutputs && Object.keys(data.agentOutputs).length > 0) {
-        setAiRunningAgents(Object.keys(data.agentOutputs));
-        addLocalAiProgress(`Agents completed: ${Object.keys(data.agentOutputs).join(', ')}.`);
-      }
+      await loadAISession();
       if (data.finalReportDocumentId) {
         await refreshDeals();
-        addLocalAiProgress('Assessment report generated and saved to AI documents.');
-        toast.success('Assessment report generated and saved to documents.');
+        toast.success(data.wbsDocumentId
+          ? 'Assessment report and detailed WBS workbook saved.'
+          : 'Assessment report generated and saved to documents.');
         if (data.proposedUpdates && Object.values(data.proposedUpdates).some(v => v !== null && v !== undefined)) {
           setProposedUpdates(data.proposedUpdates);
         }
@@ -410,11 +530,9 @@ export default function DealDetailPage() {
       if (err.message?.includes('API key') || err.message?.includes('not configured')) {
         setAiKeyMissing(true);
       }
-      addLocalAiProgress(`AI workflow stopped: ${err.message || 'Failed to send message'}`);
       toast.error(err.message || 'Failed to send message');
     } finally {
       setAiLoading(false);
-      setAiRunningAgents([]);
       stopAISessionPolling();
       loadAISession();
     }
@@ -424,10 +542,28 @@ export default function DealDetailPage() {
     if (!id || !canRunAI) return;
     setAiChatLoading(true);
     setAiChatKeyMissing(false);
+    const createdAt = new Date().toISOString();
+    const optimisticUserMessage: AIChatMessage = {
+      id: -Date.now(),
+      deal_id: Number(id.replace('D-', '')) || 0,
+      role: 'user',
+      content,
+      created_at: createdAt,
+    };
+    const optimisticAssistantMessage: AIChatMessage = {
+      id: optimisticUserMessage.id - 1,
+      deal_id: optimisticUserMessage.deal_id,
+      role: 'agent',
+      content: '_Thinking…_',
+      created_at: new Date(Date.now() + 1).toISOString(),
+    };
+    setAiTransientMessages([optimisticUserMessage, optimisticAssistantMessage]);
     try {
       const data = await aiApi.sendChat(id, content);
       setAiChatMessages(data.messages);
+      setAiTransientMessages([]);
     } catch (err: any) {
+      setAiTransientMessages([]);
       if (err.message?.includes('API key') || err.message?.includes('not configured')) {
         setAiChatKeyMissing(true);
       }
@@ -452,10 +588,11 @@ export default function DealDetailPage() {
       stopAISessionPolling();
       await aiApi.clearHistory(id);
       setAiSessionId(null);
+      setAiSessionStatus(null);
       setAiMessages([]);
       setAiChatMessages([]);
-      setLocalAiProgress([]);
-      setAiRunningAgents([]);
+      setAiTransientMessages([]);
+      setAiWorkflowSteps([]);
       setAiExtractedDocs([]);
       setShowClearAiHistoryModal(false);
       toast.success('AI chat history cleared.');
@@ -479,6 +616,16 @@ export default function DealDetailPage() {
 
   const handleDownload = (doc: Document) => {
     if (doc.filename) dealsApi.downloadDocument(doc.id, doc.name);
+  };
+
+  const handleReviewStatus = async (doc: Document, status: 'draft' | 'approved') => {
+    try {
+      await dealsApi.updateDocumentReviewStatus(doc.id, status);
+      await refreshDeals();
+      toast.success(status === 'approved' ? 'Assessment report approved.' : 'Assessment report returned to draft.');
+    } catch {
+      toast.error('Failed to update report status.');
+    }
   };
 
   const handleUpdateField = async (field: keyof ProposedDealUpdates, value: unknown) => {
@@ -757,7 +904,7 @@ export default function DealDetailPage() {
           <DocumentSection
             title="AI Documents"
             icon={<BrainCircuit size={14} color="#4F46E5" />}
-            documents={deal.documents.filter(d => d.source === 'ai')}
+            documents={aiDocuments}
             source="ai"
             canEdit={canEdit}
             canUpload={canEdit}
@@ -765,8 +912,10 @@ export default function DealDetailPage() {
             onDownload={handleDownload}
             onShare={handleShare}
             onDelete={doc => setDocToDelete({ id: doc.id, name: doc.name })}
+            onPreview={doc => dealsApi.previewDocument(doc.id)}
+            onReviewStatus={handleReviewStatus}
             badge="AI Context"
-            emptyText="No AI documents yet. Run Execute AI to generate an assessment report, or click Validate to generate a validation report against Andersen Lab capabilities. You can also upload documents here to add them as AI context."
+            emptyText="No AI documents yet. Run Execute AI to generate the assessment, WBS, and diagrams. Validate lets you choose which AI files to audit."
           />
         </div>
 
@@ -806,19 +955,19 @@ export default function DealDetailPage() {
                     icon={<Sparkles size={13} />}
                     onClick={handleStartAI}
                     loading={aiLoading}
-                    disabled={aiLoading || validating || aiKeyValid === false}
+                    disabled={aiLoading || validating || aiKeyValid !== true}
                   >
                     {aiSessionId ? 'Continue AI' : 'Execute AI'}
                   </Button>
                 </span>
-                <span title={aiKeyValid === false ? (aiKeyError || 'OpenAI API key is not configured') : ''}>
+                <span title={!validationReady ? 'Add at least two AI documents before validation. You will choose the assessment and WBS versions in the next step.' : aiKeyValid === false ? (aiKeyError || 'OpenAI API key is not configured') : ''}>
                   <Button
                     variant="outline"
                     size="sm"
                     icon={<ShieldCheck size={13} />}
-                    onClick={handleValidate}
+                    onClick={openValidationModal}
                     loading={validating}
-                    disabled={aiLoading || validating || aiKeyValid === false}
+                    disabled={aiLoading || validating || aiKeyValid !== true || !validationReady}
                   >
                     Validate
                   </Button>
@@ -829,11 +978,13 @@ export default function DealDetailPage() {
               <AIChatPanel
                 messages={aiWorkspaceMessages}
                 loading={aiLoading || validating || aiChatLoading}
-                runningAgents={aiRunningAgents}
                 extractedDocs={aiExtractedDocs}
+                workflowSteps={aiWorkflowSteps}
+                sessionStatus={aiSessionStatus}
+                streamStatus={aiStreamStatus}
                 onSend={handleSendAIWorkspaceMessage}
                 disabled={aiWorkspaceKeyMissing || validating}
-                emptyMessage="Run Execute AI to generate an assessment report, click Validate to generate a fit-gap validation report, or ask questions once AI documents exist."
+                emptyMessage="Run Execute AI to generate the supplier package. Then click Validate to choose which AI files should be audited."
               />
             </div>
             {aiWorkspaceKeyMissing && (
@@ -928,6 +1079,75 @@ export default function DealDetailPage() {
             </Button>
             <Button variant="danger" onClick={handleConfirmAiDocRestart} icon={<Trash2 size={13} />}>
               Replace & Restart
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal open={showValidationModal} onClose={() => !validating && setShowValidationModal(false)} title="Select validation files">
+        <div style={{ padding: '8px 0' }}>
+          <p style={{ color: '#64748B', fontSize: 13, marginBottom: 16, lineHeight: 1.6 }}>
+            Choose which AI documents should act as the primary assessment report and WBS workbook for this validation run. You can also include additional AI documents as supporting supplier context.
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 8 }}>Primary Assessment Report</div>
+              <Select value={primaryAssessmentDocId} onChange={e => setPrimaryAssessmentDocId(e.target.value)}>
+                <option value="">Select assessment source</option>
+                {aiDocuments.map(doc => (
+                  <option key={doc.id} value={doc.id}>
+                    {doc.name} • {new Date(doc.uploadedAt).toLocaleDateString('en-GB')}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 8 }}>Primary WBS Workbook</div>
+              <Select value={primaryWbsDocId} onChange={e => setPrimaryWbsDocId(e.target.value)}>
+                <option value="">Select WBS source</option>
+                {aiDocuments.map(doc => (
+                  <option key={doc.id} value={doc.id}>
+                    {doc.name} • {new Date(doc.uploadedAt).toLocaleDateString('en-GB')}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 8 }}>Additional AI Documents</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 220, overflowY: 'auto', border: '1px solid #E2E8F0', borderRadius: 8, padding: 12, background: '#F8FAFC' }}>
+                {aiDocuments.filter(doc => doc.id !== primaryAssessmentDocId && doc.id !== primaryWbsDocId).length === 0 ? (
+                  <div style={{ fontSize: 12, color: '#94A3B8' }}>No additional AI documents available.</div>
+                ) : aiDocuments.filter(doc => doc.id !== primaryAssessmentDocId && doc.id !== primaryWbsDocId).map(doc => (
+                  <label key={doc.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={additionalValidationDocIds.includes(doc.id)}
+                      onChange={e => {
+                        setAdditionalValidationDocIds(prev => e.target.checked
+                          ? [...prev, doc.id]
+                          : prev.filter(id => id !== doc.id));
+                      }}
+                    />
+                    <span style={{ fontSize: 12, color: '#374151', lineHeight: 1.5 }}>
+                      {doc.name}
+                      <span style={{ color: '#94A3B8' }}> · {doc.size} · {new Date(doc.uploadedAt).toLocaleDateString('en-GB')}{doc.artifactType ? ` · ${doc.artifactType}` : ''}</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 24 }}>
+            <Button variant="secondary" onClick={() => setShowValidationModal(false)} disabled={validating}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleValidate}
+              loading={validating}
+              disabled={!primaryAssessmentDocId || !primaryWbsDocId || primaryAssessmentDocId === primaryWbsDocId}
+              icon={<ShieldCheck size={13} />}
+            >
+              Run Validation
             </Button>
           </div>
         </div>

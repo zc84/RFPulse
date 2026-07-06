@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { ArrowLeft, Bot, Edit2, KeyRound, HelpCircle, Save, Loader2, RefreshCw } from 'lucide-react';
-import { Agent, GlobalAISettings, OpenAIModel } from '../types';
+import { Agent, GlobalAISettings, OpenAIModel, PromptTemplate } from '../types';
 import { agentsApi } from '../api';
 import Header from '../components/Header';
 import Button from '../components/Button';
@@ -63,12 +63,15 @@ export default function AgentManagementPage({ embedded = false }: { embedded?: b
   const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
   const [form, setForm] = useState<Partial<Agent>>({});
   const [savingAgent, setSavingAgent] = useState(false);
+  const [promptTemplates, setPromptTemplates] = useState<PromptTemplate[]>([]);
+  const [promptDrafts, setPromptDrafts] = useState<Record<string, string>>({});
 
   const load = async () => {
     setLoading(true);
     try {
-      const [agentsData, settingsData] = await Promise.all([agentsApi.getAll(), agentsApi.getSettings()]);
+      const [agentsData, settingsData, promptsData] = await Promise.all([agentsApi.getAll(), agentsApi.getSettings(), agentsApi.getPrompts()]);
       setAgents(agentsData);
+      setPromptTemplates(promptsData);
       setSettings(settingsData);
       setApiKey('');
       if (settingsData.has_key) {
@@ -121,6 +124,9 @@ export default function AgentManagementPage({ embedded = false }: { embedded?: b
   const openEdit = (agent: Agent) => {
     setEditingAgent(agent);
     setForm({ ...agent });
+    setPromptDrafts(Object.fromEntries(
+      promptTemplates.filter(prompt => prompt.agent_slug === agent.slug || prompt.kind === 'shared').map(prompt => [prompt.prompt_key, prompt.content])
+    ));
   };
 
   const handleSaveAgent = async () => {
@@ -139,6 +145,9 @@ export default function AgentManagementPage({ embedded = false }: { embedded?: b
         is_enabled: form.is_enabled,
         sort_order: form.sort_order,
       });
+      const relevantPrompts = promptTemplates.filter(prompt => prompt.agent_slug === editingAgent.slug || prompt.kind === 'shared');
+      const savedPrompts = await Promise.all(relevantPrompts.map(prompt => agentsApi.updatePrompt(prompt.prompt_key, promptDrafts[prompt.prompt_key] ?? prompt.content)));
+      setPromptTemplates(prev => prev.map(prompt => savedPrompts.find(saved => saved.id === prompt.id) || prompt));
       setAgents(prev => prev.map(a => a.id === updated.id ? updated : a));
       toast.success('Agent updated.');
       setEditingAgent(null);
@@ -317,6 +326,20 @@ export default function AgentManagementPage({ embedded = false }: { embedded?: b
                 }}
               />
             </FormField>
+
+            {promptTemplates
+              .filter(prompt => prompt.agent_slug === editingAgent.slug || prompt.kind === 'shared')
+              .map(prompt => (
+                <FormField key={prompt.prompt_key} label={`${prompt.kind === 'shared' ? 'Shared Policy' : 'Task Prompt'} · ${prompt.name}`}>
+                  <textarea
+                    value={promptDrafts[prompt.prompt_key] ?? prompt.content}
+                    onChange={event => setPromptDrafts(prev => ({ ...prev, [prompt.prompt_key]: event.target.value }))}
+                    rows={6}
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: 7, border: '1px solid #E2E8F0', fontSize: 13, lineHeight: 1.5, resize: 'vertical' }}
+                  />
+                  <div style={{ fontSize: 11, color: '#94A3B8', marginTop: 4 }}>{prompt.prompt_key} · version {prompt.prompt_version}</div>
+                </FormField>
+              ))}
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
               <FormField label={<>Temperature <InfoTooltip text={LLM_PARAM_HINTS.temperature.text} range={LLM_PARAM_HINTS.temperature.range} /></>}>

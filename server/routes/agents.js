@@ -79,6 +79,31 @@ router.get('/', authenticate, async (req, res, next) => {
   }
 });
 
+router.get('/prompts/all', authenticate, requireRole('Superadmin'), async (req, res, next) => {
+  try {
+    await ensureDefaultAgents();
+    const result = await query('SELECT * FROM agent_prompt_templates ORDER BY kind, sort_order, id');
+    res.json(result.rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.put('/prompts/:key', authenticate, requireRole('Superadmin'), async (req, res, next) => {
+  try {
+    const { content } = req.body;
+    if (!content || typeof content !== 'string') return res.status(400).json({ error: 'Prompt content is required' });
+    const result = await query(
+      `UPDATE agent_prompt_templates SET content = $1, updated_at = CURRENT_TIMESTAMP WHERE prompt_key = $2 RETURNING *`,
+      [content, req.params.key]
+    );
+    if (!result.rows.length) return res.status(404).json({ error: 'Prompt template not found' });
+    res.json(result.rows[0]);
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get('/:slug', authenticate, async (req, res, next) => {
   try {
     const isSuperadmin = req.user.role === 'Superadmin';

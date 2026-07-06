@@ -5,6 +5,8 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
+import { createStoredFilename, normalizeDocumentName } from '../utils/filenames.js';
+import { syncDealValuesToOptions } from '../services/platformOptions.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(__dirname, '..', 'uploads');
@@ -23,18 +25,14 @@ const storage = multer.diskStorage({
     cb(null, dealDir);
   },
   filename: (req, file, cb) => {
-    const unique = `${Date.now()}-${Math.random().toString(36).slice(2)}-${file.originalname}`;
-    cb(null, unique);
+    file.originalname = normalizeDocumentName(file.originalname);
+    cb(null, createStoredFilename(file.originalname));
   },
 });
 
 const upload = multer({ storage, limits: { fileSize: 20 * 1024 * 1024 } });
 
 const router = Router();
-
-async function ensureDealAiNotesColumn() {
-  await query('ALTER TABLE deals ADD COLUMN IF NOT EXISTS ai_notes TEXT');
-}
 
 function formatUserId(id) {
   return `U-${String(id).padStart(3, '0')}`;
@@ -67,11 +65,15 @@ function formatDeal(row) {
 function formatDocument(row) {
   return {
     id: `doc-${row.id}`,
-    name: row.name,
+    name: normalizeDocumentName(row.name),
     size: row.size,
     filename: row.filename,
     source: row.source || 'user',
     uploadedAt: row.uploaded_at,
+    artifactType: row.artifact_type || null,
+    reviewStatus: row.review_status || null,
+    approvedBy: row.approved_by ? formatUserId(row.approved_by) : null,
+    approvedAt: row.approved_at || null,
   };
 }
 
@@ -147,7 +149,6 @@ async function releaseLock(dealId, userId) {
 
 router.get('/', authenticate, async (req, res, next) => {
   try {
-    await ensureDealAiNotesColumn();
     const result = await query(
       `SELECT d.*, u.name AS assignee_name,
               dl.user_id AS lock_user_id, lu.name AS lock_user_name,
@@ -196,7 +197,7 @@ router.get('/documents/:id/share', async (req, res, next) => {
     const filePath = path.join(UPLOAD_DIR, String(doc.deal_id), doc.filename);
     if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File missing' });
 
-    res.download(filePath, doc.name);
+    res.download(filePath, normalizeDocumentName(doc.name));
   } catch (err) {
     next(err);
   }
@@ -216,7 +217,46 @@ router.get('/documents/:id/download', authenticate, async (req, res, next) => {
     const filePath = path.join(UPLOAD_DIR, String(doc.deal_id), doc.filename);
     if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File missing' });
 
-    res.download(filePath, doc.name);
+    res.download(filePath, normalizeDocumentName(doc.name));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/documents/:id/preview', authenticate, async (req, res, next) => {
+  try {
+    const docId = parseInt(req.params.id.replace('doc-', ''), 10);
+    const result = await query('SELECT * FROM documents WHERE id = $1', [docId]);
+    if (!result.rows.length) return res.status(404).json({ error: 'Not found' });
+    const doc = result.rows[0];
+    if (doc.artifact_type !== 'architecture-diagram' || !doc.filename) return res.status(400).json({ error: 'Preview is available only for architecture diagrams' });
+    const filePath = path.join(UPLOAD_DIR, String(doc.deal_id), doc.filename);
+    if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File missing' });
+    const ext = path.extname(doc.filename).toLowerCase();
+    const contentType = ext === '.svg' ? 'image/svg+xml' : ext === '.png' ? 'image/png' : 'application/octet-stream';
+    if (contentType === 'image/svg+xml') {
+      res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; sandbox");
+    }
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.sendFile(filePath);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.patch('/documents/:id/review-status', authenticate, requireRole('Superadmin', 'Editor'), async (req, res, next) => {
+  try {
+    const docId = parseInt(req.params.id.replace('doc-', ''), 10);
+    const status = req.body.status;
+    if (!['draft', 'approved'].includes(status)) return res.status(400).json({ error: 'Status must be draft or approved' });
+    const result = await query(
+      `UPDATE documents SET review_status = $1, approved_by = $2, approved_at = $3
+       WHERE id = $4 AND artifact_type = 'assessment-report' RETURNING *`,
+      [status, status === 'approved' ? req.user.userId : null, status === 'approved' ? new Date() : null, docId]
+    );
+    if (!result.rows.length) return res.status(404).json({ error: 'Assessment report not found' });
+    res.json(formatDocument(result.rows[0]));
   } catch (err) {
     next(err);
   }
@@ -293,7 +333,6 @@ router.post('/:id/heartbeat', authenticate, async (req, res, next) => {
 
 router.get('/:id', authenticate, async (req, res, next) => {
   try {
-    await ensureDealAiNotesColumn();
     const numericId = parseInt(req.params.id.replace('D-', ''), 10);
     if (isNaN(numericId)) return res.status(400).json({ error: 'Invalid deal id' });
 
@@ -324,7 +363,6 @@ router.get('/:id', authenticate, async (req, res, next) => {
 
 router.post('/', authenticate, requireRole('Superadmin', 'Editor'), async (req, res, next) => {
   try {
-    await ensureDealAiNotesColumn();
     const { name, status, dueDate, budget, domain, clientName, classification, description, aiNotes, assigneeId, documents = [] } = req.body;
     if (!name || !status || !dueDate || !domain) {
       return res.status(400).json({ error: 'Missing required fields' });
@@ -355,6 +393,8 @@ router.post('/', authenticate, requireRole('Superadmin', 'Editor'), async (req, 
         [dealId, doc.name, doc.size, doc.filename || null, doc.source || 'user', doc.uploadedAt || doc.uploaded_at]
       );
     }
+
+    await syncDealValuesToOptions();
 
     const deal = await query('SELECT d.*, u.name AS assignee_name FROM deals d LEFT JOIN users u ON d.assignee_id = u.id WHERE d.id = $1', [dealId]);
     const docs = await query('SELECT * FROM documents WHERE deal_id = $1', [dealId]);
@@ -405,7 +445,6 @@ router.post('/:id/documents', authenticate, requireRole('Superadmin', 'Editor'),
 
 router.put('/:id', authenticate, requireRole('Superadmin', 'Editor'), async (req, res, next) => {
   try {
-    await ensureDealAiNotesColumn();
     const numericId = parseInt(req.params.id.replace('D-', ''), 10);
     if (isNaN(numericId)) return res.status(400).json({ error: 'Invalid deal id' });
 
@@ -452,6 +491,8 @@ router.put('/:id', authenticate, requireRole('Superadmin', 'Editor'), async (req
        WHERE id = $11`,
       [nextName, nextStatus, nextDueDate, normalizedBudget, nextDomain, nextClientName, nextClassification, nextDescription, nextAiNotes, parsedAssigneeId, numericId]
     );
+
+    await syncDealValuesToOptions();
 
     const deal = await query('SELECT d.*, u.name AS assignee_name FROM deals d LEFT JOIN users u ON d.assignee_id = u.id WHERE d.id = $1', [numericId]);
     const docs = await query('SELECT * FROM documents WHERE deal_id = $1', [numericId]);

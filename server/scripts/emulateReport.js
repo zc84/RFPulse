@@ -3,7 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import mammoth from 'mammoth';
-import { runAgent, buildReportFromOutputs, coordinatorReviewStep, coordinatorStep } from '../services/aiOrchestrator.js';
+import { runAgent, buildReportFromOutputs, coordinatorStep, requireCoordinatorContext } from '../services/aiOrchestrator.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -27,7 +27,7 @@ async function main() {
   console.log('Running coordinator step…');
   const fakeMessages = [{ role: 'user', content: 'Please analyse this tender and produce the assessment report.', created_at: new Date().toISOString() }];
   const coordResult = await coordinatorStep(contextBundle, fakeMessages, {});
-  const agentContext = coordResult.context || contextBundle;
+  const agentContext = requireCoordinatorContext(coordResult.context);
   console.log('Coordinator status:', coordResult.status);
 
   console.log('Running Legal agent…');
@@ -45,7 +45,7 @@ async function main() {
   const draftReport = buildReportFromOutputs('SOWA — Offshore Wind Career Pathway Platform', agentContext, agentOutputs);
 
   console.log('Running Coordinator Review…');
-  const finalReport = await coordinatorReviewStep(contextBundle, draftReport);
+  const finalReport = draftReport;
 
   const outPath = path.join(__dirname, '../../test/emulated-assessment-report.md');
   fs.writeFileSync(outPath, finalReport, 'utf-8');

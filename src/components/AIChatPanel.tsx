@@ -1,18 +1,306 @@
 import React, { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Send, Bot, User as UserIcon, Loader2, FileText, CheckCircle } from 'lucide-react';
-import { AIMessage, AIChatMessage } from '../types';
+import { Send, Bot, User as UserIcon, Loader2, FileText, CheckCircle, AlertCircle } from 'lucide-react';
+import { AIMessage, AIChatMessage, AIWorkflowStep, AISession } from '../types';
 import Button from './Button';
 
 interface AIChatPanelProps {
   messages: Array<AIMessage | AIChatMessage>;
   loading: boolean;
-  runningAgents?: string[];
   extractedDocs?: { id: string; name: string; size: string; success: boolean }[];
+  workflowSteps?: AIWorkflowStep[];
+  sessionStatus?: AISession['status'] | null;
+  streamStatus?: 'connecting' | 'connected' | 'reconnecting' | 'offline';
   onSend: (content: string) => void;
   disabled?: boolean;
   emptyMessage?: string;
+}
+
+type WorkflowStage = {
+  label: string;
+  stepKeys: string[];
+  detail?: (steps: Map<string, AIWorkflowStep>) => string | null;
+};
+
+const EXECUTE_STAGES: WorkflowStage[] = [
+  {
+    label: 'Documents read',
+    stepKeys: ['extracted-context'],
+    detail: steps => {
+      const docs = steps.get('extracted-context')?.metadata?.documents;
+      if (!Array.isArray(docs) || docs.length === 0) return null;
+      const readable = docs.filter(doc => doc && typeof doc === 'object' && (doc as { success?: unknown }).success === true).length;
+      return `${readable}/${docs.length} readable`;
+    },
+  },
+  {
+    label: 'Coordinator plan created',
+    stepKeys: ['coordinator-context', 'agent-plan'],
+  },
+  {
+    label: 'Legal & architecture',
+    stepKeys: ['legal-brief', 'architect-brief', 'legal', 'architect'],
+    detail: steps => formatAgentPairDetail(steps, 'legal', 'architect'),
+  },
+  {
+    label: 'Estimation',
+    stepKeys: ['estimator-brief', 'estimator'],
+  },
+  {
+    label: 'Draft package',
+    stepKeys: ['copywriter', 'draft-report'],
+  },
+  {
+    label: 'Generate diagrams',
+    stepKeys: ['generate-architecture-diagrams'],
+  },
+  {
+    label: 'Save deliverables',
+    stepKeys: ['save-wbs-workbook', 'save-final-report'],
+  },
+];
+
+const VALIDATION_STAGES: WorkflowStage[] = [
+  {
+    label: 'Client documents read',
+    stepKeys: ['validation-client-context'],
+  },
+  {
+    label: 'Supplier package read',
+    stepKeys: ['validation-supplier-context'],
+  },
+  {
+    label: 'Validation review',
+    stepKeys: ['validation-report'],
+  },
+  {
+    label: 'Save validation report',
+    stepKeys: ['save-validation-report'],
+  },
+];
+
+function formatAgentPairDetail(steps: Map<string, AIWorkflowStep>, first: string, second: string) {
+  const firstStatus = formatAgentStatus(steps.get(first)?.status);
+  const secondStatus = formatAgentStatus(steps.get(second)?.status);
+  if (!firstStatus && !secondStatus) return null;
+  return [firstStatus ? `${labelizeStep(first)} ${firstStatus}` : null, secondStatus ? `${labelizeStep(second)} ${secondStatus}` : null]
+    .filter(Boolean)
+    .join(' · ');
+}
+
+function formatAgentStatus(status?: AIWorkflowStep['status']) {
+  if (status === 'completed') return 'done';
+  if (status === 'running') return 'running';
+  if (status === 'failed') return 'failed';
+  return null;
+}
+
+function labelizeStep(stepKey: string) {
+  if (stepKey === 'legal') return 'Legal';
+  if (stepKey === 'architect') return 'Architecture';
+  return stepKey;
+}
+
+function getWorkflowMode(workflowSteps: AIWorkflowStep[]) {
+  const latest = [...workflowSteps].sort((a, b) => {
+    const aTime = new Date(a.updated_at || a.created_at || 0).getTime();
+    const bTime = new Date(b.updated_at || b.created_at || 0).getTime();
+    return bTime - aTime;
+  })[0];
+  const latestKey = latest?.step_key || '';
+  if (latestKey.startsWith('validation-') || latestKey === 'save-validation-report') {
+    return 'validation';
+  }
+  return 'execute';
+}
+
+function getStageStatus(steps: Map<string, AIWorkflowStep>, stepKeys: string[]) {
+  const stageSteps = stepKeys.map(stepKey => steps.get(stepKey)).filter(Boolean) as AIWorkflowStep[];
+  if (stageSteps.some(step => step.status === 'failed')) return 'failed';
+  if (stepKeys.every(stepKey => steps.get(stepKey)?.status === 'completed')) return 'completed';
+  if (stageSteps.some(step => step.status === 'running') || stageSteps.some(step => step.status === 'completed')) return 'running';
+  return 'pending';
+}
+
+function formatElapsed(workflowSteps: AIWorkflowStep[]) {
+  const runningStarts = workflowSteps
+    .filter(step => step.status === 'running' && step.started_at)
+    .map(step => new Date(step.started_at as string).getTime())
+    .filter(Boolean);
+  if (runningStarts.length === 0) return null;
+  const startedAt = Math.min(...runningStarts);
+  const totalSeconds = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
+}
+
+function getLastWorkflowUpdate(workflowSteps: AIWorkflowStep[], messages: Array<AIMessage | AIChatMessage>, sessionStatus?: AISession['status'] | null) {
+  const timestamps = [
+    ...workflowSteps.map(step => step.updated_at || step.completed_at || step.started_at || step.created_at).filter(Boolean),
+    ...messages.map(message => message.created_at).filter(Boolean),
+  ].map(value => new Date(value as string).getTime()).filter(Boolean);
+
+  if (timestamps.length === 0 || !sessionStatus) return null;
+  return Math.max(...timestamps);
+}
+
+function formatRelativeTime(timestamp: number | null, now: number) {
+  if (!timestamp) return null;
+  const seconds = Math.max(0, Math.floor((now - timestamp) / 1000));
+  if (seconds < 5) return 'just now';
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours}h ago`;
+}
+
+function getStreamBadge(streamStatus: AIChatPanelProps['streamStatus']) {
+  if (streamStatus === 'connected') return { label: 'Live', color: '#166534', background: '#F0FDF4', border: '#BBF7D0' };
+  if (streamStatus === 'reconnecting') return { label: 'Reconnecting', color: '#92400E', background: '#FFFBEB', border: '#FDE68A' };
+  if (streamStatus === 'connecting') return { label: 'Connecting', color: '#1D4ED8', background: '#EFF6FF', border: '#BFDBFE' };
+  return { label: 'Offline', color: '#64748B', background: '#F8FAFC', border: '#CBD5E1' };
+}
+
+function WorkflowStatusPanel({
+  workflowSteps,
+  messages,
+  sessionStatus,
+  streamStatus,
+  loading,
+}: {
+  workflowSteps: AIWorkflowStep[];
+  messages: Array<AIMessage | AIChatMessage>;
+  sessionStatus?: AISession['status'] | null;
+  streamStatus?: AIChatPanelProps['streamStatus'];
+  loading: boolean;
+}) {
+  const [now, setNow] = useState(() => Date.now());
+  const [showCompletedStages, setShowCompletedStages] = useState(false);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  if (workflowSteps.length === 0) return null;
+
+  const stepsByKey = new Map(workflowSteps.map(step => [step.step_key, step]));
+  const mode = getWorkflowMode(workflowSteps);
+  const stages = mode === 'validation' ? VALIDATION_STAGES : EXECUTE_STAGES;
+  const failedStep = workflowSteps.find(step => step.status === 'failed');
+  const elapsed = formatElapsed(workflowSteps);
+  const hasRunningSteps = workflowSteps.some(step => step.status === 'running');
+  const lastUpdatedAt = getLastWorkflowUpdate(workflowSteps, messages, sessionStatus);
+  const lastUpdatedLabel = formatRelativeTime(lastUpdatedAt, now);
+  const runFinished = !hasRunningSteps && !loading;
+  const completedStages = stages.filter(stage => getStageStatus(stepsByKey, stage.stepKeys) === 'completed');
+  const visibleStages = runFinished && !failedStep && !showCompletedStages
+    ? stages.filter(stage => getStageStatus(stepsByKey, stage.stepKeys) !== 'completed').length > 0
+      ? stages.filter(stage => getStageStatus(stepsByKey, stage.stepKeys) !== 'completed')
+      : stages.slice(-2)
+    : stages;
+  const streamBadge = getStreamBadge(streamStatus);
+  const title = hasRunningSteps || loading
+    ? mode === 'validation' ? 'Validation running' : 'Workflow running'
+    : mode === 'validation' ? 'Latest validation run' : 'Latest workflow run';
+
+  return (
+    <div style={{
+      padding: '14px 16px',
+      borderBottom: '1px solid #E2E8F0',
+      background: '#FCFCFD',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 10,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {hasRunningSteps || loading
+            ? <Loader2 size={14} color="#2563EB" style={{ animation: 'spin 0.8s linear infinite' }} />
+            : failedStep
+              ? <AlertCircle size={14} color="#DC2626" />
+              : <CheckCircle size={14} color="#16A34A" />}
+          <div style={{ fontSize: 12, fontWeight: 700, color: '#0F172A' }}>{title}</div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          <span style={{
+            fontSize: 10,
+            fontWeight: 700,
+            color: streamBadge.color,
+            background: streamBadge.background,
+            border: `1px solid ${streamBadge.border}`,
+            borderRadius: 999,
+            padding: '3px 7px',
+            letterSpacing: '0.02em',
+            textTransform: 'uppercase',
+          }}
+          >
+            {streamBadge.label}
+          </span>
+          <div style={{ fontSize: 11, color: '#64748B' }}>
+            {elapsed || (lastUpdatedLabel ? `Updated ${lastUpdatedLabel}` : sessionStatus ? sessionStatus.replace('_', ' ') : '')}
+          </div>
+        </div>
+      </div>
+
+      {runFinished && completedStages.length > 2 && !failedStep && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+          <div style={{ fontSize: 11, color: '#64748B' }}>
+            {completedStages.length} stages completed
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowCompletedStages(prev => !prev)}
+            style={{
+              border: 'none',
+              background: 'transparent',
+              padding: 0,
+              fontSize: 11,
+              fontWeight: 600,
+              color: '#2563EB',
+              cursor: 'pointer',
+            }}
+          >
+            {showCompletedStages ? 'Collapse completed' : 'Show full run'}
+          </button>
+        </div>
+      )}
+
+      <div style={{ display: 'grid', gap: 8 }}>
+        {visibleStages.map(stage => {
+          const status = getStageStatus(stepsByKey, stage.stepKeys);
+          const detail = stage.detail?.(stepsByKey) || null;
+          return (
+            <div key={stage.label} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{
+                width: 8,
+                height: 8,
+                borderRadius: '50%',
+                flexShrink: 0,
+                background: status === 'completed' ? '#16A34A' : status === 'running' ? '#2563EB' : status === 'failed' ? '#DC2626' : '#CBD5E1',
+              }}
+              />
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: '#0F172A' }}>{stage.label}</span>
+                {detail && (
+                  <span style={{ fontSize: 11, color: '#64748B' }}>{detail}</span>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {failedStep?.error && (
+        <div style={{ fontSize: 11, color: '#991B1B', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 8, padding: '8px 10px' }}>
+          {failedStep.error}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function MarkdownContent({ content }: { content: string }) {
@@ -80,8 +368,10 @@ function MessageBubble({ message }: { message: AIMessage | AIChatMessage }) {
 export default function AIChatPanel({
   messages,
   loading,
-  runningAgents,
   extractedDocs,
+  workflowSteps = [],
+  sessionStatus = null,
+  streamStatus = 'offline',
   onSend,
   disabled,
   emptyMessage,
@@ -93,7 +383,7 @@ export default function AIChatPanel({
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages, runningAgents]);
+  }, [messages]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -223,6 +513,8 @@ export default function AIChatPanel({
         </div>
       )}
 
+      <WorkflowStatusPanel workflowSteps={workflowSteps} messages={messages} sessionStatus={sessionStatus} streamStatus={streamStatus} loading={loading} />
+
       {/* Messages */}
       <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', padding: 16, minHeight: 200 }}>
         {messages.length === 0 && (
@@ -234,13 +526,6 @@ export default function AIChatPanel({
         {messages.map((message, index) => (
           <MessageBubble key={`${message.role}-${message.id}-${index}`} message={message} />
         ))}
-
-        {runningAgents && runningAgents.length > 0 && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#64748B', fontSize: 12, marginTop: 8 }}>
-            <Loader2 size={14} style={{ animation: 'spin 0.8s linear infinite' }} />
-            Running: {runningAgents.join(', ')}…
-          </div>
-        )}
       </div>
 
       {/* Input */}

@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS documents (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE INDEX IF NOT EXISTS idx_documents_deal_id ON documents(deal_id);
 CREATE INDEX IF NOT EXISTS idx_deals_status ON deals(status);
 CREATE INDEX IF NOT EXISTS idx_deals_due_date ON deals(due_date);
 CREATE INDEX IF NOT EXISTS idx_deals_assignee_id ON deals(assignee_id);
@@ -89,6 +90,20 @@ CREATE TABLE IF NOT EXISTS agents (
   frequency_penalty NUMERIC(4, 2) DEFAULT 0.0,
   is_enabled BOOLEAN DEFAULT TRUE,
   sort_order INTEGER DEFAULT 0,
+  prompt_version INTEGER NOT NULL DEFAULT 1,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS agent_prompt_templates (
+  id SERIAL PRIMARY KEY,
+  prompt_key VARCHAR(100) UNIQUE NOT NULL,
+  agent_slug VARCHAR(50) REFERENCES agents(slug) ON DELETE CASCADE,
+  name VARCHAR(255) NOT NULL,
+  kind VARCHAR(20) NOT NULL CHECK (kind IN ('shared', 'task')),
+  content TEXT NOT NULL,
+  prompt_version INTEGER NOT NULL DEFAULT 1,
+  sort_order INTEGER DEFAULT 0,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -96,7 +111,7 @@ CREATE TABLE IF NOT EXISTS agents (
 CREATE TABLE IF NOT EXISTS ai_sessions (
   id SERIAL PRIMARY KEY,
   deal_id INTEGER NOT NULL REFERENCES deals(id) ON DELETE CASCADE,
-  status VARCHAR(50) NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'completed', 'failed')),
+  status VARCHAR(50) NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'running', 'completed', 'failed')),
   current_agent_plan JSONB,
   extracted_context TEXT,
   coordinator_context TEXT,
@@ -147,9 +162,23 @@ CREATE TABLE IF NOT EXISTS ai_chat_messages (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS ai_run_locks (
+  deal_id INTEGER PRIMARY KEY REFERENCES deals(id) ON DELETE CASCADE,
+  session_id INTEGER REFERENCES ai_sessions(id) ON DELETE SET NULL,
+  operation VARCHAR(20) NOT NULL CHECK (operation IN ('start', 'message')),
+  acquired_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE INDEX IF NOT EXISTS idx_ai_sessions_deal_id ON ai_sessions(deal_id);
 CREATE INDEX IF NOT EXISTS idx_ai_messages_session_id ON ai_messages(session_id);
 CREATE INDEX IF NOT EXISTS idx_ai_agent_outputs_session_id ON ai_agent_outputs(session_id);
 CREATE INDEX IF NOT EXISTS idx_ai_workflow_steps_session_id ON ai_workflow_steps(session_id);
 CREATE INDEX IF NOT EXISTS idx_ai_workflow_steps_deal_id ON ai_workflow_steps(deal_id);
 CREATE INDEX IF NOT EXISTS idx_ai_chat_messages_deal_id ON ai_chat_messages(deal_id);
+
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS artifact_type VARCHAR(50);
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS ai_session_id INTEGER REFERENCES ai_sessions(id) ON DELETE SET NULL;
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS review_status VARCHAR(20) CHECK (review_status IN ('draft', 'approved'));
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS approved_by INTEGER REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS approved_at TIMESTAMP;

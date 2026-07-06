@@ -1,4 +1,4 @@
-import { User, Agent, GlobalAISettings, OpenAIModel, AIMessage, AIStartResponse, AIMessageResponse, AISessionResponse, AIChatMessage, AIValidateResponse, DealLock, PlatformConfigOption } from './types';
+import { User, Agent, GlobalAISettings, OpenAIModel, AIMessage, AIStartResponse, AIMessageResponse, AISessionResponse, AIChatMessage, AIValidateResponse, DealLock, PlatformConfigOption, PromptTemplate, Document } from './types';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
@@ -30,6 +30,69 @@ async function apiFetch(path: string, options: RequestInit = {}) {
   }
 
   return data;
+}
+
+async function streamFetch(
+  path: string,
+  {
+    signal,
+    onSession,
+    onOpen,
+    onError,
+  }: {
+    signal: AbortSignal;
+    onSession: (payload: AISessionResponse) => void;
+    onOpen?: () => void;
+    onError?: (error: Error) => void;
+  }
+) {
+  const token = getToken();
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: 'GET',
+    headers: {
+      Accept: 'text/event-stream',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    signal,
+  });
+
+  if (!response.ok || !response.body) {
+    const error = new Error(`Stream failed with HTTP ${response.status}`);
+    onError?.(error);
+    throw error;
+  }
+
+  onOpen?.();
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    let boundaryIndex = buffer.indexOf('\n\n');
+    while (boundaryIndex !== -1) {
+      const chunk = buffer.slice(0, boundaryIndex);
+      buffer = buffer.slice(boundaryIndex + 2);
+
+      if (!chunk.startsWith(':')) {
+        const lines = chunk.split('\n');
+        const event = lines.find(line => line.startsWith('event:'))?.slice(6).trim();
+        const data = lines
+          .filter(line => line.startsWith('data:'))
+          .map(line => line.slice(5).trim())
+          .join('\n');
+        if (event === 'session' && data) {
+          onSession(JSON.parse(data) as AISessionResponse);
+        }
+      }
+
+      boundaryIndex = buffer.indexOf('\n\n');
+    }
+  }
 }
 
 export const authApi = {
@@ -89,6 +152,16 @@ export const dealsApi = {
   },
   deleteDocument: (docId: string) =>
     apiFetch(`/deals/documents/${docId}`, { method: 'DELETE' }),
+  updateDocumentReviewStatus: (docId: string, status: 'draft' | 'approved') =>
+    apiFetch(`/deals/documents/${docId}/review-status`, { method: 'PATCH', body: JSON.stringify({ status }) }) as Promise<Document>,
+  previewDocument: async (docId: string) => {
+    const token = getToken();
+    const res = await fetch(`${API_BASE_URL}/deals/documents/${docId}/preview`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+    if (!res.ok) throw new Error('Preview failed');
+    const url = URL.createObjectURL(await res.blob());
+    window.open(url, '_blank', 'noopener,noreferrer');
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  },
 };
 
 export const usersApi = {
@@ -111,6 +184,9 @@ export const agentsApi = {
     apiFetch('/ai/agents/settings', { method: 'POST', body: JSON.stringify(settings) }) as Promise<GlobalAISettings>,
   validateKey: () => apiFetch('/ai/agents/validate') as Promise<{ valid: boolean; error: string | null }>,
   getModels: () => apiFetch('/ai/agents/models') as Promise<{ models: OpenAIModel[] }>,
+  getPrompts: () => apiFetch('/ai/agents/prompts/all') as Promise<PromptTemplate[]>,
+  updatePrompt: (key: string, content: string) =>
+    apiFetch(`/ai/agents/prompts/${encodeURIComponent(key)}`, { method: 'PUT', body: JSON.stringify({ content }) }) as Promise<PromptTemplate>,
 };
 
 export const platformApi = {
@@ -133,12 +209,21 @@ export const aiApi = {
     apiFetch(`/deals/${dealId}/ai/message`, { method: 'POST', body: JSON.stringify({ content }) }) as Promise<AIMessageResponse>,
   getSession: (dealId: string) =>
     apiFetch(`/deals/${dealId}/ai/session`) as Promise<AISessionResponse>,
+  streamSession: (
+    dealId: string,
+    handlers: {
+      signal: AbortSignal;
+      onSession: (payload: AISessionResponse) => void;
+      onOpen?: () => void;
+      onError?: (error: Error) => void;
+    }
+  ) => streamFetch(`/deals/${dealId}/ai/stream`, handlers),
   clearHistory: (dealId: string) =>
     apiFetch(`/deals/${dealId}/ai/history`, { method: 'DELETE' }) as Promise<{ ok: boolean }>,
   getChat: (dealId: string) =>
     apiFetch(`/deals/${dealId}/ai/chat`) as Promise<{ messages: AIChatMessage[] }>,
   sendChat: (dealId: string, content: string) =>
     apiFetch(`/deals/${dealId}/ai/chat`, { method: 'POST', body: JSON.stringify({ content }) }) as Promise<{ messages: AIChatMessage[] }>,
-  validate: (dealId: string) =>
-    apiFetch(`/deals/${dealId}/ai/validate`, { method: 'POST' }) as Promise<AIValidateResponse>,
+  validate: (dealId: string, payload: { primaryAssessmentDocumentId: string; primaryWbsDocumentId: string; additionalDocumentIds: string[] }) =>
+    apiFetch(`/deals/${dealId}/ai/validate`, { method: 'POST', body: JSON.stringify(payload) }) as Promise<AIValidateResponse>,
 };

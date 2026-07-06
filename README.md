@@ -48,12 +48,12 @@ RFPulse includes a Coordinator-driven multi-agent AI processor that reads a deal
 **Agent roles**
 - **Coordinator** — reads the deal context, extracts facts, routes work to specialists, synthesizes their outputs into the final Markdown assessment report, and reviews it for gaps against the original requirements.
 - **Legal** — compliance, contractual risks, and governance posture.
-- **Architect** — solution design, data model, phased implementation plan.
-- **Estimator** — granular Work Breakdown Structure (WBS), effort estimate, team composition, and contingency. Runs after Legal and Architect so estimates reflect compliance and architecture findings.
+- **Architect** — evidence-grounded solution design, technology rationale, component catalogue, workflows, and the diagram prompt material used in the final report.
+- **Estimator** — phased 8–40 hour work packages, effort estimate, derived active team, and contingency. Runs after Legal and Architect.
 - **Copywriter** — turns the Coordinator context plus specialist outputs into the cohesive assessment report draft.
 - **UI Developer** *(disabled by default)* — optional prototype scope.
 
-A Superadmin can configure each agent (model, system prompt, temperature, etc.) from **Platform Configuration → AI Settings**.
+A Superadmin can configure each agent, shared prompt policies, and named task prompts from **Platform Configuration → AI Settings**. Every runtime instruction is loaded from the database.
 
 ## Agent Flow
 
@@ -72,20 +72,22 @@ flowchart TD
     E --> I
     F --> I
     H --> I
-    I --> J[Coordinator Review Step]
-    J --> K[Assessment Report saved as Deal Document]
-    K --> L[AI Chat Panel review]
+    I --> J[Draft Assessment + WBS + PNG Diagrams]
+    J --> K[User clicks Validate]
+    K --> L[Strict Tender Compliance Audit]
 ```
 
-Legal and Architect run in parallel because they can work from the same Coordinator context. After both complete, the Coordinator creates an estimation brief for the Estimator. The Copywriter then receives the Coordinator context plus Legal, Architect, and Estimator outputs and drafts the final assessment report before Coordinator review.
+The Coordinator creates separate role-specific evidence briefs for Legal and Architect. After both complete, it creates an estimation brief for the Estimator. The final assessment report now ends with a professional PNG diagram prompt section that asks for client-ready architecture diagrams using the exact tech stack named in the report, with tech-stack-native icons where relevant. The workflow then generates two PNG diagrams with `gpt-image-2` before saving the final report. The Copywriter then drafts the assessment before Coordinator review.
 
-The final report begins with a **Coordinator Review** section that includes a **Confidence Win Score (%)**, a short explanation, and any highlighted gaps or missed requirements from the original deal documents.
+Execute AI performs no automatic compliance review. Once both the draft assessment and WBS exist, Validate becomes available and runs a strict atomic-requirement audit across client documents and the generated supplier package. It produces a separate Validation Report with PASS/FAIL, six-block scoring, findings, and the complete coverage matrix.
 
 Agent workflow progress is persisted per deal in `ai_workflow_steps`. The table records each major step, its status, artifacts, and errors so interrupted flows can resume with saved context instead of starting from scratch. The deal AI workspace also includes a clear-history action that removes the conversation, coordinator context, and saved agent artifacts after user confirmation; generated documents are kept.
 
 When Execute AI proposes deal property updates, generated deal descriptions are Markdown so they render cleanly on the deal page.
 
 Deals also include **AI Notes**, a separate field directly below the description. These notes are appended directly to every relevant agent's system prompt as highest-priority deal-owner instructions, while also remaining visible in the deal context. Each Execute AI run starts a fresh session so cached specialist outputs cannot bypass updated notes; editing notes in a live session invalidates its derived outputs.
+
+Document uploads support Unicode filenames, including Cyrillic. The AI extraction flow reads Russian text from text-based PDF and DOCX files; XLS/XLSX workbooks (including worksheet names, formatted cell values, dates, and formulas); and UTF-8, UTF-16, and Windows-1251 text formats such as TXT, Markdown, and CSV. Image-only scanned PDFs must be OCRed before upload.
 
 ## Configuring the AI Processor
 

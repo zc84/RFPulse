@@ -1,0 +1,18 @@
+CREATE TABLE IF NOT EXISTS agent_prompt_templates (
+  id SERIAL PRIMARY KEY,
+  prompt_key VARCHAR(100) UNIQUE NOT NULL,
+  agent_slug VARCHAR(50) REFERENCES agents(slug) ON DELETE CASCADE,
+  name VARCHAR(255) NOT NULL,
+  kind VARCHAR(20) NOT NULL CHECK (kind IN ('shared', 'task')),
+  content TEXT NOT NULL,
+  prompt_version INTEGER NOT NULL DEFAULT 1,
+  sort_order INTEGER DEFAULT 0,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS artifact_type VARCHAR(50);
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS ai_session_id INTEGER REFERENCES ai_sessions(id) ON DELETE SET NULL;
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS review_status VARCHAR(20) CHECK (review_status IN ('draft', 'approved'));
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS approved_by INTEGER REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS approved_at TIMESTAMP;

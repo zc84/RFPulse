@@ -1,4 +1,4 @@
-import { FileText, Download, Share2, Trash2, Upload, X } from 'lucide-react';
+import { FileText, Download, Share2, Trash2, Upload, Eye, CheckCircle2, RotateCcw } from 'lucide-react';
 import { Document } from '../types';
 
 function formatDate(d: string) {
@@ -16,6 +16,8 @@ interface DocumentSectionProps {
   onDownload: (doc: Document) => void;
   onShare: (docId: string) => void;
   onDelete: (doc: Document) => void;
+  onPreview?: (doc: Document) => void;
+  onReviewStatus?: (doc: Document, status: 'draft' | 'approved') => void;
   badge?: string;
   emptyText?: string;
   accepted?: string;
@@ -31,10 +33,12 @@ export default function DocumentSection({
   onUpload,
   onDownload,
   onShare,
-  onDelete,
+    onDelete,
+    onPreview,
+    onReviewStatus,
   badge,
   emptyText = 'No documents.',
-  accepted = '.pdf,.docx,.xlsx,.doc,.ppt,.pptx',
+  accepted = '.pdf,.docx,.xls,.xlsx,.txt,.md,.markdown,.csv,.json,.html,.htm,.xml,.yaml,.yml',
 }: DocumentSectionProps) {
   return (
     <div style={{
@@ -87,10 +91,21 @@ export default function DocumentSection({
                     <div style={{ fontSize: 11, color: '#94A3B8' }}>
                       {doc.size} · Uploaded {formatDate(doc.uploadedAt)}
                       {doc.source === 'ai' && <span style={{ marginLeft: 8, color: '#4F46E5', fontWeight: 600 }}>AI</span>}
+                      {doc.reviewStatus && <span style={{ marginLeft: 8, color: doc.reviewStatus === 'approved' ? '#166534' : '#B45309', fontWeight: 700 }}>{doc.reviewStatus.toUpperCase()}</span>}
                     </div>
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                  {doc.artifactType === 'architecture-diagram' && onPreview && (
+                    <button title="Preview diagram" style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #E2E8F0', background: '#fff', cursor: 'pointer' }} onClick={() => onPreview(doc)}>
+                      <Eye size={12} />
+                    </button>
+                  )}
+                  {doc.artifactType === 'assessment-report' && onReviewStatus && (
+                    <button title={doc.reviewStatus === 'approved' ? 'Return to draft' : 'Approve report'} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '6px 10px', borderRadius: 6, border: '1px solid #E2E8F0', background: '#fff', color: doc.reviewStatus === 'approved' ? '#B45309' : '#166534', cursor: 'pointer' }} onClick={() => onReviewStatus(doc, doc.reviewStatus === 'approved' ? 'draft' : 'approved')}>
+                      {doc.reviewStatus === 'approved' ? <RotateCcw size={12} /> : <CheckCircle2 size={12} />}
+                    </button>
+                  )}
                   <button
                     disabled={!doc.filename}
                     style={{
@@ -183,7 +198,7 @@ export default function DocumentSection({
             <span style={{ fontSize: 12, color: '#64748B', textAlign: 'center' }}>
               <span style={{ color: source === 'ai' ? '#4F46E5' : '#2563EB', fontWeight: 500 }}>Click to upload</span> or drag & drop
             </span>
-            <span style={{ fontSize: 11, color: '#94A3B8' }}>PDF, DOCX, XLSX up to 20MB</span>
+            <span style={{ fontSize: 11, color: '#94A3B8' }}>PDF, DOCX, XLS/XLSX, TXT, CSV up to 20MB</span>
             <input
               type="file"
               multiple

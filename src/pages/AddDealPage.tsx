@@ -315,8 +315,8 @@ export default function AddDealPage() {
                 <span style={{ fontSize: 13, color: '#64748B', textAlign: 'center' }}>
                   <span style={{ color: '#2563EB', fontWeight: 500 }}>Click to upload</span> or drag & drop
                 </span>
-                <span style={{ fontSize: 11, color: '#94A3B8' }}>PDF, DOCX, XLSX up to 20MB</span>
-                <input type="file" multiple accept=".pdf,.docx,.xlsx,.doc,.ppt,.pptx" onChange={handleFileUpload} style={{ display: 'none' }} />
+                <span style={{ fontSize: 11, color: '#94A3B8' }}>PDF, DOCX, XLS/XLSX, TXT, CSV up to 20MB</span>
+                <input type="file" multiple accept=".pdf,.docx,.xls,.xlsx,.txt,.md,.markdown,.csv,.json,.html,.htm,.xml,.yaml,.yml" onChange={handleFileUpload} style={{ display: 'none' }} />
               </label>
             </div>
           </div>

@@ -1,0 +1,230 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1600" height="1000" viewBox="0 0 1600 1000" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Gradients -->
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f5f7fa"/>
+      <stop offset="100%" stop-color="#e9eef2"/>
+    </linearGradient>
+    <radialGradient id="mesh1" cx="0.25" cy="0.18" r="0.85">
+      <stop offset="0%" stop-color="#0b213f" stop-opacity="0.10"/>
+      <stop offset="100%" stop-color="#f5f7fa" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="navyTeal" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0b213f"/>
+      <stop offset="100%" stop-color="#209494"/>
+    </linearGradient>
+    <linearGradient id="cardShadow" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#000" stop-opacity="0.10"/>
+      <stop offset="100%" stop-color="#000" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f7c873"/>
+      <stop offset="100%" stop-color="#e9a84b"/>
+    </linearGradient>
+    <linearGradient id="tealCyan" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#209494"/>
+      <stop offset="100%" stop-color="#65e2e2"/>
+    </linearGradient>
+    <filter id="softShadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="6" stdDeviation="16" flood-color="#0b213f" flood-opacity="0.11"/>
+    </filter>
+    <filter id="cardGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="0" stdDeviation="8" flood-color="#209494" flood-opacity="0.10"/>
+    </filter>
+  </defs>
+  <!-- Background -->
+  <rect width="1600" height="1000" fill="url(#bgGrad)"/>
+  <rect width="1600" height="1000" fill="url(#mesh1)"/>
+  <!-- Subtle Grid -->
+  <g opacity="0.09">
+    <g>
+      <rect x="0" y="0" width="1600" height="1000" fill="none" stroke="#b5c3d1" stroke-width="0.7"/>
+      <g>
+        <!-- vertical lines -->
+        <line x1="200" y1="0" x2="200" y2="1000" stroke="#b5c3d1" stroke-width="0.7"/>
+        <line x1="400" y1="0" x2="400" y2="1000" stroke="#b5c3d1" stroke-width="0.7"/>
+        <line x1="600" y1="0" x2="600" y2="1000" stroke="#b5c3d1" stroke-width="0.7"/>
+        <line x1="800" y1="0" x2="800" y2="1000" stroke="#b5c3d1" stroke-width="0.7"/>
+        <line x1="1000" y1="0" x2="1000" y2="1000" stroke="#b5c3d1" stroke-width="0.7"/>
+        <line x1="1200" y1="0" x2="1200" y2="1000" stroke="#b5c3d1" stroke-width="0.7"/>
+        <line x1="1400" y1="0" x2="1400" y2="1000" stroke="#b5c3d1" stroke-width="0.7"/>
+        <!-- horizontal lines -->
+        <line x1="0" y1="200" x2="1600" y2="200" stroke="#b5c3d1" stroke-width="0.7"/>
+        <line x1="0" y1="400" x2="1600" y2="400" stroke="#b5c3d1" stroke-width="0.7"/>
+        <line x1="0" y1="600" x2="1600" y2="600" stroke="#b5c3d1" stroke-width="0.7"/>
+        <line x1="0" y1="800" x2="1600" y2="800" stroke="#b5c3d1" stroke-width="0.7"/>
+      </g>
+    </g>
+  </g>
+  <!-- Title & Subtitle -->
+  <text x="800" y="90" text-anchor="middle" font-size="54" font-family="Segoe UI, Arial, sans-serif" font-weight="700" fill="#0b213f" letter-spacing="0.01em">National Media Authority Website Architecture</text>
+  <text x="800" y="145" text-anchor="middle" font-size="28" font-family="Segoe UI, Arial, sans-serif" fill="#209494" letter-spacing="0.03em">
+    Bilingual Arabic / English &ndash; AI-Enabled &ndash; UAE Gov Compliance
+  </text>
+  <!-- Central Architecture Lane -->
+  <g>
+    <!-- Lane background -->
+    <rect x="320" y="220" width="960" height="560" rx="48" fill="#fff" filter="url(#softShadow)"/>
+    <!-- Lane highlight -->
+    <rect x="350" y="250" width="900" height="500" rx="36" fill="#f7fafc" opacity="0.91"/>
+    <!-- Architecture elements are layered from top to bottom -->
+    <!-- 1. Public Visitor -->
+    <g>
+      <rect x="725" y="260" width="150" height="48" rx="24" fill="url(#tealCyan)" filter="url(#cardGlow)"/>
+      <text x="800" y="293" text-anchor="middle" font-size="26" font-family="Segoe UI, Arial, sans-serif" fill="#fff" font-weight="600">Public Visitor</text>
+      <!-- User icon -->
+      <circle cx="760" cy="284" r="14" fill="#fff" opacity="0.25"/>
+      <circle cx="760" cy="284" r="8" fill="#fff" opacity="0.45"/>
+    </g>
+    <!-- 2. Edge / CDN / WAF -->
+    <g>
+      <rect x="675" y="325" width="250" height="50" rx="22" fill="#0b213f" filter="url(#cardGlow)"/>
+      <text x="800" y="357" text-anchor="middle" font-size="24" font-family="Segoe UI, Arial, sans-serif" fill="#f7c873" font-weight="600">Authority Edge / CDN / WAF</text>
+      <!-- shield icon -->
+      <rect x="900" y="342" width="17" height="17" rx="4" fill="#fff" opacity="0.14"/>
+      <polygon points="909,350 904,347 904,343 914,343 914,347" fill="#fff" opacity="0.25"/>
+    </g>
+    <!-- 3. Next.js Frontend -->
+    <g>
+      <rect x="620" y="400" width="360" height="58" rx="18" fill="url(#navyTeal)" filter="url(#cardGlow)"/>
+      <text x="800" y="438" text-anchor="middle" font-size="26" font-family="Segoe UI, Arial, sans-serif" fill="#fff" font-weight="600">Next.js Frontend</text>
+      <!-- globe icon -->
+      <circle cx="755" cy="428" r="11" fill="#fff" opacity="0.10"/>
+      <ellipse cx="755" cy="428" rx="5" ry="7" fill="#fff" opacity="0.18"/>
+    </g>
+    <!-- 4. CMS API Layer -->
+    <g>
+      <rect x="740" y="475" width="120" height="38" rx="14" fill="#209494" filter="url(#cardGlow)"/>
+      <text x="800" y="500" text-anchor="middle" font-size="20" font-family="Segoe UI, Arial, sans-serif" fill="#fff" font-weight="600">CMS API Layer</text>
+      <!-- api icon -->
+      <rect x="765" y="484" width="10" height="10" rx="3" fill="#fff" opacity="0.22"/>
+    </g>
+    <!-- 5. Drupal CMS -->
+    <g>
+      <rect x="695" y="540" width="210" height="50" rx="18" fill="#fff" stroke="#209494" stroke-width="2" filter="url(#cardGlow)"/>
+      <text x="800" y="572" text-anchor="middle" font-size="24" font-family="Segoe UI, Arial, sans-serif" fill="#209494" font-weight="600">Drupal CMS</text>
+      <!-- droplet icon -->
+      <ellipse cx="755" cy="560" rx="9" ry="13" fill="#209494" opacity="0.08"/>
+    </g>
+    <!-- 6. Caches and Storage row (horizontal) -->
+    <g>
+      <!-- PostgreSQL -->
+      <rect x="575" y="615" width="120" height="47" rx="14" fill="#fff" stroke="#0b213f" stroke-width="1.5" filter="url(#cardGlow)"/>
+      <text x="635" y="646" text-anchor="middle" font-size="20" font-family="Segoe UI, Arial, sans-serif" fill="#0b213f" font-weight="600">PostgreSQL</text>
+      <!-- db icon -->
+      <ellipse cx="595" cy="635" rx="9" ry="6" fill="#0b213f" opacity="0.09"/>
+      <!-- OpenSearch -->
+      <rect x="740" y="615" width="120" height="47" rx="14" fill="#fff" stroke="#209494" stroke-width="1.5" filter="url(#cardGlow)"/>
+      <text x="800" y="646" text-anchor="middle" font-size="20" font-family="Segoe UI, Arial, sans-serif" fill="#209494" font-weight="600">OpenSearch</text>
+      <!-- search icon -->
+      <circle cx="820" cy="635" r="7" fill="#209494" opacity="0.07"/>
+      <line x1="825" y1="640" x2="833" y2="648" stroke="#209494" stroke-width="2" opacity="0.13"/>
+      <!-- Redis/Varnish -->
+      <rect x="905" y="615" width="120" height="47" rx="14" fill="#fff" stroke="#209494" stroke-width="1.5" filter="url(#cardGlow)"/>
+      <text x="965" y="646" text-anchor="middle" font-size="20" font-family="Segoe UI, Arial, sans-serif" fill="#209494" font-weight="600">Redis / Varnish</text>
+      <!-- cache icon -->
+      <rect x="930" y="635" width="8" height="8" rx="2" fill="#209494" opacity="0.11"/>
+      <rect x="940" y="635" width="8" height="8" rx="2" fill="#209494" opacity="0.08"/>
+    </g>
+    <!-- 7. AI Gateway -->
+    <g>
+      <rect x="740" y="691" width="120" height="38" rx="14" fill="#209494" filter="url(#cardGlow)"/>
+      <text x="800" y="715" text-anchor="middle" font-size="20" font-family="Segoe UI, Arial, sans-serif" fill="#fff" font-weight="600">AI Gateway</text>
+      <!-- ai icon -->
+      <rect x="785" y="700" width="10" height="10" rx="3" fill="#fff" opacity="0.22"/>
+    </g>
+    <!-- Connectors (arrows) -->
+    <g stroke-linecap="round" stroke-linejoin="round" opacity="0.32">
+      <!-- Public → Edge -->
+      <path d="M800 308 L800 325" stroke="#209494" stroke-width="4"/>
+      <polygon points="796,325 804,325 800,332" fill="#209494" opacity="0.32"/>
+      <!-- Edge → Next.js -->
+      <path d="M800 375 L800 400" stroke="#209494" stroke-width="4"/>
+      <polygon points="796,400 804,400 800,407" fill="#209494" opacity="0.32"/>
+      <!-- Next.js → CMS API -->
+      <path d="M800 458 L800 475" stroke="#209494" stroke-width="4"/>
+      <polygon points="796,475 804,475 800,482" fill="#209494" opacity="0.32"/>
+      <!-- CMS API → Drupal -->
+      <path d="M800 513 L800 540" stroke="#209494" stroke-width="4"/>
+      <polygon points="796,540 804,540 800,547" fill="#209494" opacity="0.32"/>
+      <!-- Drupal → PostgreSQL -->
+      <path d="M725 590 L635 615" stroke="#209494" stroke-width="4"/>
+      <polygon points="635,611 635,619 628,615" fill="#209494" opacity="0.32"/>
+      <!-- Drupal → OpenSearch -->
+      <path d="M800 590 L800 615" stroke="#209494" stroke-width="4"/>
+      <polygon points="796,615 804,615 800,622" fill="#209494" opacity="0.32"/>
+      <!-- Drupal → Redis -->
+      <path d="M875 590 L965 615" stroke="#209494" stroke-width="4"/>
+      <polygon points="965,611 965,619 972,615" fill="#209494" opacity="0.32"/>
+      <!-- Drupal → AI Gateway -->
+      <path d="M800 590 Q830 650 800 691" stroke="#209494" stroke-width="4" fill="none"/>
+      <polygon points="796,691 804,691 800,698" fill="#209494" opacity="0.32"/>
+    </g>
+  </g>
+  <!-- Left Side Panel: Capabilities -->
+  <g>
+    <rect x="60" y="230" width="230" height="580" rx="32" fill="#fff" filter="url(#softShadow)"/>
+    <rect x="80" y="260" width="190" height="180" rx="18" fill="#f7fafc"/>
+    <text x="175" y="300" text-anchor="middle" font-size="26" font-family="Segoe UI, Arial, sans-serif" font-weight="700" fill="#0b213f" letter-spacing="0.02em">
+      Key Capabilities
+    </text>
+    <g font-size="18" font-family="Segoe UI, Arial, sans-serif" fill="#209494" font-weight="500">
+      <text x="95" y="340" >• Bilingual Arabic / English UI</text>
+      <text x="95" y="370" >• AI-powered search &amp; content</text>
+      <text x="95" y="400" >• UAEPass SSO</text>
+      <text x="95" y="430" >• OpenSearch, Redis, PostgreSQL</text>
+      <text x="95" y="460" >• WCAG 2.2 AA accessible</text>
+      <text x="95" y="490" >• UAE DLS 3.0 compliant</text>
+    </g>
+    <!-- SSO / External Services / Monitoring -->
+    <rect x="80" y="530" width="190" height="120" rx="18" fill="#f7fafc"/>
+    <g font-size="18" font-family="Segoe UI, Arial, sans-serif" fill="#209494" font-weight="500">
+      <text x="95" y="565" >• UAEPass / SSO</text>
+      <text x="95" y="595" >• External eServices</text>
+      <text x="95" y="625" >• CI/CD, Monitoring</text>
+      <text x="95" y="655" >• Authority Edge / WAF</text>
+    </g>
+  </g>
+  <!-- Right Side Panel: Implementation Notes -->
+  <g>
+    <rect x="1310" y="230" width="230" height="580" rx="32" fill="#fff" filter="url(#softShadow)"/>
+    <rect x="1330" y="260" width="190" height="300" rx="18" fill="#f7fafc"/>
+    <text x="1425" y="300" text-anchor="middle" font-size="26" font-family="Segoe UI, Arial, sans-serif" font-weight="700" fill="#0b213f" letter-spacing="0.02em">
+      Implementation Notes
+    </text>
+    <g font-size="18" font-family="Segoe UI, Arial, sans-serif" fill="#209494" font-weight="500">
+      <text x="1345" y="340" >• Project Kick-off: 2026-05</text>
+      <text x="1345" y="370" >• Due in: 2 months</text>
+      <text x="1345" y="400" >• Full migration &amp; launch</text>
+      <text x="1345" y="430" >• Post-launch support</text>
+      <text x="1345" y="460" >• Deployed on NMA infra</text>
+      <text x="1345" y="490" >• Docs/artifacts:</text>
+      <text x="1375" y="520" font-size="14" fill="#0b213f">Source PDF</text>
+      <text x="1375" y="542" font-size="14" fill="#0b213f">5 architecture diagrams</text>
+      <text x="1375" y="564" font-size="14" fill="#0b213f">AI WBS workbook</text>
+      <text x="1375" y="586" font-size="14" fill="#0b213f">Assessment + validation</text>
+      <text x="1375" y="608" font-size="14" fill="#0b213f">Draft + review artifacts</text>
+    </g>
+  </g>
+  <!-- LEGEND & DEAL FACTS (bottom bar) -->
+  <g>
+    <rect x="200" y="875" width="1200" height="95" rx="20" fill="#fff" filter="url(#softShadow)"/>
+    <g font-family="Segoe UI, Arial, sans-serif" font-size="20" font-weight="600" fill="#0b213f">
+      <text x="230" y="912">
+        Deal: <tspan fill="url(#gold)">B - National Media Authority</tspan>
+      </text>
+      <text x="230" y="938" font-size="15" font-weight="400" fill="#209494">
+        ID: D-022 &nbsp; | &nbsp; In Progress &nbsp; | &nbsp; Due: 2026-07-05
+      </text>
+      <rect x="540" y="887" width="2" height="52" fill="url(#gold)" opacity="0.35"/>
+      <text x="690" y="910" font-size="15" font-weight="400" fill="#0b213f">
+        Turnkey bilingual Arabic/English AI-enabled website.
+      </text>
+      <text x="690" y="937" font-size="14" font-weight="400" fill="#209494">
+        UAE Federal Government, UAE DLS 3.0, WCAG 2.2 AA, Authority infrastructure.
+      </text>
+    </g>
+    <rect x="200" y="970" width="1200" height="5" fill="url(#gold)" rx="2.5"/>
+  </g>
+</svg>

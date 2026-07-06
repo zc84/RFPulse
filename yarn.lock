@@ -160,6 +160,11 @@
     "@babel/helper-string-parser" "^7.29.7"
     "@babel/helper-validator-identifier" "^7.29.7"
 
+"@e965/xlsx@^0.20.3":
+  version "0.20.3"
+  resolved "https://registry.npmjs.org/@e965/xlsx/-/xlsx-0.20.3.tgz"
+  integrity sha512-703RN/3OdsRD5mtse2HBX7Um7xwaP9tlswEG6svOtjqokXoX7rJdQj7DyabD2I+xk22RgaIIU+R6BHgkpZGB/w==
+
 "@esbuild/darwin-arm64@0.25.12":
   version "0.25.12"
   resolved "https://registry.npmjs.org/@esbuild/darwin-arm64/-/darwin-arm64-0.25.12.tgz"
@@ -825,6 +830,11 @@ electron-to-chromium@^1.5.376:
   version "1.5.377"
   resolved "https://registry.npmjs.org/electron-to-chromium/-/electron-to-chromium-1.5.377.tgz"
   integrity sha512-cH1jZgJHoezfTnKfKwnScpHywTFVnJUNITDPREFdhNjiuD502+QFpG0Qk7G8jhsV/f+CEAFlIrzP1fT+IMb92g==
+
+elkjs@^0.11.1:
+  version "0.11.1"
+  resolved "https://registry.npmjs.org/elkjs/-/elkjs-0.11.1.tgz"
+  integrity sha512-zxxR9k+rx5ktMwT/FwyLdPCrq7xN6e4VGGHH8hA01vVYKjTFik7nHOxBnAYtrgYUB1RpAiLvA1/U2YraWxyKKg==
 
 emoji-regex@^8.0.0:
   version "8.0.0"

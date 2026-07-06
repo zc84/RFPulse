@@ -1,26 +1,17 @@
 import OpenAI from 'openai';
-import { z } from 'zod';
+import { zodResponseFormat } from 'openai/helpers/zod';
 import { query } from '../db.js';
-import { getDefaultAgents } from './aiPrompts.js';
-
-const coordinatorSchema = z.object({
-  status: z.enum(['clarifying', 'routing', 'ready_to_write']),
-  questions: z.array(z.string()).optional(),
-  plan: z.array(z.string()).optional(),
-  reasoning: z.string().optional(),
-  context: z.string().optional(),
-});
-
-const coordinatorDecisionSchema = coordinatorSchema.omit({ context: true });
-
-const dealPropertiesSchema = z.object({
-  dueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
-  budget: z.number().optional().nullable(),
-  clientName: z.string().optional().nullable(),
-  description: z.string().max(1200).optional().nullable(),
-});
+import { DEFAULT_PROMPT_TEMPLATES, getDefaultAgents } from './aiPrompts.js';
+import {
+  buildEstimatorReportSummary,
+  coordinatorDecisionSchema,
+  dealPropertiesSchema,
+  estimatorResultSchema,
+  parseEstimatorOutput,
+} from './aiSchemas.js';
 
 const DEFAULT_AGENT_SLUGS = ['coordinator', 'legal', 'architect', 'estimator', 'copywriter', 'frontend-dev'];
+const REQUIRED_SPECIALIST_SLUGS = ['legal', 'architect', 'estimator'];
 
 function createAiError(message, status = 502) {
   const error = new Error(message);
@@ -120,11 +111,11 @@ export async function loadAllAgents() {
 export async function ensureDefaultAgents() {
   const defaults = getDefaultAgents();
   for (const agent of defaults) {
-    const existing = await query('SELECT id FROM agents WHERE slug = $1', [agent.slug]);
+    const existing = await query('SELECT id, prompt_version FROM agents WHERE slug = $1', [agent.slug]);
     if (existing.rows.length === 0) {
       await query(
-        `INSERT INTO agents (slug, name, model, system_prompt, temperature, max_tokens, top_p, presence_penalty, frequency_penalty, is_enabled, sort_order)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+        `INSERT INTO agents (slug, name, model, system_prompt, temperature, max_tokens, top_p, presence_penalty, frequency_penalty, is_enabled, sort_order, prompt_version)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
         [
           agent.slug,
           agent.name,
@@ -137,10 +128,75 @@ export async function ensureDefaultAgents() {
           agent.frequency_penalty,
           agent.is_enabled,
           agent.sort_order,
+          agent.prompt_version,
+        ]
+      );
+    } else if (Number(existing.rows[0].prompt_version || 1) < agent.prompt_version) {
+      await query(
+        `UPDATE agents
+         SET name = $1,
+             model = $2,
+             system_prompt = $3,
+             temperature = $4,
+             max_tokens = $5,
+             top_p = $6,
+             presence_penalty = $7,
+             frequency_penalty = $8,
+             is_enabled = $9,
+             sort_order = $10,
+             prompt_version = $11,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE slug = $12`,
+        [
+          agent.name,
+          agent.model,
+          agent.system_prompt,
+          agent.temperature,
+          agent.max_tokens,
+          agent.top_p,
+          agent.presence_penalty,
+          agent.frequency_penalty,
+          agent.is_enabled,
+          agent.sort_order,
+          agent.prompt_version,
+          agent.slug,
         ]
       );
     }
   }
+  for (const [index, prompt] of DEFAULT_PROMPT_TEMPLATES.entries()) {
+    await query(
+      `INSERT INTO agent_prompt_templates (prompt_key, agent_slug, name, kind, content, prompt_version, sort_order)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)
+       ON CONFLICT (prompt_key) DO UPDATE SET
+         agent_slug = EXCLUDED.agent_slug,
+         name = EXCLUDED.name,
+         kind = EXCLUDED.kind,
+         content = CASE WHEN agent_prompt_templates.prompt_version < EXCLUDED.prompt_version THEN EXCLUDED.content ELSE agent_prompt_templates.content END,
+         prompt_version = GREATEST(agent_prompt_templates.prompt_version, EXCLUDED.prompt_version),
+         sort_order = EXCLUDED.sort_order,
+         updated_at = CURRENT_TIMESTAMP`,
+      [prompt.key, prompt.agent_slug, prompt.name, prompt.kind, prompt.content, prompt.version, index]
+    );
+  }
+}
+
+export async function loadPromptTemplates(agentSlug, taskPromptKey = null) {
+  const keys = ['shared.source-boundaries', 'shared.multilingual', 'shared.ai-notes'];
+  if (taskPromptKey) keys.push(taskPromptKey);
+  const result = await query(
+    `SELECT * FROM agent_prompt_templates WHERE prompt_key = ANY($1)
+     ORDER BY CASE kind WHEN 'shared' THEN 0 ELSE 1 END, sort_order, id`,
+    [keys]
+  );
+  const byKey = new Map(result.rows.map(row => [row.prompt_key, row]));
+  for (const key of keys) {
+    if (!byKey.has(key)) throw new Error(`Required database prompt template "${key}" is missing`);
+  }
+  if (taskPromptKey && byKey.get(taskPromptKey).agent_slug !== agentSlug) {
+    throw new Error(`Prompt template "${taskPromptKey}" does not belong to agent ${agentSlug}`);
+  }
+  return keys.map(key => byKey.get(key));
 }
 
 function formatAgentOutputs(agentOutputs) {
@@ -164,108 +220,84 @@ function formatConversation(messages) {
     .join('\n\n');
 }
 
-function compactText(text, maxChars) {
-  if (!text || text.length <= maxChars) return text || '';
-  const headChars = Math.floor(maxChars * 0.7);
-  const tailChars = maxChars - headChars;
-  return [
-    text.slice(0, headChars).trim(),
-    `\n[... ${text.length - maxChars} characters omitted from the middle ...]\n`,
-    text.slice(-tailChars).trim(),
-  ].join('\n');
+export function splitCoordinatorSourceContext(text, maxChars = 45000) {
+  if (!text || text.length <= maxChars) return [text || ''];
+  const sections = text.split(/(?=^--- .+ ---$)/gm).filter(Boolean);
+  const chunks = [];
+  let current = '';
+  const append = section => {
+    if (current) chunks.push(current.trim());
+    current = section;
+  };
+  for (const section of sections.length > 1 ? sections : [text]) {
+    if (section.length > maxChars) {
+      if (current) append('');
+      for (let offset = 0; offset < section.length; offset += maxChars) {
+        chunks.push(section.slice(offset, offset + maxChars).trim());
+      }
+      current = '';
+    } else if (!current || current.length + section.length <= maxChars) {
+      current += section;
+    } else {
+      append(section);
+    }
+  }
+  if (current) chunks.push(current.trim());
+  return chunks.filter(Boolean);
 }
-
-function buildFallbackCoordinatorContext(contextBundle) {
-  const maxChars = 50000;
-  return [
-    '## Coordinator Context',
-    '',
-    'The AI-generated coordinator summary reached the response limit, so this bounded source context was used instead.',
-    'Specialist agents should use the available facts below and explicitly flag any missing details as assumptions.',
-    '',
-    compactText(contextBundle, maxChars),
-  ].join('\n').trim();
-}
-
-const COORDINATOR_CONTEXT_PROMPT = `You are the Coordinator, preparing the specialist-agent context for an RFP/Tender assessment.
-
-Create a structured, factual Markdown summary that Legal, Architect, and Estimator agents can use as their sole source of information.
-
-Include these sections when facts are available:
-- Opportunity overview
-- Client and stakeholders
-- Scope and deliverables
-- Functional requirements
-- Technical and integration requirements
-- Security, compliance, legal, and procurement requirements
-- Timeline, submission deadline, milestones, and decision criteria
-- Budget, commercial terms, assumptions, constraints, and risks
-- Explicit submission requirements
-- Open questions or missing information
-
-Rules:
-- Use only facts from the supplied deal context and conversation.
-- Treat "High Priority AI Notes" as explicit user guidance. Preserve their intent in a dedicated section of the summary so downstream agents cannot miss them.
-- If AI notes conflict with document facts, retain both and flag the conflict clearly.
-- Preserve specific dates, numbers, named systems, mandatory requirements, and evaluation criteria.
-- Keep the summary concise but complete. Prefer bullets over prose.
-- Keep the entire response under 1,800 words. Do not repeat document text verbatim.
-- Do not output JSON.`;
-
-const COORDINATOR_DECISION_PROMPT = `You are the Coordinator, an expert RFP/Tender response strategist.
-
-Your job in this step is only to decide the next workflow action.
-
-Output a small JSON object with this exact schema:
-{
-  "status": "clarifying" | "routing" | "ready_to_write",
-  "questions": ["..."],
-  "plan": ["legal", "architect", "estimator"],
-  "reasoning": "..."
-}
-
-Rules:
-- Use "clarifying" only when critical information is missing and agents cannot produce a useful assessment.
-- Use "routing" when there is enough information to call specialist agents. Include only the plan array.
-- Use "ready_to_write" when specialist agent outputs are already present and the final report can be generated.
-- Do not include specialist context, report text, Markdown sections, or any long-form content.
-- Do not include a "context" field.`;
 
 export async function buildCoordinatorContext(contextBundle, conversation, priorityInstructions = '') {
   const conversationText = formatConversation(conversation);
-  const messages = [
-    {
+  const chunks = splitCoordinatorSourceContext(contextBundle);
+  const summaries = [];
+  for (let index = 0; index < chunks.length; index++) {
+    const messages = [{
       role: 'user',
       content: [
-        '## Deal context',
-        contextBundle,
-        '## Conversation so far',
-        conversationText || 'No conversation yet.',
+        `## Deal context — source part ${index + 1} of ${chunks.length}`,
+        chunks[index],
+        chunks.length === 1 ? '## Conversation so far' : '',
+        chunks.length === 1 ? (conversationText || 'No conversation yet.') : '',
       ].filter(Boolean).join('\n\n'),
-    },
-  ];
-
-  let context;
-  try {
-    context = await callAgent('coordinator', messages, {
-      systemPrompt: COORDINATOR_CONTEXT_PROMPT,
+    }];
+    const summary = await callAgent('coordinator', messages, {
+      taskPromptKey: 'coordinator.context',
       priorityInstructions,
-      maxTokens: 8192,
+      maxTokens: 16384,
       allowPartialOnLength: true,
-      partialNote: 'The coordinator context reached the response limit, so this summary was capped. Continue using the facts above and flag any missing details as assumptions.',
+      partialNote: `Coordinator source summary part ${index + 1} reached its output limit.`,
     });
-  } catch (err) {
-    if (err.message?.includes('response was truncated')) {
-      console.warn('Coordinator context generation truncated with no usable content; using bounded source context fallback.');
-      context = buildFallbackCoordinatorContext(contextBundle);
-    } else {
-      throw err;
-    }
+    if (!summary.trim()) throw createAiError(`Coordinator returned an empty source summary for part ${index + 1}.`);
+    summaries.push(summary.trim());
   }
+  const context = summaries.length === 1
+    ? summaries[0]
+    : await callAgent('coordinator', [{
+        role: 'user',
+        content: [
+          '## Coordinator-produced partial evidence summaries',
+          summaries.map((summary, index) => `### Part ${index + 1}\n${summary}`).join('\n\n'),
+          '## Conversation so far',
+          conversationText || 'No conversation yet.',
+        ].join('\n\n'),
+      }], {
+        taskPromptKey: 'coordinator.context',
+        priorityInstructions,
+        maxTokens: 16384,
+        allowPartialOnLength: true,
+        partialNote: 'The consolidated Coordinator summary reached its output limit.',
+      });
   if (!context.trim()) {
     throw createAiError('Coordinator returned an empty specialist context. Please try again.');
   }
   return context.trim();
+}
+
+export function requireCoordinatorContext(context) {
+  if (!context || !String(context).trim()) {
+    throw createAiError('Coordinator context is required before specialist agents can run.');
+  }
+  return String(context).trim();
 }
 
 export async function callAgent(slug, messages, options = {}) {
@@ -273,13 +305,13 @@ export async function callAgent(slug, messages, options = {}) {
   if (!agent) throw new Error(`Agent ${slug} not found`);
   if (!agent.is_enabled) throw new Error(`Agent ${slug} is disabled`);
 
-  const baseSystemPrompt = options.systemPrompt || agent.system_prompt;
+  const templates = await loadPromptTemplates(slug, options.taskPromptKey || null);
+  const baseSystemPrompt = [agent.system_prompt, ...templates.map(item => `# ${item.name.toUpperCase()}\n${item.content}`)].join('\n\n');
   const priorityInstructions = String(options.priorityInstructions || '').trim();
   const systemPrompt = priorityInstructions
-    ? [
+      ? [
         baseSystemPrompt,
-        '# HIGHEST-PRIORITY DEAL-SPECIFIC USER INSTRUCTIONS',
-        'The deal owner supplied the instructions below. Apply them directly to this task and preserve their intent in your output. They take priority over deal documents, extracted context, cached summaries, prior agent outputs, and default workflow preferences. If they conflict with source documents, explicitly report the conflict while still following the deal owner’s requested direction. Do not omit or dilute these instructions when creating a derived summary, brief, estimate, recommendation, or report.',
+        '# DEAL AI NOTES',
         '<deal_ai_notes>',
         priorityInstructions,
         '</deal_ai_notes>',
@@ -302,7 +334,11 @@ export async function callAgent(slug, messages, options = {}) {
     top_p: Number(agent.top_p),
     presence_penalty: Number(agent.presence_penalty),
     frequency_penalty: Number(agent.frequency_penalty),
-    response_format: options.json ? { type: 'json_object' } : undefined,
+    response_format: options.schema
+      ? zodResponseFormat(options.schema, options.schemaName || `${slug}_response`)
+      : options.json
+        ? { type: 'json_object' }
+        : undefined,
   };
 
   const MAX_RETRIES = 6;
@@ -355,6 +391,10 @@ export async function callAgent(slug, messages, options = {}) {
           continue;
         }
 
+        if (err.param === 'response_format' && options.schema) {
+          throw createAiError(`Agent ${slug} does not support the required structured output schema.`);
+        }
+
         if (err.param in params) {
           params = {
             ...params,
@@ -382,6 +422,17 @@ export async function coordinatorStep(
   const outputsSummary = formatAgentOutputs(agentOutputs);
   const conversationText = formatConversation(conversation);
   const hasAgentOutputs = agentOutputs && Object.keys(agentOutputs).length > 0;
+  const hasRequiredOutputs = REQUIRED_SPECIALIST_SLUGS.every(slug => Boolean(agentOutputs?.[slug]));
+  if (hasRequiredOutputs) {
+    return {
+      status: 'ready_to_write',
+      questions: null,
+      plan: null,
+      reasoning: 'All required specialist outputs are present.',
+      context: existingCoordinatorContext || undefined,
+      raw: null,
+    };
+  }
   const coordinatorContext = existingCoordinatorContext || (!hasAgentOutputs
     ? await buildCoordinatorContext(contextBundle, conversation, priorityInstructions)
     : null);
@@ -401,81 +452,44 @@ export async function coordinatorStep(
   ];
 
   const raw = await callAgent('coordinator', messages, {
-    systemPrompt: COORDINATOR_DECISION_PROMPT,
+    taskPromptKey: 'coordinator.decision',
     priorityInstructions,
-    json: true,
+    schema: coordinatorDecisionSchema,
+    schemaName: 'coordinator_decision',
     maxTokens: 1200,
   });
   const validated = parseAgentJson(raw, 'Coordinator', coordinatorDecisionSchema);
+  const normalized = validated.status === 'routing'
+    ? { ...validated, questions: null, plan: REQUIRED_SPECIALIST_SLUGS }
+    : { ...validated, plan: null };
 
   return {
-    ...validated,
+    ...normalized,
     context: coordinatorContext || undefined,
     raw,
   };
 }
 
-export async function runAgent(slug, context, conversation, priorOutputs = {}, priorityInstructions = '') {
+export function buildSpecialistMessages(context, priorOutputs = {}) {
   const outputsSummary = formatAgentOutputs(priorOutputs);
-  const conversationText = formatConversation(conversation);
-  const outputConstraint = slug === 'copywriter'
-    ? 'Keep the report concise and submission-ready. Prioritize a cohesive final assessment under 2,500 words. Preserve key estimates, risks, assumptions, and deliverables; do not paste specialist outputs verbatim.'
-    : 'Keep your response under 1,800 words. Prioritize decision-critical findings, tables, estimates, risks, and assumptions. Do not repeat the source context verbatim.';
-
-  const messages = [
+  return [
     {
       role: 'user',
       content: [
-        '## Coordinator context summary',
+        '## Coordinator-approved context',
         context,
         outputsSummary,
-        '## Conversation so far',
-        conversationText || 'No conversation yet.',
-        '## Output constraint',
-        outputConstraint,
       ].filter(Boolean).join('\n\n'),
     },
   ];
-
-  try {
-    return await callAgent(slug, messages, {
-      priorityInstructions,
-      maxTokens: 8192,
-      allowPartialOnLength: true,
-      partialNote: `The ${slug} agent response reached the output limit and was capped. Treat missing details as assumptions or manual review items.`,
-    });
-  } catch (err) {
-    if (err.message?.includes('response was truncated')) {
-      return [
-        `## ${slug} Output Unavailable`,
-        '',
-        `The ${slug} agent reached the response limit before returning usable content.`,
-        'Proceed with the available coordinator context and other specialist outputs, and treat this area as requiring manual review.',
-      ].join('\n');
-    }
-    throw err;
-  }
 }
 
-const ESTIMATOR_BRIEF_PROMPT = `You are the Coordinator preparing an estimation brief.
-
-You receive the original coordinator context plus Legal and Architect outputs. Create a focused Markdown brief for the Estimator.
-
-Include:
-- Final scope to estimate
-- Architecture-driven work packages
-- Legal/compliance-driven work packages
-- Assumptions and exclusions
-- Dependencies and sequencing
-- Delivery phases and milestone constraints
-- Risks that should affect contingency
-- Open questions that could change the estimate
-
-Rules:
-- Use only the provided context and specialist outputs.
-- Be specific enough for a granular WBS and team estimate.
-- Keep the brief under 1,500 words.
-- Do not output JSON.`;
+export async function runAgent(slug, context, conversation, priorOutputs = {}, priorityInstructions = '') {
+  return await callAgent(slug, buildSpecialistMessages(context, priorOutputs), {
+    priorityInstructions,
+    maxTokens: slug === 'architect' ? 32768 : slug === 'copywriter' ? 16384 : 8192,
+  });
+}
 
 export async function buildEstimatorBrief(context, conversation, agentOutputs, priorityInstructions = '') {
   const outputsSummary = formatAgentOutputs(agentOutputs);
@@ -494,7 +508,7 @@ export async function buildEstimatorBrief(context, conversation, agentOutputs, p
   ];
 
   return await callAgent('coordinator', messages, {
-    systemPrompt: ESTIMATOR_BRIEF_PROMPT,
+    taskPromptKey: 'coordinator.estimator-brief',
     priorityInstructions,
     maxTokens: 4096,
     allowPartialOnLength: true,
@@ -502,150 +516,142 @@ export async function buildEstimatorBrief(context, conversation, agentOutputs, p
   });
 }
 
-const REPORT_REVIEW_PROMPT = `You are the Coordinator, acting as a senior quality reviewer. You have just written a draft assessment report. Your job is to review the draft against the original deal requirements and identify any gaps, missed points, or inaccuracies.
-
-## Your responsibilities
-1. Compare the draft report to the original deal requirements.
-2. Identify any requirements, constraints, or evaluation criteria that are not fully addressed.
-3. Flag assumptions that should be explicitly stated.
-4. Assign a Confidence Win Score (0-100%) that reflects how complete and accurate the report is relative to the source material.
-5. Write a concise explanation for the score.
-
-## Output format
-Output ONLY the following Markdown block — nothing else, no preamble, no report content:
-
-## Coordinator Review
-
-**Confidence Win Score:** [0-100]%
-
-**Score Explanation:** [2-4 sentences explaining the score based on document completeness, clarity of requirements, and how well the report addresses them]
-
-### Findings & Gaps
-- [List any missed requirements, gaps, or assumptions]
-- [If no material gaps are found, state: "No material gaps identified. The report appears to address all stated requirements."]
-
-### Submission Requirements
-
-List every item the RFP/Tender explicitly requested the vendor to provide as part of the submission, formatted as a Markdown table:
-
-| # | Item (exact wording from RFP) | Section | Status |
-|---|---|---|---|
-| 1 | [exact item as written] | [section reference] | Included in this report \| Must be supplied as a separate attachment \| Optional |
-
-If none were explicitly requested, state: "No explicit submission requirements identified beyond the assessment report itself."
-
-## Quality standards
-- Be honest and rigorous. Do not inflate the score.
-- Cite the specific requirement or document section when flagging a gap.
-- Keep findings concise and actionable.
-- Always include the Submission Requirements block, even if the list is empty.
-- Output ONLY the Coordinator Review block above. Do NOT repeat or include any part of the draft report.`;
-
-export function buildReportFromOutputs(dealName, coordinatorContext, agentOutputs) {
-  if (agentOutputs.copywriter) {
-    return agentOutputs.copywriter.trim();
-  }
-
-  const AGENT_ORDER = ['legal', 'architect', 'estimator'];
-  const parts = [`# Assessment Report: ${dealName || 'Untitled Deal'}`, ''];
-
-  if (coordinatorContext) {
-    parts.push('## Deal Context', '', coordinatorContext.trim(), '');
-  }
-
-  for (const slug of AGENT_ORDER) {
-    if (agentOutputs[slug]) {
-      parts.push('---', '', agentOutputs[slug].trim(), '');
-    }
-  }
-
-  for (const [slug, content] of Object.entries(agentOutputs)) {
-    if (!AGENT_ORDER.includes(slug) && content) {
-      parts.push('---', '', content.trim(), '');
-    }
-  }
-
-  return parts.join('\n');
-}
-
-export async function coordinatorReviewStep(context, draftReport, priorityInstructions = '') {
+export async function runEstimator(context, conversation, priorityInstructions = '') {
   const messages = [
     {
       role: 'user',
       content: [
-        '## Original deal context',
+        '## Coordinator estimation brief',
         context,
-        '## Draft assessment report',
-        draftReport,
-      ].filter(Boolean).join('\n\n'),
+      ].join('\n\n'),
     },
   ];
+  const raw = await callAgent('estimator', messages, {
+    priorityInstructions,
+    schema: estimatorResultSchema,
+    schemaName: 'estimator_result',
+    maxTokens: 16384,
+  });
+  return JSON.stringify(parseAgentJson(raw, 'Estimator', estimatorResultSchema), null, 2);
+}
 
-  let reviewSection;
-  try {
-    reviewSection = await callAgent('coordinator', messages, {
-      systemPrompt: REPORT_REVIEW_PROMPT,
-      priorityInstructions,
-      // Reasoning models count internal reasoning and visible output against the
-      // same completion budget. A 4K limit can be exhausted before the review
-      // emits any text, which incorrectly triggers the "Not available" fallback.
-      maxTokens: 8192,
-      allowPartialOnLength: true,
-      partialNote: 'The coordinator review reached the output limit and was capped. Review any missing submission requirements manually.',
+export async function buildRoleBrief(role, sourceContext, conversation, priorityInstructions = '') {
+  const conversationText = formatConversation(conversation);
+  return callAgent('coordinator', [{
+    role: 'user',
+    content: `## Extracted source context\n${sourceContext}\n\n## Conversation\n${conversationText || 'No conversation yet.'}`,
+  }], {
+    taskPromptKey: role === 'legal' ? 'coordinator.legal-brief' : 'coordinator.architect-brief',
+    priorityInstructions,
+    maxTokens: 16384,
+  });
+}
+
+function appendArchitectureDiagramPrompt(report) {
+  const prompt = [
+    '## Architecture Diagram Prompt',
+    'Use the assessment report above as the source of truth and generate client-ready PNG diagrams for the solution architecture.',
+    'Use the exact tech stack named in the assessment report. Do not substitute a generic stack, an authority-approved provider, or a different implementation just because it has a nicer icon set.',
+    'Produce 1 to 5 diagrams as appropriate: an overview, a component or context view, a workflow or sequence view, an integration or data-flow view, and a deployment or trust-boundary view when relevant.',
+    'Each diagram should contain only elements grounded in the report: actors, channels, services, data stores, external systems, environments, and security boundaries.',
+    'Use small, tech-stack-native icons where relevant for services, platforms, databases, cloud components, and infrastructure layers.',
+    'If a technology does not have a native icon, use a neutral label or simple glyph instead of an unrelated icon.',
+    'Keep labels concise, typography legible, spacing balanced, and the overall style professional and presentation-ready.',
+    'Export each diagram as a separate PNG file.',
+  ].join('\n\n');
+
+  return `${report.trim()}\n\n${prompt}`;
+}
+
+function buildArchitectureDiagramImagePrompt(report, variant) {
+  const base = [
+    'You are generating a polished enterprise architecture diagram as a PNG image.',
+    'Use the assessment report below as the source of truth.',
+    'Use the exact tech stack named in the report. Do not replace it with a generic platform or provider-approved substitute.',
+    'Use native icons for the technologies named in the report wherever possible. If a native icon is unavailable, use a simple neutral glyph instead of an unrelated icon.',
+    'Style requirements: white background, dark navy headline, subtle rounded cards, dashed trust boundaries, clean arrows, legible labels, spacious layout, and a presentation-ready finish.',
+    variant === 'overview'
+      ? 'Create an executive overview architecture diagram that shows the main user, security edge, application layer, data/search layer, AI/integration layer, and operations/support boundaries.'
+      : 'Create a supporting architecture diagram that shows the main solution components, external systems, and data flows in more detail while remaining clear and compact.',
+    'The output should look like a professional solution architecture slide, not a marketing illustration.',
+    'Render the diagram as a single landscape PNG.',
+    'Assessment report:',
+    report.trim(),
+  ];
+  return base.join('\n\n');
+}
+
+function stripArchitectureDiagramPrompt(report) {
+  const marker = '\n\n## Architecture Diagram Prompt';
+  const idx = report.indexOf(marker);
+  return idx >= 0 ? report.slice(0, idx).trim() : report.trim();
+}
+
+export async function generateArchitectureDiagramImages(report) {
+  const client = await getOpenAIClient();
+  const reportBody = stripArchitectureDiagramPrompt(report);
+  const images = [];
+  const variants = [
+    { key: 'overview', title: 'Architecture Overview' },
+    { key: 'detail', title: 'Architecture Detail' },
+  ];
+
+  for (const variant of variants) {
+    const response = await client.images.generate({
+      model: 'gpt-image-2',
+      prompt: buildArchitectureDiagramImagePrompt(reportBody, variant.key),
+      size: '1536x1024',
+      quality: 'high',
+      output_format: 'png',
+      background: 'opaque',
+      n: 1,
     });
-  } catch (err) {
-    console.error('Coordinator review failed; saving report with fallback review:', err);
-    reviewSection = [
-      '## Coordinator Review',
-      '',
-      '**Confidence Win Score:** Not available',
-      '',
-      '**Score Explanation:** The assessment report was generated, but the automated Coordinator review could not complete because the AI review request failed. Review the report manually against the original RFP before submission.',
-      '',
-      '### Findings & Gaps',
-      '- Automated review unavailable. Manually verify submission requirements, assumptions, compliance gaps, and estimate completeness.',
-      '',
-      '### Submission Requirements',
-      'Automated extraction unavailable. Review the original RFP/Tender documents for explicit submission requirements.',
-    ].join('\n');
+    const image = response.data?.[0];
+    if (!image?.b64_json) {
+      throw createAiError(`Image generation for "${variant.title}" returned no PNG output. Please try again.`);
+    }
+    images.push({
+      title: variant.title,
+      format: response.output_format || 'png',
+      png: Buffer.from(image.b64_json, 'base64'),
+      revisedPrompt: image.revised_prompt || null,
+    });
   }
 
-  // Inject the review section after the first heading line, before the rest of the report.
-  const titleLineEnd = draftReport.indexOf('\n');
-  if (titleLineEnd === -1) return reviewSection + '\n\n' + draftReport;
-  const titleLine = draftReport.slice(0, titleLineEnd);
-  const reportBody = draftReport.slice(titleLineEnd);
-  return titleLine + '\n\n' + reviewSection.trim() + '\n' + reportBody;
+  return images;
 }
 
-const DEAL_PROPERTIES_EXTRACTION_PROMPT = `You are a deal-data extraction assistant. You receive the full extracted context of an RFP/tender (deal description plus text from uploaded documents). Your job is to read the context and extract the following deal properties, if they are explicitly stated or strongly implied.
+export function buildReportFromOutputs(dealName, coordinatorContext, agentOutputs) {
+  let report;
+  if (agentOutputs.copywriter) {
+    report = agentOutputs.copywriter.trim();
+  } else {
+    const AGENT_ORDER = ['legal', 'architect', 'estimator'];
+    const parts = [`# Assessment Report: ${dealName || 'Untitled Deal'}`, ''];
 
-## Properties to extract
-1. **dueDate** — The submission deadline or proposal due date. Format as YYYY-MM-DD. Return null if not found or ambiguous.
-2. **budget** — The total budget or contract value in numeric USD (e.g. 850000). Return null if not found or ambiguous.
-3. **clientName** — The client/organization name issuing the RFP. Return null if not found.
-4. **description** — A concise Markdown summary of the deal. Capture the client's core need, scope, and any critical constraint. Use short paragraphs or bullets where useful, but do not include an H1/title. Return null if not enough information is available.
+    if (coordinatorContext) {
+      parts.push('## Deal Context', '', coordinatorContext.trim(), '');
+    }
 
-## Output format
-Return a JSON object exactly matching this schema:
-{
-  "dueDate": "YYYY-MM-DD" | null,
-  "budget": number | null,
-  "clientName": "string" | null,
-  "description": "string" | null
+    for (const slug of AGENT_ORDER) {
+      if (agentOutputs[slug]) {
+        parts.push('---', '', agentOutputs[slug].trim(), '');
+      }
+    }
+
+    for (const [slug, content] of Object.entries(agentOutputs)) {
+      if (!AGENT_ORDER.includes(slug) && content) {
+        parts.push('---', '', content.trim(), '');
+      }
+    }
+
+    report = parts.join('\n');
+  }
+
+  return appendArchitectureDiagramPrompt(report);
 }
-
-## Rules
-- Only extract facts that are present in the context. Do not invent values.
-- For budget, ignore currency symbols and convert to a plain number.
-- If a date is relative (e.g. "30 days from now"), return null unless the document explicitly states a calendar date.
-- Return description as Markdown text, not HTML.
-- Keep description focused: what the client wants, why, and any major constraint.`;
 
 export async function extractDealProperties(contextBundle, priorityInstructions = '') {
-  const agent = await loadAgentConfig('coordinator');
-  if (!agent) throw new Error('Coordinator agent not found');
-
   const messages = [
     {
       role: 'user',
@@ -653,11 +659,11 @@ export async function extractDealProperties(contextBundle, priorityInstructions 
     },
   ];
 
-  const systemPrompt = `${agent.system_prompt}\n\n${DEAL_PROPERTIES_EXTRACTION_PROMPT}`;
   const raw = await callAgent('coordinator', messages, {
-    systemPrompt,
+    taskPromptKey: 'coordinator.deal-properties',
     priorityInstructions,
-    json: true,
+    schema: dealPropertiesSchema,
+    schemaName: 'deal_properties',
     maxTokens: 1000,
   });
   const validated = parseAgentJson(raw, 'Deal property extractor', dealPropertiesSchema);
@@ -670,7 +676,8 @@ export async function runAgentPlan(
   plan,
   dealName = null,
   onOutput = null,
-  priorityInstructions = ''
+  priorityInstructions = '',
+  sourceContext = context
 ) {
   const outputs = {};
   if (onOutput?.existingOutputs) {
@@ -690,8 +697,16 @@ export async function runAgentPlan(
     if (onOutput) await onOutput(slug, output);
   };
 
-  const requested = new Set((plan || []).filter(slug => DEFAULT_AGENT_SLUGS.includes(slug)));
-  const shouldRun = slug => requested.size === 0 || requested.has(slug);
+  const requested = new Set(REQUIRED_SPECIALIST_SLUGS);
+  const shouldRun = slug => requested.has(slug);
+
+  const briefResults = await Promise.all(['legal', 'architect'].map(async slug => {
+    const key = `${slug}-brief`;
+    if (outputs[key]) return [key, outputs[key]];
+    const brief = await runTrackedStep(key, () => buildRoleBrief(slug, sourceContext, conversation, priorityInstructions));
+    return [key, brief];
+  }));
+  for (const [slug, output] of briefResults) await emitOutput(slug, output);
 
   const parallelSpecialists = ['legal', 'architect'].filter(shouldRun);
   const parallelResults = await Promise.all(
@@ -699,7 +714,7 @@ export async function runAgentPlan(
       .filter(slug => !outputs[slug])
       .map(async slug => [
         slug,
-        await runTrackedStep(slug, () => runAgent(slug, context, conversation, {}, priorityInstructions)),
+        await runTrackedStep(slug, () => runAgent(slug, outputs[`${slug}-brief`], conversation, {}, priorityInstructions)),
       ])
   );
   for (const [slug, output] of parallelResults) {
@@ -715,20 +730,16 @@ export async function runAgentPlan(
       await emitOutput('estimator-brief', estimatorBrief);
     }
     if (!outputs.estimator) {
-      const estimatorContext = [
-        context,
-        '## Coordinator Estimation Brief',
-        outputs['estimator-brief'],
-      ].filter(Boolean).join('\n\n');
       const estimatorOutput = await runTrackedStep(
         'estimator',
-        () => runAgent('estimator', estimatorContext, conversation, outputs, priorityInstructions)
+        () => runEstimator(outputs['estimator-brief'], conversation, priorityInstructions)
       );
+      parseEstimatorOutput(estimatorOutput);
       await emitOutput('estimator', estimatorOutput);
     }
   }
 
-  const reportInputsReady = outputs.legal || outputs.architect || outputs.estimator;
+  const reportInputsReady = REQUIRED_SPECIALIST_SLUGS.every(slug => Boolean(outputs[slug]));
   if (reportInputsReady && !outputs.copywriter) {
     const copywriterContext = [
       dealName ? `## Deal Name\n${dealName}` : '',
@@ -736,7 +747,11 @@ export async function runAgentPlan(
     ].filter(Boolean).join('\n\n');
     const copywriterOutput = await runTrackedStep(
       'copywriter',
-      () => runAgent('copywriter', copywriterContext, conversation, outputs, priorityInstructions)
+      () => runAgent('copywriter', copywriterContext, conversation, {
+        legal: outputs.legal,
+        architect: outputs.architect,
+        estimator: buildEstimatorReportSummary(outputs.estimator),
+      }, priorityInstructions)
     );
     await emitOutput('copywriter', copywriterOutput);
   }

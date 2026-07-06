@@ -1,0 +1,60 @@
+flowchart LR
+  subgraph Deal["D-022 · B - National Media Authority · In Progress · Technology · Class B · Due 2026-07-05 · Assignee: Elvira Chekushkina"]
+    direction LR
+
+    subgraph Public["Public Internet"]
+      V["Public Visitor<br/>Arabic / English"]
+    end
+
+    subgraph Authority["Authority Infrastructure"]
+      direction TB
+      Edge["Edge Security<br/>WAF / CDN / TLS"]
+      FE["Next.js Frontend<br/>DLS 3.0 · WCAG 2.2 AA"]
+      CMS["Drupal CMS<br/>Workflow · Media · Multilingual"]
+      Authors["Content Authors<br/>Approvals & Publishing"]
+      DB["PostgreSQL<br/>Content Data"]
+      Search["OpenSearch<br/>Advanced Search"]
+      Cache["Redis / Varnish<br/>Performance Cache"]
+      AIGW["AI Gateway<br/>Governance & Prompt Controls"]
+      CICD["CI/CD Deployment<br/>Build · Release · Rollback"]
+      Ops["Ops & Support<br/>Monitoring · Logs · Hypercare"]
+    end
+
+    subgraph External["Approved External Services"]
+      direction TB
+      SSO["UAEPass / SSO"]
+      AI["Authority-Approved<br/>AI Provider"]
+      Services["Email / SMS<br/>Analytics · Social · Chatbot"]
+    end
+  end
+
+  V --> Edge --> FE
+  FE --> Cache
+  FE --> Search
+  FE --> CMS
+  FE --> Services
+  FE --> SSO
+
+  Authors --> SSO --> CMS
+  CMS --> DB
+  CMS --> Search
+  CMS --> Cache
+  CMS --> AIGW --> AI
+  CMS --> Services
+
+  CICD --> FE
+  CICD --> CMS
+  Ops -.-> Edge
+  Ops -.-> FE
+  Ops -.-> CMS
+  Ops -.-> DB
+
+  classDef public fill:#EEF6FF,stroke:#2B6CB0,color:#1A365D,stroke-width:1px
+  classDef authority fill:#F7FAFC,stroke:#4A5568,color:#1A202C,stroke-width:1px
+  classDef external fill:#FFF7ED,stroke:#C05621,color:#7B341E,stroke-width:1px
+  classDef ops fill:#ECFDF5,stroke:#047857,color:#064E3B,stroke-width:1px
+
+  class V public
+  class Edge,FE,CMS,Authors,DB,Search,Cache,AIGW authority
+  class SSO,AI,Services external
+  class CICD,Ops ops

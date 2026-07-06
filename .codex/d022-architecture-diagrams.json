@@ -1,0 +1,456 @@
+{
+  "diagrams": [
+    {
+      "id": "d022-website-platform-overview",
+      "type": "overview",
+      "title": "D-022 Website Platform Overview",
+      "description": "Executive overview for deal D-022 showing the bilingual AI-enabled website deployed on National Media Authority infrastructure, with approved external services for SSO, AI, communications, analytics, social, and chatbot integrations.",
+      "direction": "RIGHT",
+      "groups": [
+        {
+          "id": "deal",
+          "label": "D-022 · B - National Media Authority · In Progress · Technology · Class B",
+          "parentId": null,
+          "kind": "layer"
+        },
+        {
+          "id": "public",
+          "label": "Public Internet",
+          "parentId": "deal",
+          "kind": "network"
+        },
+        {
+          "id": "authority",
+          "label": "Authority Infrastructure",
+          "parentId": "deal",
+          "kind": "trust-zone"
+        },
+        {
+          "id": "external",
+          "label": "Approved External Services",
+          "parentId": "deal",
+          "kind": "cloud"
+        },
+        {
+          "id": "operations",
+          "label": "Delivery & Support",
+          "parentId": "deal",
+          "kind": "layer"
+        }
+      ],
+      "nodes": [
+        {
+          "id": "visitor",
+          "label": "Public Visitor",
+          "purpose": "Access bilingual Arabic/English public website content and services.",
+          "technology": "Browser",
+          "icon": "user",
+          "groupId": "public",
+          "kind": "actor"
+        },
+        {
+          "id": "edge",
+          "label": "Edge Security",
+          "purpose": "Protect and terminate public traffic with WAF, CDN, and TLS controls.",
+          "technology": "WAF / CDN / TLS",
+          "icon": "shield",
+          "groupId": "authority",
+          "kind": "security"
+        },
+        {
+          "id": "frontend",
+          "label": "Next.js Frontend",
+          "purpose": "Render responsive DLS 3.0-aligned, WCAG 2.2 AA public web experience.",
+          "technology": "Next.js",
+          "icon": "layout",
+          "groupId": "authority",
+          "kind": "service"
+        },
+        {
+          "id": "cms",
+          "label": "Drupal CMS",
+          "purpose": "Manage multilingual content, media, workflow, approvals, scheduling, and publishing.",
+          "technology": "Drupal",
+          "icon": "drupal",
+          "groupId": "authority",
+          "kind": "service"
+        },
+        {
+          "id": "authors",
+          "label": "Content Authors",
+          "purpose": "Create, review, approve, and publish bilingual website content.",
+          "technology": "CMS roles",
+          "icon": "users",
+          "groupId": "authority",
+          "kind": "actor"
+        },
+        {
+          "id": "db",
+          "label": "PostgreSQL",
+          "purpose": "Store content, metadata, configuration, workflow state, and audit records.",
+          "technology": "PostgreSQL",
+          "icon": "database",
+          "groupId": "authority",
+          "kind": "data"
+        },
+        {
+          "id": "search",
+          "label": "OpenSearch",
+          "purpose": "Provide advanced site search across bilingual content and metadata.",
+          "technology": "OpenSearch",
+          "icon": "search",
+          "groupId": "authority",
+          "kind": "data"
+        },
+        {
+          "id": "cache",
+          "label": "Redis / Varnish",
+          "purpose": "Improve performance through application, page, and content caching.",
+          "technology": "Redis / Varnish",
+          "icon": "zap",
+          "groupId": "authority",
+          "kind": "data"
+        },
+        {
+          "id": "ai-gateway",
+          "label": "AI Gateway",
+          "purpose": "Govern prompts, AI usage, controls, logging, and policy enforcement for CMS AI assist.",
+          "technology": "AI gateway",
+          "icon": "bot",
+          "groupId": "authority",
+          "kind": "integration"
+        },
+        {
+          "id": "cicd",
+          "label": "CI/CD Deployment",
+          "purpose": "Build, release, deploy, and rollback frontend and CMS changes.",
+          "technology": "CI/CD pipelines",
+          "icon": "git-branch",
+          "groupId": "operations",
+          "kind": "operations"
+        },
+        {
+          "id": "ops",
+          "label": "Ops & Support",
+          "purpose": "Provide monitoring, logs, hypercare, and post-launch support.",
+          "technology": "Monitoring / logging",
+          "icon": "activity",
+          "groupId": "operations",
+          "kind": "operations"
+        },
+        {
+          "id": "sso",
+          "label": "UAEPass / SSO",
+          "purpose": "Authenticate public users and CMS authors where required.",
+          "technology": "UAEPass / SSO",
+          "icon": "key",
+          "groupId": "external",
+          "kind": "security"
+        },
+        {
+          "id": "ai-provider",
+          "label": "Approved AI Provider",
+          "purpose": "Provide AI capabilities for suggestions, summaries, SEO metadata, tagging, and language support.",
+          "technology": "Authority-approved AI",
+          "icon": "sparkles",
+          "groupId": "external",
+          "kind": "integration"
+        },
+        {
+          "id": "services",
+          "label": "External Services",
+          "purpose": "Support email, SMS, analytics, social integration, and chatbot embedding or APIs.",
+          "technology": "Email / SMS / Analytics / Social / Chatbot",
+          "icon": "plug",
+          "groupId": "external",
+          "kind": "integration"
+        }
+      ],
+      "edges": [
+        {
+          "source": "visitor",
+          "target": "edge",
+          "label": "HTTPS Arabic/English access",
+          "interaction": "sync"
+        },
+        {
+          "source": "edge",
+          "target": "frontend",
+          "label": "Secured web traffic",
+          "interaction": "sync"
+        },
+        {
+          "source": "frontend",
+          "target": "cache",
+          "label": "Cached pages/assets",
+          "interaction": "data"
+        },
+        {
+          "source": "frontend",
+          "target": "search",
+          "label": "Search queries",
+          "interaction": "sync"
+        },
+        {
+          "source": "frontend",
+          "target": "cms",
+          "label": "Content APIs",
+          "interaction": "sync"
+        },
+        {
+          "source": "frontend",
+          "target": "services",
+          "label": "Forms, analytics, social, chatbot",
+          "interaction": "sync"
+        },
+        {
+          "source": "frontend",
+          "target": "sso",
+          "label": "Login / identity",
+          "interaction": "sync"
+        },
+        {
+          "source": "authors",
+          "target": "sso",
+          "label": "Authenticate",
+          "interaction": "sync"
+        },
+        {
+          "source": "sso",
+          "target": "cms",
+          "label": "Authoring access",
+          "interaction": "sync"
+        },
+        {
+          "source": "cms",
+          "target": "db",
+          "label": "Content, users, workflow state",
+          "interaction": "data"
+        },
+        {
+          "source": "cms",
+          "target": "search",
+          "label": "Index content",
+          "interaction": "data"
+        },
+        {
+          "source": "cms",
+          "target": "cache",
+          "label": "Invalidate / warm cache",
+          "interaction": "data"
+        },
+        {
+          "source": "cms",
+          "target": "ai-gateway",
+          "label": "AI assist requests",
+          "interaction": "sync"
+        },
+        {
+          "source": "ai-gateway",
+          "target": "ai-provider",
+          "label": "Governed AI calls",
+          "interaction": "sync"
+        },
+        {
+          "source": "cms",
+          "target": "services",
+          "label": "Notifications and integrations",
+          "interaction": "sync"
+        },
+        {
+          "source": "cicd",
+          "target": "frontend",
+          "label": "Build, release, rollback",
+          "interaction": "async"
+        },
+        {
+          "source": "cicd",
+          "target": "cms",
+          "label": "Deploy CMS changes",
+          "interaction": "async"
+        },
+        {
+          "source": "ops",
+          "target": "edge",
+          "label": "Monitor WAF/CDN/TLS",
+          "interaction": "event"
+        },
+        {
+          "source": "ops",
+          "target": "frontend",
+          "label": "Monitor UX and performance",
+          "interaction": "event"
+        },
+        {
+          "source": "ops",
+          "target": "cms",
+          "label": "Monitor CMS workflows",
+          "interaction": "event"
+        },
+        {
+          "source": "ops",
+          "target": "db",
+          "label": "Monitor database health",
+          "interaction": "event"
+        }
+      ]
+    },
+    {
+      "id": "content-workflow",
+      "type": "workflow",
+      "title": "Content Workflow",
+      "description": "Authoring, AI assist, approval, and publishing flow for D-022.",
+      "direction": "RIGHT",
+      "groups": [
+        {
+          "id": "authoring",
+          "label": "Authoring",
+          "parentId": null,
+          "kind": "workflow"
+        },
+        {
+          "id": "assist",
+          "label": "AI Assist",
+          "parentId": null,
+          "kind": "workflow"
+        },
+        {
+          "id": "delivery",
+          "label": "Publishing",
+          "parentId": null,
+          "kind": "workflow"
+        }
+      ],
+      "nodes": [
+        {
+          "id": "author",
+          "label": "Content Author",
+          "purpose": "Draft and update bilingual website content.",
+          "technology": "CMS user",
+          "icon": "user",
+          "groupId": "authoring",
+          "kind": "actor"
+        },
+        {
+          "id": "sso",
+          "label": "UAEPass / SSO",
+          "purpose": "Authenticate the author before CMS access.",
+          "technology": "UAEPass / SSO",
+          "icon": "security",
+          "groupId": "authoring",
+          "kind": "security"
+        },
+        {
+          "id": "draft",
+          "label": "Draft Content",
+          "purpose": "Create, translate, edit, tag, and prepare content.",
+          "technology": "Drupal CMS",
+          "icon": "document",
+          "groupId": "authoring",
+          "kind": "service"
+        },
+        {
+          "id": "ai-gateway",
+          "label": "AI Gateway",
+          "purpose": "Apply governance and prompt controls for AI-assisted edits.",
+          "technology": "AI gateway",
+          "icon": "integration",
+          "groupId": "assist",
+          "kind": "integration"
+        },
+        {
+          "id": "ai-provider",
+          "label": "AI Provider",
+          "purpose": "Generate suggestions, summaries, SEO metadata, and tags.",
+          "technology": "Authority-approved AI",
+          "icon": "cloud",
+          "groupId": "assist",
+          "kind": "integration"
+        },
+        {
+          "id": "review",
+          "label": "Approver",
+          "purpose": "Review content for quality, compliance, and accessibility.",
+          "technology": "CMS workflow role",
+          "icon": "user",
+          "groupId": "delivery",
+          "kind": "actor"
+        },
+        {
+          "id": "publish",
+          "label": "Publish / Schedule",
+          "purpose": "Publish immediately or schedule approved content.",
+          "technology": "Drupal publishing workflow",
+          "icon": "step",
+          "groupId": "delivery",
+          "kind": "step"
+        },
+        {
+          "id": "site",
+          "label": "Public Site",
+          "purpose": "Serve published Arabic/English pages to visitors.",
+          "technology": "Next.js",
+          "icon": "channel",
+          "groupId": "delivery",
+          "kind": "channel"
+        }
+      ],
+      "edges": [
+        {
+          "source": "author",
+          "target": "sso",
+          "label": "sign in",
+          "interaction": "sync"
+        },
+        {
+          "source": "sso",
+          "target": "draft",
+          "label": "open CMS",
+          "interaction": "sync"
+        },
+        {
+          "source": "draft",
+          "target": "ai-gateway",
+          "label": "request suggestions",
+          "interaction": "async"
+        },
+        {
+          "source": "ai-gateway",
+          "target": "ai-provider",
+          "label": "controlled prompt call",
+          "interaction": "sync"
+        },
+        {
+          "source": "ai-provider",
+          "target": "ai-gateway",
+          "label": "suggestions",
+          "interaction": "sync"
+        },
+        {
+          "source": "ai-gateway",
+          "target": "draft",
+          "label": "return suggestions",
+          "interaction": "sync"
+        },
+        {
+          "source": "draft",
+          "target": "review",
+          "label": "submit for review",
+          "interaction": "sync"
+        },
+        {
+          "source": "review",
+          "target": "publish",
+          "label": "approve or request changes",
+          "interaction": "sync"
+        },
+        {
+          "source": "publish",
+          "target": "site",
+          "label": "expose approved content",
+          "interaction": "data"
+        }
+      ]
+    }
+  ]
+}

@@ -3,11 +3,21 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import mammoth from 'mammoth';
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
+import * as XLSX from '@e965/xlsx';
+import { normalizeDocumentName } from '../utils/filenames.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(__dirname, '..', 'uploads');
 
 const SUPPORTED_TEXT_EXTENSIONS = new Set(['.txt', '.md', '.markdown', '.json', '.csv', '.html', '.htm', '.xml', '.yaml', '.yml']);
+const SUPPORTED_SPREADSHEET_EXTENSIONS = new Set(['.xls', '.xlsx']);
+const MAX_WORKSHEETS = 20;
+const MAX_ROWS_PER_WORKSHEET = 3000;
+const MAX_COLUMNS_PER_WORKSHEET = 80;
+const MAX_CELLS_PER_WORKSHEET = 20000;
+const MAX_SPREADSHEET_CHARACTERS = 240000;
+const EXTRACTION_CONCURRENCY = 3;
+const extractionCache = new Map();
 
 // --- PDF extraction with coordinate-based table reconstruction ---
 
@@ -92,11 +102,10 @@ async function extractTextFromPdf(filePath) {
 
     const rows = groupIntoRows(items);
 
-    if (isLikelyTable(rows)) {
-      pageTexts.push(rowsToMarkdown(rows));
-    } else {
-      pageTexts.push(rows.map(r => r.items.map(it => it.str).join(' ')).join('\n'));
-    }
+    const pageText = isLikelyTable(rows)
+      ? rowsToMarkdown(rows)
+      : rows.map(r => r.items.map(it => it.str).join(' ')).join('\n');
+    pageTexts.push(`## Page ${i}\n\n${pageText}`);
   }
 
   return pageTexts.join('\n\n');
@@ -153,8 +162,131 @@ async function extractTextFromDocx(filePath) {
   return htmlToPlainText(withTables);
 }
 
+function escapeMarkdownCell(value) {
+  return String(value)
+    .replace(/\\/g, '\\\\')
+    .replace(/\|/g, '\\|')
+    .replace(/\r?\n/g, '<br>');
+}
+
+function formatSpreadsheetCell(cell) {
+  if (!cell) return '';
+
+  let displayed = '';
+  try {
+    displayed = XLSX.utils.format_cell(cell);
+  } catch {
+    displayed = cell.v === undefined || cell.v === null ? '' : String(cell.v);
+  }
+
+  if (cell.f) {
+    const formula = `=${cell.f}`;
+    return displayed && displayed !== formula ? `${formula} → ${displayed}` : formula;
+  }
+  return displayed;
+}
+
+function worksheetToMarkdown(worksheet) {
+  if (!worksheet?.['!ref']) return { markdown: '[Empty worksheet]', truncated: false };
+
+  const sourceRange = XLSX.utils.decode_range(worksheet['!ref']);
+  const sourceColumnCount = sourceRange.e.c - sourceRange.s.c + 1;
+  const columnCount = Math.min(sourceColumnCount, MAX_COLUMNS_PER_WORKSHEET);
+  const rowLimitFromCells = Math.max(1, Math.floor(MAX_CELLS_PER_WORKSHEET / columnCount));
+  const sourceRowCount = sourceRange.e.r - sourceRange.s.r + 1;
+  const rowCount = Math.min(sourceRowCount, MAX_ROWS_PER_WORKSHEET, rowLimitFromCells);
+  const endColumn = sourceRange.s.c + columnCount - 1;
+  const endRow = sourceRange.s.r + rowCount - 1;
+
+  const header = ['Source row'];
+  for (let column = sourceRange.s.c; column <= endColumn; column++) {
+    header.push(XLSX.utils.encode_col(column));
+  }
+
+  const rows = [];
+  for (let row = sourceRange.s.r; row <= endRow; row++) {
+    const values = [];
+    let hasContent = false;
+    for (let column = sourceRange.s.c; column <= endColumn; column++) {
+      const value = formatSpreadsheetCell(worksheet[XLSX.utils.encode_cell({ r: row, c: column })]);
+      if (value) hasContent = true;
+      values.push(escapeMarkdownCell(value));
+    }
+    if (hasContent) rows.push([String(row + 1), ...values]);
+  }
+
+  if (rows.length === 0) return { markdown: '[Empty worksheet]', truncated: false };
+
+  const lines = [
+    `| ${header.join(' | ')} |`,
+    `| ${header.map(() => '---').join(' | ')} |`,
+    ...rows.map(row => `| ${row.join(' | ')} |`),
+  ];
+  const truncated = sourceColumnCount > columnCount || sourceRowCount > rowCount;
+  return { markdown: lines.join('\n'), truncated };
+}
+
+export async function extractTextFromSpreadsheet(filePath) {
+  const buffer = await fs.promises.readFile(filePath);
+  const workbook = XLSX.read(buffer, {
+    type: 'buffer',
+    cellDates: true,
+    cellFormula: true,
+    cellNF: true,
+    cellText: true,
+  });
+
+  const sheetNames = workbook.SheetNames.slice(0, MAX_WORKSHEETS);
+  const sections = [];
+  let extractedCharacters = 0;
+  for (const sheetName of sheetNames) {
+    const worksheet = workbook.Sheets[sheetName];
+    const sheetMetadata = workbook.Workbook?.Sheets?.find(sheet => sheet.name === sheetName);
+    const visibility = sheetMetadata?.Hidden ? ' (hidden)' : '';
+    const { markdown, truncated } = worksheetToMarkdown(worksheet);
+    const section = [
+      `## Worksheet: ${sheetName}${visibility}`,
+      markdown,
+      truncated ? '[Worksheet truncated to safe extraction limits.]' : ''
+    ].filter(Boolean).join('\n\n');
+    const remainingCharacters = MAX_SPREADSHEET_CHARACTERS - extractedCharacters;
+    if (section.length > remainingCharacters) {
+      if (remainingCharacters > 0) {
+        sections.push(
+          section.slice(0, remainingCharacters),
+          '[Workbook text truncated to the AI context safety limit.]'
+        );
+      }
+      break;
+    }
+    sections.push(section);
+    extractedCharacters += section.length;
+  }
+  if (workbook.SheetNames.length > sheetNames.length) {
+    sections.push(`[Workbook truncated: ${workbook.SheetNames.length - sheetNames.length} worksheet(s) omitted.]`);
+  }
+  return sections.filter(Boolean).join('\n\n');
+}
+
+export function decodeTextBuffer(buffer) {
+  if (buffer.length >= 2 && buffer[0] === 0xff && buffer[1] === 0xfe) {
+    return new TextDecoder('utf-16le').decode(buffer.subarray(2));
+  }
+  if (buffer.length >= 2 && buffer[0] === 0xfe && buffer[1] === 0xff) {
+    return new TextDecoder('utf-16be').decode(buffer.subarray(2));
+  }
+
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(buffer);
+  } catch {
+    // Windows-1251 remains common in Russian TXT/CSV exports.
+    return new TextDecoder('windows-1251').decode(buffer);
+  }
+}
+
 async function extractTextFromTextFile(filePath) {
-  return await fs.promises.readFile(filePath, 'utf-8');
+  const buffer = await fs.promises.readFile(filePath);
+  return decodeTextBuffer(buffer);
 }
 
 function isTextFile(filePath) {
@@ -175,13 +307,23 @@ export async function extractDocumentText(filePath) {
       text = await extractTextFromPdf(filePath);
     } else if (ext === '.docx') {
       text = await extractTextFromDocx(filePath);
+    } else if (SUPPORTED_SPREADSHEET_EXTENSIONS.has(ext)) {
+      text = await extractTextFromSpreadsheet(filePath);
     } else if (isTextFile(filePath)) {
       text = await extractTextFromTextFile(filePath);
     } else {
       return { success: false, error: `Unsupported file type: ${ext}`, text: '' };
     }
 
-    return { success: true, text: text.trim() };
+    const trimmedText = text.trim();
+    if (!trimmedText) {
+      return {
+        success: false,
+        error: 'No extractable text found. Scanned PDFs require OCR before upload.',
+        text: '',
+      };
+    }
+    return { success: true, text: trimmedText };
   } catch (err) {
     return { success: false, error: err.message || 'Extraction failed', text: '' };
   }
@@ -194,21 +336,18 @@ export async function buildDealContextBundle(dealId, documents) {
   }
 
   const dealDir = path.join(UPLOAD_DIR, String(numericDealId));
-  const extractedDocs = [];
+  const work = documents.filter(doc => doc.filename);
 
-  for (const doc of documents) {
-    if (!doc.filename) continue;
+  return mapWithConcurrency(work, EXTRACTION_CONCURRENCY, async doc => {
     const filePath = path.join(dealDir, doc.filename);
-    const result = await extractDocumentText(filePath);
-    extractedDocs.push({
+    const result = await extractDocumentTextCached(filePath);
+    return {
       id: doc.id,
-      name: doc.name,
+      name: normalizeDocumentName(doc.name),
       size: doc.size,
       ...result,
-    });
-  }
-
-  return extractedDocs;
+    };
+  });
 }
 
 export function summarizeContextBundle(extractedDocs) {
@@ -223,4 +362,37 @@ export function summarizeContextBundle(extractedDocs) {
     parts.push('');
   }
   return parts.join('\n').trim();
+}
+
+async function extractDocumentTextCached(filePath) {
+  try {
+    const stat = await fs.promises.stat(filePath);
+    const cacheKey = `${filePath}:${stat.mtimeMs}:${stat.size}`;
+    if (!extractionCache.has(cacheKey)) {
+      extractionCache.set(cacheKey, extractDocumentText(filePath));
+    }
+    return extractionCache.get(cacheKey);
+  } catch (err) {
+    return {
+      success: false,
+      error: err.message || 'Extraction failed',
+      text: '',
+    };
+  }
+}
+
+async function mapWithConcurrency(items, concurrency, mapper) {
+  const results = new Array(items.length);
+  let cursor = 0;
+
+  async function worker() {
+    while (cursor < items.length) {
+      const index = cursor++;
+      results[index] = await mapper(items[index], index);
+    }
+  }
+
+  const workers = Array.from({ length: Math.min(concurrency, items.length) }, () => worker());
+  await Promise.all(workers);
+  return results;
 }

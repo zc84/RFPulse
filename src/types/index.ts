@@ -10,6 +10,20 @@ export interface Document {
   filename?: string;
   source?: 'user' | 'ai';
   uploadedAt: string;
+  artifactType?: string | null;
+  reviewStatus?: 'draft' | 'approved' | null;
+  approvedBy?: string | null;
+  approvedAt?: string | null;
+}
+
+export interface PromptTemplate {
+  id: number;
+  prompt_key: string;
+  agent_slug: string | null;
+  name: string;
+  kind: 'shared' | 'task';
+  content: string;
+  prompt_version: number;
 }
 
 export interface DealLock {
@@ -50,6 +64,7 @@ export interface PlatformConfigOption {
   type: 'status' | 'domain';
   value: string;
   sort_order: number;
+  prompt_version?: number;
   created_at?: string;
   updated_at?: string;
 }
@@ -83,7 +98,7 @@ export interface AIMessage {
 export interface AISession {
   id: number;
   deal_id: number;
-  status: 'active' | 'completed' | 'failed';
+  status: 'active' | 'running' | 'completed' | 'failed';
   current_agent_plan?: string[] | null;
   extracted_context?: string;
   final_report_document_id?: number | null;
@@ -143,6 +158,7 @@ export interface AIMessageResponse {
   status: string;
   messages: AIMessage[];
   finalReportDocumentId?: number;
+  wbsDocumentId?: number;
   proposedUpdates?: ProposedDealUpdates;
   agentOutputs?: Record<string, string>;
 }
