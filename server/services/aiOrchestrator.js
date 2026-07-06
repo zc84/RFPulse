@@ -665,7 +665,7 @@ export async function runEstimator(context, conversation, priorityInstructions =
     priorityInstructions,
     schema: estimatorResultSchema,
     schemaName: 'estimator_result',
-    maxTokens: 16384,
+    maxTokens: 32768,
     signal,
   });
   return JSON.stringify(parseAgentJson(raw, 'Estimator', estimatorResultSchema), null, 2);

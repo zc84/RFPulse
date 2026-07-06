@@ -215,7 +215,7 @@ Return only the structured object required by the supplied JSON schema. Include 
 - Keep the commercial proposal concise, polished, and aligned with the estimate. The Copywriter still receives only the compact summary object, but the estimator must provide this client-facing commercial narrative too.
 `,
     temperature: 0.1,
-    max_tokens: 4096,
+    max_tokens: 32768,
     top_p: 1,
     presence_penalty: 0,
     frequency_penalty: 0,
@@ -460,7 +460,7 @@ export function getDefaultAgent(slug) {
   return agent ? {
     ...agent,
     system_prompt: slug === 'validator' ? VALIDATOR_SYSTEM_PROMPT : agent.system_prompt,
-    prompt_version: 12,
+    prompt_version: 13,
   } : undefined;
 }
 
@@ -468,7 +468,7 @@ export function getDefaultAgents() {
   return DEFAULT_AGENTS.map(agent => ({
     ...agent,
     system_prompt: agent.slug === 'validator' ? VALIDATOR_SYSTEM_PROMPT : agent.system_prompt,
-    prompt_version: 12,
+    prompt_version: 13,
   }));
 }
 

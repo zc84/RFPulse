@@ -908,13 +908,13 @@ router.post('/start', authenticate, requireRole('Superadmin', 'Editor'), async (
       await deleteAssessmentReport(dealId);
     }
 
-    // A new execution must not inherit specialist outputs from an earlier run.
-    // Otherwise updated AI notes can be skipped because cached outputs look done.
-    const session = await createSession(dealId);
+    // Reuse the latest session so already-persisted workflow state can be resumed.
+    const session = await getOrCreateSession(dealId, '');
     sessionForError = session;
     let finalReportDocumentId = null;
     let sessionStatusAfterRun = 'active';
     await attachSessionToRunLock(dealId, session.id, lockToken);
+    await setSessionStatus(session.id, 'running', dealId);
     await addMessage(session.id, 'coordinator', 'Starting Execute AI flow. Reading deal documents and preparing context.');
 
     const sourceDocuments = data.documents.filter(doc => doc.source === 'user' || !doc.source);
@@ -929,6 +929,12 @@ router.post('/start', authenticate, requireRole('Superadmin', 'Editor'), async (
     const readableDocs = extractedDocs.filter(d => d.success).length;
     await addMessage(session.id, 'coordinator', `Document extraction complete: ${readableDocs}/${extractedDocs.length} document(s) readable.`);
     const messages = await getSessionMessages(session.id);
+    const savedAgentOutputs = await getAgentOutputs(session.id);
+    const workflowArtifacts = await getWorkflowArtifacts(session.id);
+    const agentOutputs = {
+      ...workflowArtifacts,
+      ...savedAgentOutputs,
+    };
 
     await markWorkflowStepRunning(session.id, dealId, 'coordinator-routing', {
       documents: extractedDocs.map(d => ({ id: d.id, name: d.name, success: d.success })),
@@ -937,7 +943,7 @@ router.post('/start', authenticate, requireRole('Superadmin', 'Editor'), async (
     const coordinatorResult = await coordinatorStep(
       contextBundle,
       messages,
-      {},
+      agentOutputs,
       null,
       getAiNotes(data.deal),
       signal
