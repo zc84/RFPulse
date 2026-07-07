@@ -11,9 +11,11 @@ import { DEFAULT_PROMPT_TEMPLATES, getDefaultAgent } from '../services/aiPrompts
 import {
   buildReportFromOutputs,
   buildSpecialistMessages,
+  buildArchitectureDiagramPromptInput,
   requireCoordinatorContext,
   splitCoordinatorSourceContext,
 } from '../services/aiOrchestrator.js';
+import { splitProposalMarkdown } from '../services/proposalDocument.js';
 
 function validEstimate() {
   return {
@@ -75,7 +77,7 @@ test('legacy estimator output is normalized without AI-prefixed rows', () => {
   assert.match(estimate.workBreakdown[0].notes, /AI-assisted/);
 });
 
-test('copywriter summary excludes detailed tasks and derives active team', () => {
+test('estimator summary excludes detailed tasks and derives active team', () => {
   const summary = buildEstimatorReportSummary(JSON.stringify(validEstimate()));
   assert.doesNotMatch(summary, /Implement core API capability/);
   assert.match(summary, /AI Detailed WBS\.xlsx/);
@@ -86,21 +88,42 @@ test('copywriter summary excludes detailed tasks and derives active team', () =>
   assert.match(summary, /"totalEffort": 72/);
 });
 
-test('assessment reports append a PNG diagram prompt section', () => {
+test('proposal fallback and diagram prompt helper stay aligned', () => {
   const report = buildReportFromOutputs('Acme Deal', '## Deal Context\nBrief', {
-    copywriter: '# Assessment Report: Acme Deal\n\nBody text.',
+    legal: '# Legal',
+    architect: '# Architecture',
+    estimator: '# Estimator',
   });
-  assert.match(report, /## Architecture Diagram Prompt/);
-  assert.match(report, /PNG diagrams/);
-  assert.match(report, /Use the exact tech stack named in the assessment report/);
-  assert.match(report, /tech-stack-native icons/);
+  assert.match(report, /# Proposal: Acme Deal/);
+  const diagramPrompt = buildArchitectureDiagramPromptInput(report);
+  assert.match(diagramPrompt, /## Architecture Diagram Prompt/);
+  assert.match(diagramPrompt, /proposal above as the source of truth/);
+  assert.match(diagramPrompt, /tech-stack-native icons/);
 });
 
-test('diagram prompt drives image generation toward the exact report stack', () => {
+test('proposal fallback includes the specialist outputs', () => {
   const report = buildReportFromOutputs('Acme Deal', '## Deal Context\nBrief', {
-    copywriter: '# Assessment Report: Acme Deal\n\nProposed stack: Next.js, NestJS, PostgreSQL.',
+    legal: '# Legal',
+    architect: '# Architecture',
+    estimator: '# Estimator',
   });
-  assert.match(report, /Next\.js, NestJS, PostgreSQL/);
+  assert.match(report, /# Proposal: Acme Deal/);
+  assert.match(report, /# Legal/);
+  assert.match(report, /# Architecture/);
+  assert.match(report, /# Estimator/);
+});
+
+test('proposal markdown markers split into multiple output files', () => {
+  const parts = splitProposalMarkdown(`<!-- proposal-file: filename=overview.docx; title=Overview; diagrams=true -->
+# Overview
+<!-- proposal-file: filename=appendix.docx; title=Appendix -->
+# Appendix`);
+  assert.equal(parts.length, 2);
+  assert.equal(parts[0].filename, 'overview.docx');
+  assert.equal(parts[0].title, 'Overview');
+  assert.equal(parts[0].diagrams, true);
+  assert.equal(parts[1].filename, 'appendix.docx');
+  assert.equal(parts[1].title, 'Appendix');
 });
 
 test('WBS workbook contains grouped columns, formulas, and separate rate card', () => {
@@ -150,21 +173,21 @@ test('strict validator prompt is current and coordinator review prompt is remove
   assert.doesNotMatch(validator.system_prompt, /Terminology Consistency/);
   assert.doesNotMatch(validator.system_prompt, /Language and Spelling Quality/);
   assert.equal(DEFAULT_PROMPT_TEMPLATES.some(prompt => prompt.key === 'coordinator.report-review'), false);
+  assert.equal(DEFAULT_PROMPT_TEMPLATES.some(prompt => prompt.key === 'coordinator.final-report'), true);
 });
 
 test('tender prompts require deep coordinator capture and reject scope-cutting exclusions', () => {
   const coordinator = getDefaultAgent('coordinator');
   const estimator = getDefaultAgent('estimator');
-  const copywriter = getDefaultAgent('copywriter');
   assert.match(coordinator.system_prompt, /Read the RFP deeply/i);
+  assert.match(coordinator.system_prompt, /final proposal owner/i);
   assert.match(coordinator.system_prompt, /requested client scope as unacceptable proposal behavior/i);
   assert.match(estimator.system_prompt, /phased pricing/i);
+  assert.match(estimator.system_prompt, /high-level WBS/i);
   assert.match(estimator.system_prompt, /software licence pricing/i);
   assert.match(estimator.system_prompt, /USD only/i);
   assert.match(estimator.system_prompt, /do not hide them behind "key exclusions"/i);
-  assert.match(copywriter.system_prompt, /do not present "Key Exclusions"/i);
-  assert.match(copywriter.system_prompt, /phased pricing/i);
-  assert.match(copywriter.system_prompt, /Preserve the Architect's Technology Decisions table/i);
+  assert.equal(getDefaultAgent('copywriter'), undefined);
 });
 
 test('architect prompt makes a single best-fit technology recommendation', () => {

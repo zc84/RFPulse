@@ -10,7 +10,7 @@ import {
   parseEstimatorOutput,
 } from './aiSchemas.js';
 
-const DEFAULT_AGENT_SLUGS = ['coordinator', 'legal', 'architect', 'estimator', 'copywriter', 'frontend-dev'];
+const DEFAULT_AGENT_SLUGS = ['coordinator', 'legal', 'architect', 'estimator', 'frontend-dev'];
 const REQUIRED_SPECIALIST_SLUGS = ['legal', 'architect', 'estimator'];
 
 function createAiError(message, status = 502) {
@@ -201,6 +201,8 @@ export async function ensureDefaultAgents() {
       );
     }
   }
+  await query("DELETE FROM agent_prompt_templates WHERE prompt_key LIKE 'copywriter.%'");
+  await query("DELETE FROM agents WHERE slug = 'copywriter'");
   for (const [index, prompt] of DEFAULT_PROMPT_TEMPLATES.entries()) {
     await query(
       `INSERT INTO agent_prompt_templates (prompt_key, agent_slug, name, kind, content, prompt_version, sort_order)
@@ -236,25 +238,46 @@ export async function loadPromptTemplates(agentSlug, taskPromptKey = null) {
   return keys.map(key => byKey.get(key));
 }
 
-function formatAgentOutputs(agentOutputs) {
+function clipText(text, maxChars = Infinity, tail = false) {
+  const value = String(text || '');
+  if (!Number.isFinite(maxChars) || maxChars <= 0 || value.length <= maxChars) {
+    return value;
+  }
+  if (tail) {
+    return `...[trimmed to last ${maxChars} chars]\n${value.slice(-maxChars)}`;
+  }
+  return `${value.slice(0, maxChars)}\n...[trimmed after ${maxChars} chars]`;
+}
+
+function formatAgentOutputs(agentOutputs, maxChars = Infinity) {
   if (!agentOutputs || Object.keys(agentOutputs).length === 0) return '';
   const parts = ['## Agent outputs so far'];
+  let length = parts[0].length;
   for (const [slug, content] of Object.entries(agentOutputs)) {
+    const section = `--- ${slug} ---\n${String(content || '').trim()}\n`;
+    const projected = length + section.length;
+    if (Number.isFinite(maxChars) && projected > maxChars) {
+      parts.push(`--- ${slug} ---`, clipText(content, Math.max(2000, maxChars - length - 40), true), '');
+      parts.push(`...[additional agent outputs trimmed to keep the proposal prompt within limits]`);
+      break;
+    }
     parts.push(`--- ${slug} ---`);
-    parts.push(content);
+    parts.push(String(content || '').trim());
     parts.push('');
+    length = projected;
   }
   return parts.join('\n').trim();
 }
 
-function formatConversation(messages) {
+function formatConversation(messages, maxChars = Infinity) {
   if (!messages || messages.length === 0) return '';
-  return messages
+  const text = messages
     .map(m => {
       const label = m.role === 'coordinator' ? 'Coordinator' : m.role === 'agent' ? `Agent:${m.agent_slug || 'unknown'}` : 'User';
       return `${label}: ${m.content}`;
     })
     .join('\n\n');
+  return clipText(text, maxChars, true);
 }
 
 function compactCoordinatorSourceContext(text, maxChars = 16000) {
@@ -345,7 +368,7 @@ export function splitCoordinatorSourceContext(text, maxChars = 45000) {
 
 export async function buildCoordinatorContext(contextBundle, conversation, priorityInstructions = '', signal = null) {
   throwIfAborted(signal);
-  const conversationText = formatConversation(conversation);
+  const conversationText = formatConversation(conversation, 6000);
   const chunks = splitCoordinatorSourceContext(contextBundle);
   const summaries = [];
   for (let index = 0; index < chunks.length; index++) {
@@ -409,15 +432,15 @@ export async function callAgent(slug, messages, options = {}) {
 
   const templates = await loadPromptTemplates(slug, options.taskPromptKey || null);
   const baseSystemPrompt = [agent.system_prompt, ...templates.map(item => `# ${item.name.toUpperCase()}\n${item.content}`)].join('\n\n');
-  const priorityInstructions = String(options.priorityInstructions || '').trim();
+  const priorityInstructions = clipText(String(options.priorityInstructions || '').trim(), 8000, true);
   const systemPrompt = priorityInstructions
-      ? [
-        baseSystemPrompt,
-        '# DEAL AI NOTES',
-        '<deal_ai_notes>',
-        priorityInstructions,
-        '</deal_ai_notes>',
-      ].join('\n\n')
+    ? [
+      '# DEAL AI NOTES',
+      '<deal_ai_notes>',
+      priorityInstructions,
+      '</deal_ai_notes>',
+      baseSystemPrompt,
+    ].join('\n\n')
     : baseSystemPrompt;
   console.info('Preparing AI agent request', {
     agent: slug,
@@ -527,8 +550,8 @@ export async function coordinatorStep(
   const agent = await loadAgentConfig('coordinator');
   if (!agent) throw new Error('Coordinator agent not found');
 
-  const outputsSummary = formatAgentOutputs(agentOutputs);
-  const conversationText = formatConversation(conversation);
+  const outputsSummary = formatAgentOutputs(agentOutputs, 5000);
+  const conversationText = formatConversation(conversation, 3000);
   const hasAgentOutputs = agentOutputs && Object.keys(agentOutputs).length > 0;
   const hasRequiredOutputs = REQUIRED_SPECIALIST_SLUGS.every(slug => Boolean(agentOutputs?.[slug]));
   if (hasRequiredOutputs) {
@@ -541,7 +564,7 @@ export async function coordinatorStep(
       raw: null,
     };
   }
-  const coordinatorContext = existingCoordinatorContext || compactCoordinatorSourceContext(contextBundle);
+  const coordinatorContext = clipText(existingCoordinatorContext || compactCoordinatorSourceContext(contextBundle), 12000, true);
 
   const messages = [
     {
@@ -549,7 +572,7 @@ export async function coordinatorStep(
       content: [
         priorityInstructions ? `## High Priority AI Notes\n${priorityInstructions}` : '',
         coordinatorContext ? '## Coordinator context summary' : '## Deal context',
-        coordinatorContext || contextBundle,
+        coordinatorContext || clipText(contextBundle, 12000, true),
         outputsSummary,
         '## Conversation so far',
         conversationText || 'No conversation yet.',
@@ -579,7 +602,7 @@ export async function coordinatorStep(
       priorityInstructions,
       schema: coordinatorDecisionSchema,
       schemaName: 'coordinator_decision',
-      maxTokens: 1200,
+      maxTokens: 4096,
       signal: timeoutController.signal,
     });
     const validated = parseAgentJson(raw, 'Coordinator', coordinatorDecisionSchema);
@@ -604,7 +627,7 @@ export async function coordinatorStep(
 }
 
 export function buildSpecialistMessages(context, priorOutputs = {}) {
-  const outputsSummary = formatAgentOutputs(priorOutputs);
+  const outputsSummary = formatAgentOutputs(priorOutputs, 8000);
   return [
     {
       role: 'user',
@@ -620,14 +643,14 @@ export function buildSpecialistMessages(context, priorOutputs = {}) {
 export async function runAgent(slug, context, conversation, priorOutputs = {}, priorityInstructions = '', signal = null) {
   return await callAgent(slug, buildSpecialistMessages(context, priorOutputs), {
     priorityInstructions,
-    maxTokens: slug === 'architect' ? 32768 : slug === 'copywriter' ? 16384 : 8192,
+    maxTokens: slug === 'architect' ? 32768 : 8192,
     signal,
   });
 }
 
 export async function buildEstimatorBrief(context, conversation, agentOutputs, priorityInstructions = '', signal = null) {
-  const outputsSummary = formatAgentOutputs(agentOutputs);
-  const conversationText = formatConversation(conversation);
+  const outputsSummary = formatAgentOutputs(agentOutputs, 8000);
+  const conversationText = formatConversation(conversation, 6000);
   const messages = [
     {
       role: 'user',
@@ -672,10 +695,10 @@ export async function runEstimator(context, conversation, priorityInstructions =
 }
 
 export async function buildRoleBrief(role, sourceContext, conversation, priorityInstructions = '', signal = null) {
-  const conversationText = formatConversation(conversation);
+  const conversationText = formatConversation(conversation, 5000);
   return callAgent('coordinator', [{
     role: 'user',
-    content: `## Extracted source context\n${sourceContext}\n\n## Conversation\n${conversationText || 'No conversation yet.'}`,
+    content: `## Extracted source context\n${clipText(sourceContext, 12000, true)}\n\n## Conversation\n${conversationText || 'No conversation yet.'}`,
   }], {
     taskPromptKey: role === 'legal' ? 'coordinator.legal-brief' : 'coordinator.architect-brief',
     priorityInstructions,
@@ -687,8 +710,8 @@ export async function buildRoleBrief(role, sourceContext, conversation, priority
 function appendArchitectureDiagramPrompt(report) {
   const prompt = [
     '## Architecture Diagram Prompt',
-    'Use the assessment report above as the source of truth and generate client-ready PNG diagrams for the solution architecture.',
-    'Use the exact tech stack named in the assessment report. Do not substitute a generic stack, an authority-approved provider, or a different implementation just because it has a nicer icon set.',
+    'Use the proposal above as the source of truth and generate client-ready PNG diagrams for the solution architecture.',
+    'Use the exact tech stack named in the proposal. Do not substitute a generic stack, an authority-approved provider, or a different implementation just because it has a nicer icon set.',
     'Produce 1 to 5 diagrams as appropriate: an overview, a component or context view, a workflow or sequence view, an integration or data-flow view, and a deployment or trust-boundary view when relevant.',
     'Each diagram should contain only elements grounded in the report: actors, channels, services, data stores, external systems, environments, and security boundaries.',
     'Use small, tech-stack-native icons where relevant for services, platforms, databases, cloud components, and infrastructure layers.',
@@ -703,8 +726,8 @@ function appendArchitectureDiagramPrompt(report) {
 function buildArchitectureDiagramImagePrompt(report, variant) {
   const base = [
     'You are generating a polished enterprise architecture diagram as a PNG image.',
-    'Use the assessment report below as the source of truth.',
-    'Use the exact tech stack named in the report. Do not replace it with a generic platform or provider-approved substitute.',
+    'Use the proposal below as the source of truth.',
+    'Use the exact tech stack named in the proposal. Do not replace it with a generic platform or provider-approved substitute.',
     'Use native icons for the technologies named in the report wherever possible. If a native icon is unavailable, use a simple neutral glyph instead of an unrelated icon.',
     'Style requirements: white background, dark navy headline, subtle rounded cards, dashed trust boundaries, clean arrows, legible labels, spacious layout, and a presentation-ready finish.',
     variant === 'overview'
@@ -713,7 +736,7 @@ function buildArchitectureDiagramImagePrompt(report, variant) {
     'The output should look like a professional solution architecture slide, not a marketing illustration.',
     'Render the diagram as a single landscape PNG.',
     'Assessment report:',
-    report.trim(),
+    clipText(report, 12000, true).trim(),
   ];
   return base.join('\n\n');
 }
@@ -727,7 +750,7 @@ function stripArchitectureDiagramPrompt(report) {
 export async function generateArchitectureDiagramImages(report, signal = null) {
   throwIfAborted(signal);
   const client = await getOpenAIClient();
-  const reportBody = stripArchitectureDiagramPrompt(report);
+  const reportBody = clipText(stripArchitectureDiagramPrompt(report), 12000, true);
   const images = [];
   const variants = [
     { key: 'overview', title: 'Architecture Overview' },
@@ -760,33 +783,69 @@ export async function generateArchitectureDiagramImages(report, signal = null) {
   return images;
 }
 
-export function buildReportFromOutputs(dealName, coordinatorContext, agentOutputs) {
-  let report;
-  if (agentOutputs.copywriter) {
-    report = agentOutputs.copywriter.trim();
-  } else {
-    const AGENT_ORDER = ['legal', 'architect', 'estimator'];
-    const parts = [`# Assessment Report: ${dealName || 'Untitled Deal'}`, ''];
+function buildFallbackProposalMarkdown(dealName, coordinatorContext, agentOutputs) {
+  const AGENT_ORDER = ['legal', 'architect', 'estimator'];
+  const parts = [`# Proposal: ${dealName || 'Untitled Deal'}`, ''];
 
-    if (coordinatorContext) {
-      parts.push('## Deal Context', '', coordinatorContext.trim(), '');
-    }
-
-    for (const slug of AGENT_ORDER) {
-      if (agentOutputs[slug]) {
-        parts.push('---', '', agentOutputs[slug].trim(), '');
-      }
-    }
-
-    for (const [slug, content] of Object.entries(agentOutputs)) {
-      if (!AGENT_ORDER.includes(slug) && content) {
-        parts.push('---', '', content.trim(), '');
-      }
-    }
-
-    report = parts.join('\n');
+  if (coordinatorContext) {
+    parts.push('## Deal Context', '', coordinatorContext.trim(), '');
   }
 
+  for (const slug of AGENT_ORDER) {
+    if (agentOutputs[slug]) {
+      parts.push('---', '', agentOutputs[slug].trim(), '');
+    }
+  }
+
+  for (const [slug, content] of Object.entries(agentOutputs)) {
+    if (!AGENT_ORDER.includes(slug) && content) {
+      parts.push('---', '', content.trim(), '');
+    }
+  }
+
+  return parts.join('\n');
+}
+
+export function buildReportFromOutputs(dealName, coordinatorContext, agentOutputs) {
+  return buildFallbackProposalMarkdown(dealName, coordinatorContext, agentOutputs);
+}
+
+export async function buildFinalProposalMarkdown(dealName, coordinatorContext, conversation, agentOutputs, priorityInstructions = '', signal = null) {
+  const safeCoordinatorContext = clipText(coordinatorContext, 5000, true);
+  const safePriorityInstructions = clipText(priorityInstructions, 3000, true);
+  const safeOutputsSummary = formatAgentOutputs(agentOutputs, 7000);
+  const safeConversation = formatConversation(conversation, 3000);
+  const messages = [{
+    role: 'user',
+    content: [
+      dealName ? `## Deal Name\n${dealName}` : '',
+      safePriorityInstructions ? `## High Priority AI Notes\n${safePriorityInstructions}` : '',
+      coordinatorContext ? '## Coordinator context summary' : '',
+      safeCoordinatorContext || '',
+      '## Specialist outputs',
+      safeOutputsSummary,
+      agentOutputs.estimator ? `## Estimator summary\n${clipText(buildEstimatorReportSummary(agentOutputs.estimator), 2000, true)}` : '',
+      '## Conversation so far',
+      safeConversation || 'No conversation yet.',
+    ].filter(Boolean).join('\n\n'),
+  }];
+
+  try {
+    const raw = await callAgent('coordinator', messages, {
+      taskPromptKey: 'coordinator.final-report',
+      priorityInstructions,
+      maxTokens: 8192,
+      signal,
+    });
+    return raw.trim() || buildFallbackProposalMarkdown(dealName, coordinatorContext, agentOutputs);
+  } catch (err) {
+    if (isCancellationError(err)) throw err;
+    console.error('Coordinator final proposal draft failed; using fallback assembly.', err);
+    return buildFallbackProposalMarkdown(dealName, coordinatorContext, agentOutputs);
+  }
+}
+
+export function buildArchitectureDiagramPromptInput(report) {
   return appendArchitectureDiagramPrompt(report);
 }
 
@@ -879,23 +938,6 @@ export async function runAgentPlan(
       parseEstimatorOutput(estimatorOutput);
       await emitOutput('estimator', estimatorOutput);
     }
-  }
-
-  const reportInputsReady = REQUIRED_SPECIALIST_SLUGS.every(slug => Boolean(outputs[slug]));
-  if (reportInputsReady && !outputs.copywriter) {
-    const copywriterContext = [
-      dealName ? `## Deal Name\n${dealName}` : '',
-      context,
-    ].filter(Boolean).join('\n\n');
-    const copywriterOutput = await runTrackedStep(
-      'copywriter',
-      () => runAgent('copywriter', copywriterContext, conversation, {
-        legal: outputs.legal,
-        architect: outputs.architect,
-        estimator: buildEstimatorReportSummary(outputs.estimator),
-      }, priorityInstructions, signal)
-    );
-    await emitOutput('copywriter', copywriterOutput);
   }
 
   return outputs;

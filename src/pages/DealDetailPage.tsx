@@ -3,7 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import toast from 'react-hot-toast';
-import { ArrowLeft, Trash2, FileText, Calendar, DollarSign, Tag, AlignLeft, Hash, Building, Sparkles, BrainCircuit, UserCircle, ShieldCheck, Square } from 'lucide-react';
+import { ArrowLeft, Trash2, FileText, Calendar, DollarSign, Tag, AlignLeft, Hash, Building, Sparkles, BrainCircuit, UserCircle, ShieldCheck } from 'lucide-react';
 import { useDeals } from '../context/DealsContext';
 import { useAuth } from '../context/AuthContext';
 import { dealsApi, aiApi, agentsApi, platformApi } from '../api';
@@ -72,9 +72,8 @@ export default function DealDetailPage() {
   const [aiStopping, setAiStopping] = useState(false);
   const [validating, setValidating] = useState(false);
   const [showValidationModal, setShowValidationModal] = useState(false);
-  const [primaryAssessmentDocId, setPrimaryAssessmentDocId] = useState('');
-  const [primaryWbsDocId, setPrimaryWbsDocId] = useState('');
-  const [additionalValidationDocIds, setAdditionalValidationDocIds] = useState<string[]>([]);
+  const [selectedValidationUserDocIds, setSelectedValidationUserDocIds] = useState<string[]>([]);
+  const [selectedValidationAiDocIds, setSelectedValidationAiDocIds] = useState<string[]>([]);
   const [aiExtractedDocs, setAiExtractedDocs] = useState<{ id: string; name: string; size: string; success: boolean }[]>([]);
   const [aiKeyMissing, setAiKeyMissing] = useState(false);
   const [aiKeyValid, setAiKeyValid] = useState<boolean | null>(null);
@@ -103,9 +102,11 @@ export default function DealDetailPage() {
   const deal = getDeal(id!);
   const canEdit = isRole('Superadmin', 'Editor');
   const canRunAI = canEdit && aiKeyValid === true;
-  const hasAiDocs = deal ? deal.documents.some(d => d.source === 'ai') : false;
+  const userDocuments = useMemo(() => deal?.documents.filter(d => d.source === 'user' || !d.source) || [], [deal]);
   const aiDocuments = useMemo(() => deal?.documents.filter(d => d.source === 'ai') || [], [deal]);
-  const validationReady = aiDocuments.length >= 2;
+  const hasUserDocs = userDocuments.length > 0;
+  const hasAiDocs = aiDocuments.length > 0;
+  const validationReady = hasAiDocs;
   const aiWorkspaceMessages = [...aiMessages, ...aiChatMessages, ...aiTransientMessages].sort((a, b) => {
     const aTime = a.created_at ? new Date(a.created_at).getTime() : 0;
     const bTime = b.created_at ? new Date(b.created_at).getTime() : 0;
@@ -429,10 +430,10 @@ export default function DealDetailPage() {
         await loadAISession();
         return;
       }
-      if (err.message?.includes('assessment report already exists') || err.message?.includes('AI documents already exist')) {
+      if (err.message?.includes('proposal already exists') || err.message?.includes('AI documents already exist')) {
         const names = err.data?.aiDocs?.map((d: any) => d.name) || [];
         setAiDocConfirm({ show: true, names });
-        toast.error('Assessment report already exists. Please confirm to replace it.');
+        toast.error('AI proposal already exists. Please confirm to replace it.');
         return;
       }
       if (err.message?.includes('API key') || err.message?.includes('not configured')) {
@@ -448,39 +449,17 @@ export default function DealDetailPage() {
 
   const handleStartAI = async () => startAIWithForce(false);
 
-  const looksLikeAssessment = (doc: Document) => {
-    const label = `${doc.name} ${doc.filename || ''}`.toLowerCase();
-    return doc.artifactType === 'assessment-report'
-      || (label.includes('assessment') && (label.includes('.md') || label.includes('.doc') || label.includes('report')));
-  };
-
-  const looksLikeWbs = (doc: Document) => {
-    const label = `${doc.name} ${doc.filename || ''}`.toLowerCase();
-    return doc.artifactType === 'wbs'
-      || (label.includes('wbs') && (label.includes('.xls') || label.includes('.xlsx')))
-      || label.includes('work breakdown');
-  };
-
-  const getLatestMatchingDocument = (predicate: (doc: Document) => boolean) => {
-    return [...aiDocuments]
-      .filter(predicate)
-      .sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime())[0] || null;
-  };
-
   const openValidationModal = () => {
     if (!validationReady) return;
-    const latestAssessment = getLatestMatchingDocument(looksLikeAssessment);
-    const latestWbs = getLatestMatchingDocument(doc => looksLikeWbs(doc) && doc.id !== latestAssessment?.id);
-    setPrimaryAssessmentDocId(latestAssessment?.id || '');
-    setPrimaryWbsDocId(latestWbs?.id || '');
-    setAdditionalValidationDocIds([]);
+    setSelectedValidationUserDocIds(userDocuments.map(doc => doc.id));
+    setSelectedValidationAiDocIds(aiDocuments.map(doc => doc.id));
     setShowValidationModal(true);
   };
 
   const handleValidate = async () => {
     if (!id || !canRunAI) return;
-    if (!primaryAssessmentDocId || !primaryWbsDocId) {
-      toast.error('Select both a primary assessment report and a primary WBS workbook.');
+    if (selectedValidationUserDocIds.length === 0 || selectedValidationAiDocIds.length === 0) {
+      toast.error('Select at least one user document and one AI document.');
       return;
     }
     toast.dismiss(validationToastId);
@@ -490,9 +469,8 @@ export default function DealDetailPage() {
     startAISessionPolling();
     try {
       const result = await aiApi.validate(id, {
-        primaryAssessmentDocumentId: primaryAssessmentDocId,
-        primaryWbsDocumentId: primaryWbsDocId,
-        additionalDocumentIds: additionalValidationDocIds,
+        userDocumentIds: selectedValidationUserDocIds,
+        aiDocumentIds: selectedValidationAiDocIds,
       });
       await refreshDeals();
       await loadAISession();
@@ -628,6 +606,31 @@ export default function DealDetailPage() {
     }
     await handleSendMessage(content);
   };
+
+  const workspaceActionTabs = [
+    {
+      key: 'process',
+      label: 'Process',
+      onClick: handleStartAI,
+      disabled: !hasUserDocs || !canRunAI || isAiBusy,
+      title: !hasUserDocs
+        ? 'Add at least one user document before processing.'
+        : aiKeyValid === false
+          ? (aiKeyError || 'OpenAI API key is not configured')
+          : undefined,
+    },
+    {
+      key: 'validate',
+      label: 'Validate',
+      onClick: openValidationModal,
+      disabled: !hasAiDocs || !canRunAI || isAiBusy,
+      title: !hasAiDocs
+        ? 'Add at least one AI document before validating.'
+        : aiKeyValid === false
+          ? (aiKeyError || 'OpenAI API key is not configured')
+          : undefined,
+    },
+  ];
 
   const handleClearAiHistory = async () => {
     if (!id) return;
@@ -963,7 +966,7 @@ export default function DealDetailPage() {
             onPreview={doc => dealsApi.previewDocument(doc.id)}
             onReviewStatus={handleReviewStatus}
             badge="AI Context"
-            emptyText="No AI documents yet. Run Execute AI to generate the assessment, WBS, and diagrams. Validate lets you choose which AI files to audit."
+            emptyText="No AI documents yet. Run Process to generate the proposal, WBS, and diagrams. Validate lets you choose which AI files to audit."
           />
         </div>
 
@@ -996,40 +999,6 @@ export default function DealDetailPage() {
                 >
                   Clear
                 </Button>
-                <Button
-                  variant="danger"
-                  size="sm"
-                  icon={<Square size={12} />}
-                  onClick={handleStopAI}
-                  loading={aiStopping}
-                  disabled={!isAiBusy}
-                >
-                  Stop AI
-                </Button>
-                <span title={aiKeyValid === false ? (aiKeyError || 'OpenAI API key is not configured') : ''}>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    icon={<Sparkles size={13} />}
-                    onClick={handleStartAI}
-                    loading={aiLoading}
-                    disabled={isAiBusy || aiKeyValid !== true}
-                  >
-                    {aiSessionId ? 'Continue AI' : 'Execute AI'}
-                  </Button>
-                </span>
-                <span title={!validationReady ? 'Add at least two AI documents before validation. You will choose the assessment and WBS versions in the next step.' : aiKeyValid === false ? (aiKeyError || 'OpenAI API key is not configured') : ''}>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    icon={<ShieldCheck size={13} />}
-                    onClick={openValidationModal}
-                    loading={validating}
-                    disabled={isAiBusy || aiKeyValid !== true || !validationReady}
-                  >
-                    Validate
-                  </Button>
-                </span>
               </div>
             </div>
             <div style={{ height: 420 }}>
@@ -1040,9 +1009,13 @@ export default function DealDetailPage() {
                 workflowSteps={aiWorkflowSteps}
                 sessionStatus={aiSessionStatus}
                 streamStatus={aiStreamStatus}
+                actionTabs={workspaceActionTabs}
+                onStop={handleStopAI}
+                stopDisabled={!isAiBusy || aiStopping}
+                stopLoading={aiStopping}
                 onSend={handleSendAIWorkspaceMessage}
-                disabled={aiWorkspaceKeyMissing || validating || aiStopping}
-                emptyMessage="Run Execute AI to generate the supplier package. Then click Validate to choose which AI files should be audited."
+                disabled={aiWorkspaceKeyMissing || validating || aiStopping || (!hasUserDocs && !hasAiDocs)}
+                emptyMessage="Run Process to generate the proposal package. Then click Validate to choose which AI files should be audited."
               />
             </div>
             {aiWorkspaceKeyMissing && (
@@ -1114,18 +1087,18 @@ export default function DealDetailPage() {
         </div>
       </Modal>
 
-      {/* AI assessment restart confirmation */}
-      <Modal open={aiDocConfirm.show} onClose={() => setAiDocConfirm({ show: false, names: [] })} title="Replace assessment report?">
+      {/* AI proposal restart confirmation */}
+      <Modal open={aiDocConfirm.show} onClose={() => setAiDocConfirm({ show: false, names: [] })} title="Replace AI proposal?">
         <div style={{ padding: '8px 0' }}>
           <p style={{ color: '#64748B', fontSize: 13, marginBottom: 16, lineHeight: 1.6 }}>
-            Re-running <strong>Execute AI</strong> will replace only the existing assessment report. Validation reports are kept separately.
+            Re-running <strong>Process</strong> will replace the current AI proposal package for this deal.
           </p>
           {aiDocConfirm.names.length > 0 && (
             <div style={{
               background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 8,
               padding: 12, marginBottom: 20,
             }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: '#991B1B', marginBottom: 8 }}>Assessment report to be replaced:</div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: '#991B1B', marginBottom: 8 }}>AI package to be replaced:</div>
               <ul style={{ margin: 0, paddingLeft: 18, color: '#7F1D1D', fontSize: 12, lineHeight: 1.6 }}>
                 {aiDocConfirm.names.map((name, i) => <li key={i}>{name}</li>)}
               </ul>
@@ -1136,7 +1109,7 @@ export default function DealDetailPage() {
               Cancel
             </Button>
             <Button variant="danger" onClick={handleConfirmAiDocRestart} icon={<Trash2 size={13} />}>
-              Replace & Restart
+              Replace & Process
             </Button>
           </div>
         </div>
@@ -1145,43 +1118,45 @@ export default function DealDetailPage() {
       <Modal open={showValidationModal} onClose={() => !validating && setShowValidationModal(false)} title="Select validation files">
         <div style={{ padding: '8px 0' }}>
           <p style={{ color: '#64748B', fontSize: 13, marginBottom: 16, lineHeight: 1.6 }}>
-            Choose which AI documents should act as the primary assessment report and WBS workbook for this validation run. You can also include additional AI documents as supporting supplier context.
+            Choose which user documents and AI documents should be included in this validation run.
           </p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div>
-              <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 8 }}>Primary Assessment Report</div>
-              <Select value={primaryAssessmentDocId} onChange={e => setPrimaryAssessmentDocId(e.target.value)}>
-                <option value="">Select assessment source</option>
-                {aiDocuments.map(doc => (
-                  <option key={doc.id} value={doc.id}>
-                    {doc.name} • {new Date(doc.uploadedAt).toLocaleDateString('en-GB')}
-                  </option>
-                ))}
-              </Select>
-            </div>
-            <div>
-              <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 8 }}>Primary WBS Workbook</div>
-              <Select value={primaryWbsDocId} onChange={e => setPrimaryWbsDocId(e.target.value)}>
-                <option value="">Select WBS source</option>
-                {aiDocuments.map(doc => (
-                  <option key={doc.id} value={doc.id}>
-                    {doc.name} • {new Date(doc.uploadedAt).toLocaleDateString('en-GB')}
-                  </option>
-                ))}
-              </Select>
-            </div>
-            <div>
-              <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 8 }}>Additional AI Documents</div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 8 }}>User Documents</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 220, overflowY: 'auto', border: '1px solid #E2E8F0', borderRadius: 8, padding: 12, background: '#F8FAFC' }}>
-                {aiDocuments.filter(doc => doc.id !== primaryAssessmentDocId && doc.id !== primaryWbsDocId).length === 0 ? (
-                  <div style={{ fontSize: 12, color: '#94A3B8' }}>No additional AI documents available.</div>
-                ) : aiDocuments.filter(doc => doc.id !== primaryAssessmentDocId && doc.id !== primaryWbsDocId).map(doc => (
+                {userDocuments.length === 0 ? (
+                  <div style={{ fontSize: 12, color: '#94A3B8' }}>No user documents available.</div>
+                ) : userDocuments.map(doc => (
                   <label key={doc.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer' }}>
                     <input
                       type="checkbox"
-                      checked={additionalValidationDocIds.includes(doc.id)}
+                      checked={selectedValidationUserDocIds.includes(doc.id)}
                       onChange={e => {
-                        setAdditionalValidationDocIds(prev => e.target.checked
+                        setSelectedValidationUserDocIds(prev => e.target.checked
+                          ? [...prev, doc.id]
+                          : prev.filter(id => id !== doc.id));
+                      }}
+                    />
+                    <span style={{ fontSize: 12, color: '#374151', lineHeight: 1.5 }}>
+                      {doc.name}
+                      <span style={{ color: '#94A3B8' }}> · {doc.size} · {new Date(doc.uploadedAt).toLocaleDateString('en-GB')}{doc.artifactType ? ` · ${doc.artifactType}` : ''}</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 8 }}>AI Documents</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 220, overflowY: 'auto', border: '1px solid #E2E8F0', borderRadius: 8, padding: 12, background: '#F8FAFC' }}>
+                {aiDocuments.length === 0 ? (
+                  <div style={{ fontSize: 12, color: '#94A3B8' }}>No AI documents available.</div>
+                ) : aiDocuments.map(doc => (
+                  <label key={doc.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={selectedValidationAiDocIds.includes(doc.id)}
+                      onChange={e => {
+                        setSelectedValidationAiDocIds(prev => e.target.checked
                           ? [...prev, doc.id]
                           : prev.filter(id => id !== doc.id));
                       }}
@@ -1202,7 +1177,7 @@ export default function DealDetailPage() {
             <Button
               onClick={handleValidate}
               loading={validating}
-              disabled={!primaryAssessmentDocId || !primaryWbsDocId || primaryAssessmentDocId === primaryWbsDocId}
+              disabled={selectedValidationUserDocIds.length === 0 || selectedValidationAiDocIds.length === 0}
               icon={<ShieldCheck size={13} />}
             >
               Run Validation

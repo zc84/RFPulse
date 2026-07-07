@@ -176,7 +176,7 @@ export default function PlatformConfigPage() {
           <Settings size={18} color="#2563EB" />
           <div>
             <h1 style={{ fontSize: 22, fontWeight: 700, color: '#0F172A' }}>Platform Configuration</h1>
-            <p style={{ color: '#64748B', fontSize: 13, marginTop: 2 }}>Manage users, AI settings, statuses, and domains.</p>
+            <p style={{ color: '#64748B', fontSize: 13, marginTop: 2 }}>Manage users, AI settings, proposal templates, statuses, and domains.</p>
           </div>
         </div>
 

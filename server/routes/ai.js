@@ -5,7 +5,7 @@ import { buildDealContextBundle, summarizeContextBundle } from '../services/docu
 import { writeWbsWorkbook } from '../services/wbsWorkbook.js';
 import {
   coordinatorStep,
-  buildReportFromOutputs,
+  buildFinalProposalMarkdown,
   generateArchitectureDiagramImages,
   runAgentPlan,
   ensureDefaultAgents,
@@ -14,6 +14,8 @@ import {
   buildCoordinatorContext,
   requireCoordinatorContext,
 } from '../services/aiOrchestrator.js';
+import { renderProposalDocx, splitProposalMarkdown } from '../services/proposalDocument.js';
+import { resolveProposalTemplatePath } from '../services/proposalTemplate.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -370,7 +372,7 @@ async function resetDerivedSessionState(sessionId, contextBundle) {
 }
 
 async function getWorkflowArtifacts(sessionId) {
-  const artifactSteps = ['legal-brief', 'architect-brief', 'legal', 'architect', 'estimator-brief', 'estimator', 'copywriter'];
+  const artifactSteps = ['legal-brief', 'architect-brief', 'legal', 'architect', 'estimator-brief', 'estimator'];
   let result;
   try {
     result = await query(
@@ -403,6 +405,11 @@ async function getWorkflowSteps(sessionId) {
     throw err;
   }
   return result.rows;
+}
+
+async function getWorkflowStepMap(sessionId) {
+  const steps = await getWorkflowSteps(sessionId);
+  return new Map(steps.map(step => [step.step_key, step]));
 }
 
 async function buildSessionPayloadByDealId(dealId) {
@@ -645,16 +652,49 @@ async function deleteDocumentsByName(dealId, documentName) {
   return docs.rows;
 }
 
-async function getAiDocumentsByName(dealId, documentName) {
+async function deleteAiDocumentsByPattern(dealId, namePattern) {
+  const docs = await query(
+    'SELECT * FROM documents WHERE deal_id = $1 AND source = $2 AND name LIKE $3',
+    [dealId, 'ai', namePattern]
+  );
+  for (const doc of docs.rows) {
+    if (doc.filename) {
+      const filePath = path.join(UPLOAD_DIR, String(dealId), doc.filename);
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    }
+  }
+  if (docs.rows.length > 0) {
+    await query(
+      'DELETE FROM documents WHERE deal_id = $1 AND source = $2 AND name LIKE $3',
+      [dealId, 'ai', namePattern]
+    );
+  }
+  return docs.rows;
+}
+
+async function getAiDocumentsByName(dealId, documentNames) {
+  const names = Array.isArray(documentNames) ? documentNames : [documentNames];
   const result = await query(
-    'SELECT * FROM documents WHERE deal_id = $1 AND source = $2 AND name = $3',
-    [dealId, 'ai', documentName]
+    'SELECT * FROM documents WHERE deal_id = $1 AND source = $2 AND name = ANY($3::text[])',
+    [dealId, 'ai', names]
+  );
+  return result.rows;
+}
+
+async function getExistingProposalDocuments(dealId) {
+  const result = await query(
+    `SELECT * FROM documents
+     WHERE deal_id = $1
+       AND source = $2
+       AND (name = $3 OR name LIKE $4)`,
+    [dealId, 'ai', 'AI Assessment Report.md', 'AI Proposal%']
   );
   return result.rows;
 }
 
 async function deleteAssessmentReport(dealId) {
-  const deletedReport = await deleteDocumentsByName(dealId, 'AI Assessment Report.md');
+  const deletedProposalDocs = await deleteAiDocumentsByPattern(dealId, 'AI Proposal%');
+  const deletedLegacyReport = await deleteDocumentsByName(dealId, 'AI Assessment Report.md');
   const deletedWbs = await deleteDocumentsByName(dealId, 'AI Detailed WBS.xlsx');
   const deletedValidation = await deleteDocumentsByName(dealId, 'Validation Report.md');
   const diagrams = await query(`SELECT * FROM documents WHERE deal_id = $1 AND artifact_type = 'architecture-diagram'`, [dealId]);
@@ -663,7 +703,7 @@ async function deleteAssessmentReport(dealId) {
     if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
   }
   await query(`DELETE FROM documents WHERE deal_id = $1 AND artifact_type = 'architecture-diagram'`, [dealId]);
-  return [...deletedReport, ...deletedWbs, ...deletedValidation, ...diagrams.rows];
+  return [...deletedProposalDocs, ...deletedLegacyReport, ...deletedWbs, ...deletedValidation, ...diagrams.rows];
 }
 
 async function saveDetailedWbs(dealId, sessionId, estimatorOutput) {
@@ -720,41 +760,63 @@ async function saveArchitectureDiagramImages(dealId, sessionId, images) {
   return saved;
 }
 
-async function saveFinalReport(dealId, sessionId, markdown) {
+async function saveFinalProposal(dealId, sessionId, dealName, markdown, diagramDocs = []) {
   try {
     const dealDir = path.join(UPLOAD_DIR, String(dealId));
     if (!fs.existsSync(dealDir)) {
       fs.mkdirSync(dealDir, { recursive: true });
     }
 
-    const filename = `assessment-report-${Date.now()}.md`;
-    const filePath = path.join(dealDir, filename);
-    await writeMarkdownChunks(filePath, markdown);
-
-    const sizeBytes = Buffer.byteLength(markdown, 'utf-8');
-    const size = sizeBytes >= 1024 * 1024
-      ? `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`
-      : `${(sizeBytes / 1024).toFixed(0)} KB`;
+    const templatePath = resolveProposalTemplatePath();
+    const parts = splitProposalMarkdown(markdown);
     const today = new Date().toISOString().split('T')[0];
 
-    const docResult = await query(
-      `INSERT INTO documents (deal_id, name, size, filename, source, uploaded_at, artifact_type, ai_session_id, review_status)
-       VALUES ($1, $2, $3, $4, $5, $6, 'assessment-report', $7, 'draft') RETURNING id`,
-      [dealId, 'AI Assessment Report.md', size, filename, 'ai', today, sessionId]
-    );
+    let primaryDocumentId = null;
+    for (const [index, part] of parts.entries()) {
+      const filename = parts.length === 1
+        ? `proposal-${Date.now()}.docx`
+        : `proposal-${index + 1}-${Date.now()}.docx`;
+      const filePath = path.join(dealDir, filename);
+      const shouldAttachDiagrams = parts.length === 1 ? true : index === 0 || part.diagrams === true;
+      renderProposalDocx({
+        markdown: part.markdown,
+        outputPath: filePath,
+        title: part.title || (dealName ? `Proposal: ${dealName}` : 'Proposal'),
+        templatePath,
+        diagrams: shouldAttachDiagrams ? diagramDocs.map(doc => ({
+          title: doc.title || doc.name || 'Diagram',
+          path: path.join(dealDir, doc.filename),
+        })) : [],
+      });
 
-    const documentId = docResult.rows[0].id;
+      const sizeBytes = fs.statSync(filePath).size;
+      const size = sizeBytes >= 1024 * 1024
+        ? `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`
+        : `${(sizeBytes / 1024).toFixed(0)} KB`;
+      const docName = parts.length === 1
+        ? 'AI Proposal.docx'
+        : `AI Proposal - ${part.title || `Part ${index + 1}`}.docx`;
+      const docResult = await query(
+        `INSERT INTO documents (deal_id, name, size, filename, source, uploaded_at, artifact_type, ai_session_id, review_status)
+         VALUES ($1, $2, $3, $4, $5, $6, 'assessment-report', $7, 'draft') RETURNING id`,
+        [dealId, docName, size, filename, 'ai', today, sessionId]
+      );
+      if (primaryDocumentId === null) {
+        primaryDocumentId = docResult.rows[0].id;
+      }
+    }
+
     await query(
       `UPDATE ai_sessions
        SET final_report_document_id = $1, status = $2, updated_at = CURRENT_TIMESTAMP
        WHERE id = $3 AND status <> 'cancelled'`,
-      [documentId, 'completed', sessionId]
+      [primaryDocumentId, 'completed', sessionId]
     );
 
-    return documentId;
+    return primaryDocumentId;
   } catch (err) {
-    console.error('Failed to save final assessment report:', err);
-    throw createRouteError('Assessment report was generated but could not be saved. Check upload storage and database logs.');
+    console.error('Failed to save final proposal:', err);
+    throw createRouteError('Proposal was generated but could not be saved. Check upload storage and database logs.');
   }
 }
 
@@ -789,67 +851,71 @@ async function saveValidationReport(dealId, dealName, markdown) {
   return docResult.rows[0].id;
 }
 
-function buildGapAssessmentReport(dealName, coordinatorContext, missingItems) {
-  const gaps = Array.isArray(missingItems) ? missingItems.filter(Boolean) : [];
-  return [
-    `# Assessment Report: ${dealName || 'Untitled Deal'}`,
-    '',
-    '## Executive Summary',
-    'The assessment cannot be fully completed from the current source package. The report below captures the available evidence and the material gaps that remain.',
-    '',
-    '## Current Evidence',
-    coordinatorContext?.trim() || 'No consolidated coordinator context was produced before the run stopped.',
-    '',
-    '## Gaps and Missing Inputs',
-    gaps.length > 0 ? gaps.map((gap, index) => `${index + 1}. ${gap}`).join('\n') : 'No explicit blocking gaps were identified.',
-    '',
-    '## Assessment Impact',
-    'These gaps prevent a reliable final assessment, detailed WBS, and pricing baseline. Treat them as blockers until the source package is completed.',
-  ].join('\n');
-}
-
-function buildClarifyingSummaryMessage(reasoning, questions) {
-  const lines = [];
-  if (reasoning) lines.push(`Coordinator reason: ${reasoning}`);
-  if (Array.isArray(questions) && questions.length > 0) {
-    lines.push('Blocking inputs:');
-    questions.slice(0, 3).forEach((question, index) => {
-      lines.push(`${index + 1}. ${question}`);
-    });
-  }
-  return lines.length > 0
-    ? lines.join('\n')
-    : 'Coordinator requires clarification before the workflow can continue.';
-}
-
-async function finalizeAssessmentArtifacts({ dealId, sessionId, dealName, contextBundle, agentContext, outputs, aiNotes, signal }) {
+async function finalizeAssessmentArtifacts({ dealId, sessionId, dealName, proposalMarkdown, contextBundle, outputs, aiNotes, signal, resumeWorkflowSteps = [] }) {
   throwIfAborted(signal);
-  const draftReport = buildReportFromOutputs(dealName, agentContext, outputs);
-  await markWorkflowStepCompleted(sessionId, dealId, 'draft-report', draftReport, {
-    source: outputs.copywriter ? 'copywriter' : 'assembled',
+  await markWorkflowStepCompleted(sessionId, dealId, 'draft-report', proposalMarkdown, {
+    source: 'coordinator',
   });
+
+  const workflowStepMap = new Map((resumeWorkflowSteps || []).map(step => [step.step_key, step]));
+  const existingDiagramStep = workflowStepMap.get('generate-architecture-diagrams');
+  const existingWbsStep = workflowStepMap.get('save-wbs-workbook');
+  const existingFinalStep = workflowStepMap.get('save-final-report');
 
   let finalReportDocumentId = null;
   let wbsDocumentId = null;
 
   try {
     throwIfAborted(signal);
-    await markWorkflowStepRunning(sessionId, dealId, 'generate-architecture-diagrams');
-    const diagramImages = await generateArchitectureDiagramImages(draftReport, signal);
+    let diagramDocs = [];
+    if (existingDiagramStep?.status === 'completed') {
+      const existingDiagrams = await query(
+        `SELECT * FROM documents
+         WHERE deal_id = $1 AND ai_session_id = $2 AND artifact_type = 'architecture-diagram'
+         ORDER BY id ASC`,
+        [dealId, sessionId]
+      );
+      diagramDocs = existingDiagrams.rows.map(doc => ({
+        id: doc.id,
+        name: doc.name,
+        filename: doc.filename,
+        size: doc.size,
+        title: doc.name.replace(/\.png$/i, ''),
+      }));
+    } else {
+      await markWorkflowStepRunning(sessionId, dealId, 'generate-architecture-diagrams');
+      const diagramImages = await generateArchitectureDiagramImages(proposalMarkdown, signal);
+      throwIfAborted(signal);
+      diagramDocs = await saveArchitectureDiagramImages(dealId, sessionId, diagramImages);
+      await markWorkflowStepCompleted(sessionId, dealId, 'generate-architecture-diagrams', JSON.stringify(diagramDocs.map(doc => doc.name)), {
+        count: diagramDocs.length,
+        model: 'gpt-image-2',
+      });
+    }
+
     throwIfAborted(signal);
-    const diagramDocs = await saveArchitectureDiagramImages(dealId, sessionId, diagramImages);
-    await markWorkflowStepCompleted(sessionId, dealId, 'generate-architecture-diagrams', JSON.stringify(diagramDocs.map(doc => doc.name)), {
-      count: diagramDocs.length,
-      model: 'gpt-image-2',
-    });
+    if (existingWbsStep?.status === 'completed' && existingWbsStep.artifact) {
+      const parsedWbsId = parseInt(String(existingWbsStep.artifact), 10);
+      if (!Number.isNaN(parsedWbsId)) {
+        wbsDocumentId = parsedWbsId;
+      }
+    } else {
+      await markWorkflowStepRunning(sessionId, dealId, 'save-wbs-workbook');
+      wbsDocumentId = await saveDetailedWbs(dealId, sessionId, outputs.estimator);
+      await markWorkflowStepCompleted(sessionId, dealId, 'save-wbs-workbook', String(wbsDocumentId));
+    }
+
     throwIfAborted(signal);
-    await markWorkflowStepRunning(sessionId, dealId, 'save-wbs-workbook');
-    wbsDocumentId = await saveDetailedWbs(dealId, sessionId, outputs.estimator);
-    await markWorkflowStepCompleted(sessionId, dealId, 'save-wbs-workbook', String(wbsDocumentId));
-    throwIfAborted(signal);
-    await markWorkflowStepRunning(sessionId, dealId, 'save-final-report');
-    finalReportDocumentId = await saveFinalReport(dealId, sessionId, draftReport);
-    await markWorkflowStepCompleted(sessionId, dealId, 'save-final-report', String(finalReportDocumentId));
+    if (existingFinalStep?.status === 'completed' && existingFinalStep.artifact) {
+      const parsedFinalId = parseInt(String(existingFinalStep.artifact), 10);
+      if (!Number.isNaN(parsedFinalId)) {
+        finalReportDocumentId = parsedFinalId;
+      }
+    } else {
+      await markWorkflowStepRunning(sessionId, dealId, 'save-final-report');
+      finalReportDocumentId = await saveFinalProposal(dealId, sessionId, dealName, proposalMarkdown, diagramDocs);
+      await markWorkflowStepCompleted(sessionId, dealId, 'save-final-report', String(finalReportDocumentId));
+    }
   } catch (finalizeErr) {
     if (!isCancellationError(finalizeErr)) {
       await markWorkflowStepFailed(sessionId, dealId, 'save-final-report', finalizeErr);
@@ -867,7 +933,7 @@ async function finalizeAssessmentArtifacts({ dealId, sessionId, dealName, contex
   }
 
   return {
-    draftReport,
+    draftReport: proposalMarkdown,
     finalReportDocumentId,
     wbsDocumentId,
     proposedUpdates,
@@ -895,11 +961,11 @@ router.post('/start', authenticate, requireRole('Superadmin', 'Editor'), async (
     operationEntry = registerAiOperation(dealId, 'start', lockToken);
     const { signal } = operationEntry.controller;
 
-    const assessmentDocs = await getAiDocumentsByName(dealId, 'AI Assessment Report.md');
+    const assessmentDocs = await getExistingProposalDocuments(dealId);
     const force = req.body.force === true;
     if (assessmentDocs.length > 0 && !force) {
       return res.status(409).json({
-        error: 'AI assessment report already exists for this deal.',
+        error: 'AI proposal already exists for this deal.',
         hasExistingAiDocs: true,
         aiDocs: assessmentDocs.map(d => ({ id: `doc-${d.id}`, name: d.name })),
       });
@@ -908,43 +974,62 @@ router.post('/start', authenticate, requireRole('Superadmin', 'Editor'), async (
       await deleteAssessmentReport(dealId);
     }
 
-    // Reuse the latest session so already-persisted workflow state can be resumed.
-    const session = await getOrCreateSession(dealId, '');
+    const latestSessionResult = await query('SELECT * FROM ai_sessions WHERE deal_id = $1 ORDER BY id DESC LIMIT 1', [dealId]);
+    const latestSession = latestSessionResult.rows[0] || null;
+    const shouldResumeSession = latestSession && ['failed', 'running', 'active'].includes(latestSession.status);
+
+    // Reuse the latest session when a previous run failed mid-process so the
+    // workflow can continue from persisted outputs and artifacts.
+    const session = shouldResumeSession
+      ? latestSession
+      : await createSession(dealId);
     sessionForError = session;
-    let finalReportDocumentId = null;
-    let sessionStatusAfterRun = 'active';
     await attachSessionToRunLock(dealId, session.id, lockToken);
-    await setSessionStatus(session.id, 'running', dealId);
-    await addMessage(session.id, 'coordinator', 'Starting Execute AI flow. Reading deal documents and preparing context.');
+    await addMessage(
+      session.id,
+      'coordinator',
+      shouldResumeSession
+        ? 'Resuming Process flow from saved state. Reusing persisted outputs and continuing from the latest incomplete step.'
+        : 'Starting Process flow. Reading deal documents and preparing context.'
+    );
 
     const sourceDocuments = data.documents.filter(doc => doc.source === 'user' || !doc.source);
     throwIfAborted(signal);
-    const extractedDocs = await buildDealContextBundle(req.params.id, sourceDocuments);
-    throwIfAborted(signal);
-    const contextBundle = withAiNotes(summarizeContextBundle(extractedDocs), data.deal);
-    await query('UPDATE ai_sessions SET extracted_context = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', [contextBundle, session.id]);
-    await markWorkflowStepCompleted(session.id, dealId, 'extracted-context', contextBundle, {
-      documents: extractedDocs.map(d => ({ id: d.id, name: d.name, success: d.success })),
-    });
-    const readableDocs = extractedDocs.filter(d => d.success).length;
-    await addMessage(session.id, 'coordinator', `Document extraction complete: ${readableDocs}/${extractedDocs.length} document(s) readable.`);
+    let extractedDocs = [];
+    let contextBundle = session.extracted_context || '';
+    if (!contextBundle) {
+      extractedDocs = await buildDealContextBundle(req.params.id, sourceDocuments);
+      throwIfAborted(signal);
+      contextBundle = withAiNotes(summarizeContextBundle(extractedDocs), data.deal);
+      await query('UPDATE ai_sessions SET extracted_context = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', [contextBundle, session.id]);
+      await markWorkflowStepCompleted(session.id, dealId, 'extracted-context', contextBundle, {
+        documents: extractedDocs.map(d => ({ id: d.id, name: d.name, success: d.success })),
+      });
+      const readableDocs = extractedDocs.filter(d => d.success).length;
+      await addMessage(session.id, 'coordinator', `Document extraction complete: ${readableDocs}/${extractedDocs.length} document(s) readable.`);
+    } else {
+      contextBundle = refreshAiNotesInContext(contextBundle, data.deal);
+      await query('UPDATE ai_sessions SET extracted_context = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', [contextBundle, session.id]);
+      await addMessage(session.id, 'coordinator', 'Document extraction reused from the saved session state.');
+    }
     const messages = await getSessionMessages(session.id);
     const savedAgentOutputs = await getAgentOutputs(session.id);
+    const workflowSteps = await getWorkflowSteps(session.id);
     const workflowArtifacts = await getWorkflowArtifacts(session.id);
     const agentOutputs = {
       ...workflowArtifacts,
       ...savedAgentOutputs,
     };
 
+    await addMessage(session.id, 'coordinator', 'Coordinator is reviewing the deal context and choosing the next step.');
     await markWorkflowStepRunning(session.id, dealId, 'coordinator-routing', {
       documents: extractedDocs.map(d => ({ id: d.id, name: d.name, success: d.success })),
     });
-    await addMessage(session.id, 'coordinator', 'Coordinator is reviewing the deal context and choosing the next step.');
     const coordinatorResult = await coordinatorStep(
       contextBundle,
       messages,
       agentOutputs,
-      null,
+      session.coordinator_context || null,
       getAiNotes(data.deal),
       signal
     );
@@ -954,39 +1039,24 @@ router.post('/start', authenticate, requireRole('Superadmin', 'Editor'), async (
       await query('UPDATE ai_sessions SET coordinator_context = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', [coordinatorContext, session.id]);
       await markWorkflowStepCompleted(session.id, dealId, 'coordinator-context', coordinatorContext);
     }
+
+    if (coordinatorResult.status === 'clarifying' && coordinatorResult.questions?.length) {
+      const content = coordinatorResult.questions.map((q, i) => `${i + 1}. ${q}`).join('\n');
+      await addMessage(session.id, 'coordinator', content);
+    } else if (coordinatorResult.status === 'routing' && coordinatorResult.plan?.length) {
+      await addMessage(session.id, 'coordinator', `Coordinator selected agents: ${coordinatorResult.plan.join(', ')}.`);
+    } else if (coordinatorResult.status === 'ready_to_write') {
+      await addMessage(session.id, 'coordinator', 'Coordinator has enough context and is ready to draft the proposal.');
+    }
     await markWorkflowStepCompleted(session.id, dealId, 'coordinator-routing', coordinatorResult.status, {
       plan: coordinatorResult.plan || [],
       reasoning: coordinatorResult.reasoning || null,
     });
 
-    if (coordinatorResult.status === 'clarifying' && coordinatorResult.questions?.length) {
-      await addMessage(
-        session.id,
-        'coordinator',
-        buildClarifyingSummaryMessage(coordinatorResult.reasoning, coordinatorResult.questions)
-      );
-      const gapReport = buildGapAssessmentReport(
-        data.deal.name || 'Untitled Deal',
-        coordinatorContext || contextBundle,
-        coordinatorResult.questions
-      );
-      finalReportDocumentId = await saveFinalReport(dealId, session.id, gapReport);
-      await markWorkflowStepCompleted(session.id, dealId, 'draft-report', gapReport, {
-        source: 'gap-assessment',
-        missingInputs: coordinatorResult.questions.length,
-      });
-      await markWorkflowStepCompleted(session.id, dealId, 'save-final-report', String(finalReportDocumentId));
-      sessionStatusAfterRun = 'completed';
-    } else if (coordinatorResult.status === 'routing' && coordinatorResult.plan?.length) {
-      await addMessage(session.id, 'coordinator', `Coordinator selected agents: ${coordinatorResult.plan.join(', ')}.`);
-    } else if (coordinatorResult.status === 'ready_to_write') {
-      await addMessage(session.id, 'coordinator', 'Coordinator has enough context and is ready to draft the assessment report.');
-    }
-
     await setSessionPlan(session.id, coordinatorResult.status === 'routing' ? (coordinatorResult.plan || []) : null, dealId);
 
     const updatedMessages = await getSessionMessages(session.id);
-    await setSessionStatus(session.id, sessionStatusAfterRun, dealId);
+    await setSessionStatus(session.id, 'active', dealId);
 
     res.json({
       sessionId: session.id,
@@ -1008,7 +1078,7 @@ router.post('/start', authenticate, requireRole('Superadmin', 'Editor'), async (
     if (sessionForError?.id) {
       try {
         await setSessionStatus(sessionForError.id, 'failed', dealId);
-        await addMessage(sessionForError.id, 'coordinator', `Execute AI stopped: ${err.message || 'Unexpected error while starting AI flow.'}`);
+        await addMessage(sessionForError.id, 'coordinator', `Process stopped: ${err.message || 'Unexpected error while starting AI flow.'}`);
       } catch (messageErr) {
         console.error('Failed to save AI start error message:', messageErr);
       }
@@ -1050,49 +1120,38 @@ router.post('/validate', authenticate, requireRole('Superadmin', 'Editor'), asyn
     operationEntry = registerAiOperation(dealId, 'validate', lockToken);
     const { signal } = operationEntry.controller;
 
-    const clientDocuments = data.documents.filter(doc => doc.source === 'user' || !doc.source);
+    const userDocuments = data.documents.filter(doc => doc.source === 'user' || !doc.source);
     const aiDocuments = data.documents.filter(doc => doc.source === 'ai');
-    if (aiDocuments.length < 2) {
-      return res.status(409).json({ error: 'Validation requires at least two AI documents: an assessment report and a WBS workbook.' });
-    }
 
     const {
-      primaryAssessmentDocumentId,
-      primaryWbsDocumentId,
-      additionalDocumentIds = [],
+      userDocumentIds = [],
+      aiDocumentIds = [],
     } = req.body || {};
 
-    const assessmentId = parseDocumentId(primaryAssessmentDocumentId);
-    const wbsId = parseDocumentId(primaryWbsDocumentId);
-    if (!assessmentId || !wbsId) {
-      return res.status(400).json({ error: 'Validation requires both a primary assessment document and a primary WBS document.' });
+    if (!Array.isArray(userDocumentIds) || userDocumentIds.length === 0) {
+      return res.status(400).json({ error: 'Validation requires at least one user document.' });
     }
-    if (assessmentId === wbsId) {
-      return res.status(400).json({ error: 'Assessment report and WBS workbook must be different documents.' });
+    if (!Array.isArray(aiDocumentIds) || aiDocumentIds.length === 0) {
+      return res.status(400).json({ error: 'Validation requires at least one AI document.' });
     }
 
-    const additionalIds = Array.isArray(additionalDocumentIds)
-      ? additionalDocumentIds.map(parseDocumentId).filter(id => id !== null)
-      : [];
-    if (additionalIds.length !== (Array.isArray(additionalDocumentIds) ? additionalDocumentIds.length : 0)) {
-      return res.status(400).json({ error: 'One or more selected additional documents are invalid.' });
-    }
-    if (additionalIds.includes(assessmentId) || additionalIds.includes(wbsId)) {
-      return res.status(400).json({ error: 'Primary validation documents cannot also be included as additional documents.' });
+    const parsedUserIds = userDocumentIds.map(parseDocumentId);
+    const parsedAiIds = aiDocumentIds.map(parseDocumentId);
+    if (parsedUserIds.some(id => id === null) || parsedAiIds.some(id => id === null)) {
+      return res.status(400).json({ error: 'One or more selected validation documents are invalid.' });
     }
 
+    const userDocsById = new Map(userDocuments.map(doc => [doc.id, doc]));
     const aiDocsById = new Map(aiDocuments.map(doc => [doc.id, doc]));
-    const assessment = aiDocsById.get(assessmentId);
-    const wbs = aiDocsById.get(wbsId);
-    if (!assessment || !wbs) {
-      return res.status(400).json({ error: 'Selected validation documents must belong to this deal and be stored in the AI Documents section.' });
-    }
+    const selectedUserDocuments = parsedUserIds.map(id => userDocsById.get(id)).filter(Boolean);
+    const selectedAiDocuments = parsedAiIds.map(id => aiDocsById.get(id)).filter(Boolean);
 
-    const additionalDocs = additionalIds.map(id => aiDocsById.get(id)).filter(Boolean);
-    if (additionalDocs.length !== additionalIds.length) {
-      return res.status(400).json({ error: 'One or more additional validation documents do not belong to this deal or are not stored in the AI Documents section.' });
+    if (selectedUserDocuments.length !== parsedUserIds.length) {
+      return res.status(400).json({ error: 'One or more selected user documents do not belong to this deal or are not user documents.' });
     }
-    const selectedSupplierDocuments = [assessment, wbs, ...additionalDocs];
+    if (selectedAiDocuments.length !== parsedAiIds.length) {
+      return res.status(400).json({ error: 'One or more selected AI documents do not belong to this deal or are not AI documents.' });
+    }
 
     const session = await getOrCreateSession(dealId);
     sessionForError = session;
@@ -1103,10 +1162,10 @@ router.post('/validate', authenticate, requireRole('Superadmin', 'Editor'), asyn
 
     currentStepKey = 'validation-client-context';
     await markWorkflowStepRunning(session.id, dealId, currentStepKey, {
-      documents: clientDocuments.map(doc => ({ id: doc.id, name: doc.name })),
+      documents: selectedUserDocuments.map(doc => ({ id: doc.id, name: doc.name })),
     });
     throwIfAborted(signal);
-    const clientExtracted = await buildDealContextBundle(req.params.id, clientDocuments);
+    const clientExtracted = await buildDealContextBundle(req.params.id, selectedUserDocuments);
     throwIfAborted(signal);
     const clientContext = summarizeContextBundle(clientExtracted);
     await markWorkflowStepCompleted(session.id, dealId, currentStepKey, clientContext, {
@@ -1115,17 +1174,17 @@ router.post('/validate', authenticate, requireRole('Superadmin', 'Editor'), asyn
 
     currentStepKey = 'validation-supplier-context';
     await markWorkflowStepRunning(session.id, dealId, currentStepKey, {
-      documents: selectedSupplierDocuments.map(doc => ({ id: doc.id, name: doc.name })),
+      documents: selectedAiDocuments.map(doc => ({ id: doc.id, name: doc.name })),
     });
     throwIfAborted(signal);
-    const supplierExtracted = await buildDealContextBundle(req.params.id, selectedSupplierDocuments);
+    const supplierExtracted = await buildDealContextBundle(req.params.id, selectedAiDocuments);
     throwIfAborted(signal);
     const supplierContext = summarizeContextBundle(supplierExtracted);
     await markWorkflowStepCompleted(session.id, dealId, currentStepKey, supplierContext, {
       documents: supplierExtracted.map(doc => ({ id: doc.id, name: doc.name, success: doc.success })),
     });
 
-    const supplierInventory = selectedSupplierDocuments
+    const supplierInventory = selectedAiDocuments
       .filter(doc => doc.artifact_type !== 'validation-report')
       .map(doc => `- ${doc.name}${doc.artifact_type ? ` (${doc.artifact_type})` : ''}`)
       .join('\n');
@@ -1153,9 +1212,8 @@ router.post('/validate', authenticate, requireRole('Superadmin', 'Editor'), asyn
 
     currentStepKey = 'validation-report';
     await markWorkflowStepRunning(session.id, dealId, currentStepKey, {
-      assessmentDocumentId: assessment.id,
-      wbsDocumentId: wbs.id,
-      additionalDocumentIds: additionalDocs.map(doc => doc.id),
+      userDocumentIds: selectedUserDocuments.map(doc => doc.id),
+      aiDocumentIds: selectedAiDocuments.map(doc => doc.id),
     });
     const reportMarkdown = await callAgent('validator', messages, {
       priorityInstructions: getAiNotes(data.deal),
@@ -1164,9 +1222,8 @@ router.post('/validate', authenticate, requireRole('Superadmin', 'Editor'), asyn
     });
 
     await markWorkflowStepCompleted(session.id, dealId, currentStepKey, reportMarkdown, {
-      assessmentDocumentId: assessment.id,
-      wbsDocumentId: wbs.id,
-      additionalDocumentIds: additionalDocs.map(doc => doc.id),
+      userDocumentIds: selectedUserDocuments.map(doc => doc.id),
+      aiDocumentIds: selectedAiDocuments.map(doc => doc.id),
     });
 
     currentStepKey = 'save-validation-report';
@@ -1240,7 +1297,7 @@ router.post('/message', authenticate, requireRole('Superadmin', 'Editor'), async
     await attachSessionToRunLock(dealId, session.id, lockToken);
     await setSessionStatus(session.id, 'running', dealId);
     await addMessage(session.id, 'user', content);
-
+    
     const messages = await getSessionMessages(session.id);
     const dealData = await getDealWithDocs(dealId);
     const contextBundle = refreshAiNotesInContext(session.extracted_context || '', dealData?.deal);
@@ -1252,6 +1309,7 @@ router.post('/message', authenticate, requireRole('Superadmin', 'Editor'), async
       await setSessionStatus(session.id, 'running', dealId);
       session.coordinator_context = null;
     }
+    const sourceDocuments = dealData?.documents?.filter(doc => doc.source === 'user' || !doc.source) || [];
     const savedAgentOutputs = await getAgentOutputs(session.id);
     const workflowArtifacts = await getWorkflowArtifacts(session.id);
     const agentOutputs = {
@@ -1259,7 +1317,6 @@ router.post('/message', authenticate, requireRole('Superadmin', 'Editor'), async
       ...savedAgentOutputs,
     };
     const aiNotes = getAiNotes(dealData?.deal);
-    const sourceDocuments = (dealData?.documents || []).filter(doc => doc.source === 'user' || !doc.source);
 
     await markWorkflowStepRunning(session.id, dealId, 'coordinator-routing', {
       mode: session.coordinator_context ? 'resume' : 'start',
@@ -1302,7 +1359,6 @@ router.post('/message', authenticate, requireRole('Superadmin', 'Editor'), async
     let finalReportDocumentId = null;
     let wbsDocumentId = null;
     let proposedUpdates = null;
-    let sessionStatusAfterRun = 'active';
     const persistAgentOutput = async (slug, output) => {
       await saveAgentOutput(session.id, slug, output);
       await markWorkflowStepCompleted(session.id, dealId, slug, output, { source: 'agent-plan' });
@@ -1321,7 +1377,7 @@ router.post('/message', authenticate, requireRole('Superadmin', 'Editor'), async
       const dealRow = await query('SELECT name FROM deals WHERE id = $1', [dealId]);
       const dealName = dealRow.rows[0]?.name || 'Untitled Deal';
       await setSessionPlan(session.id, coordinatorResult.plan, dealId);
-      await addMessage(session.id, 'agent', 'Running Legal and Architect in parallel. Estimator and Copywriter will follow.', 'coordinator');
+      await addMessage(session.id, 'agent', 'Running Legal and Architect in parallel. Estimator will follow.', 'coordinator');
       try {
         await markWorkflowStepRunning(session.id, dealId, 'agent-plan', { plan: coordinatorResult.plan });
         newAgentOutputs = await runAgentPlan(
@@ -1352,7 +1408,13 @@ router.post('/message', authenticate, requireRole('Superadmin', 'Editor'), async
         signal
       );
       if (nextResult.status === 'ready_to_write') {
-        await addMessage(session.id, 'agent', 'Agents complete. Copywriter is finalizing the draft assessment report.', 'coordinator');
+        await addMessage(session.id, 'agent', 'Agents complete. Coordinator is finalizing the proposal draft.', 'coordinator');
+        const finalWorkflowSteps = await getWorkflowSteps(session.id);
+        const finalWorkflowStepMap = new Map(finalWorkflowSteps.map(step => [step.step_key, step]));
+        const existingDraftStep = finalWorkflowStepMap.get('draft-report');
+        const proposalMarkdown = existingDraftStep?.status === 'completed' && existingDraftStep.artifact
+          ? existingDraftStep.artifact
+          : await buildFinalProposalMarkdown(dealName, agentContext, updatedMessages, updatedOutputs, aiNotes, signal);
         ({
           finalReportDocumentId,
           wbsDocumentId,
@@ -1361,43 +1423,28 @@ router.post('/message', authenticate, requireRole('Superadmin', 'Editor'), async
           dealId,
           sessionId: session.id,
           dealName,
+          proposalMarkdown,
           contextBundle,
-          agentContext,
           outputs: updatedOutputs,
           aiNotes,
           signal,
+          resumeWorkflowSteps: finalWorkflowSteps,
         }));
-        await addMessage(session.id, 'agent', 'Draft assessment report and WBS generated. Use Validate to run the compliance audit.', 'coordinator');
+        await addMessage(session.id, 'agent', 'Proposal DOCX, diagrams, and WBS generated. Use Validate to run the compliance audit.', 'coordinator');
       } else if (nextResult.status === 'clarifying' && nextResult.questions?.length) {
         const qContent = nextResult.questions.map((q, i) => `${i + 1}. ${q}`).join('\n');
-        const gapReport = buildGapAssessmentReport(
-          data.deal.name || 'Untitled Deal',
-          coordinatorContext || contextBundle,
-          nextResult.questions
-        );
-        finalReportDocumentId = await saveFinalReport(dealId, session.id, gapReport);
-        await markWorkflowStepCompleted(session.id, dealId, 'draft-report', gapReport, {
-          source: 'gap-assessment',
-          missingInputs: nextResult.questions.length,
-        });
-        await markWorkflowStepCompleted(session.id, dealId, 'save-final-report', String(finalReportDocumentId));
-        await addMessage(
-          session.id,
-          'coordinator',
-          buildClarifyingSummaryMessage(nextResult.reasoning, nextResult.questions)
-        );
-        sessionStatusAfterRun = 'completed';
+        await addMessage(session.id, 'coordinator', qContent);
       }
     } else if (coordinatorResult.status === 'ready_to_write') {
       const updatedOutputs = await getAgentOutputs(session.id);
-      const requiredOutputs = ['legal', 'architect', 'estimator', 'copywriter'];
+      const requiredOutputs = ['legal', 'architect', 'estimator'];
       if (requiredOutputs.some(slug => !updatedOutputs[slug])) {
         // Resume any missing required steps before finalization.
         const defaultPlan = ['legal', 'architect', 'estimator'];
         const dealRow = await query('SELECT name FROM deals WHERE id = $1', [dealId]);
         const dealName = dealRow.rows[0]?.name || 'Untitled Deal';
         await setSessionPlan(session.id, defaultPlan, dealId);
-        await addMessage(session.id, 'agent', 'Running Legal and Architect in parallel. Estimator and Copywriter will follow.', 'coordinator');
+        await addMessage(session.id, 'agent', 'Running Legal and Architect in parallel. Estimator will follow.', 'coordinator');
         try {
           await markWorkflowStepRunning(session.id, dealId, 'agent-plan', { plan: defaultPlan });
           newAgentOutputs = await runAgentPlan(
@@ -1417,41 +1464,39 @@ router.post('/message', authenticate, requireRole('Superadmin', 'Editor'), async
         }
       }
       const finalOutputs = await getAgentOutputs(session.id);
+      const finalMessages = await getSessionMessages(session.id);
       const dealRow = await query('SELECT name FROM deals WHERE id = $1', [dealId]);
       const dealName = dealRow.rows[0]?.name || 'Untitled Deal';
-      await addMessage(session.id, 'agent', 'Agents complete. Copywriter is finalizing the draft assessment report.', 'coordinator');
+      const finalWorkflowSteps = await getWorkflowSteps(session.id);
+      const finalWorkflowStepMap = new Map(finalWorkflowSteps.map(step => [step.step_key, step]));
+      const existingDraftStep = finalWorkflowStepMap.get('draft-report');
+      const proposalMarkdown = existingDraftStep?.status === 'completed' && existingDraftStep.artifact
+        ? existingDraftStep.artifact
+        : await buildFinalProposalMarkdown(dealName, agentContext, finalMessages, finalOutputs, aiNotes, signal);
+      await addMessage(session.id, 'agent', 'Agents complete. Coordinator is finalizing the proposal draft.', 'coordinator');
       ({
         finalReportDocumentId,
         wbsDocumentId,
         proposedUpdates,
-      } = await finalizeAssessmentArtifacts({
+        } = await finalizeAssessmentArtifacts({
         dealId,
         sessionId: session.id,
         dealName,
+        proposalMarkdown,
         contextBundle,
-        agentContext,
         outputs: finalOutputs,
         aiNotes,
         signal,
+        resumeWorkflowSteps: finalWorkflowSteps,
       }));
-      await addMessage(session.id, 'agent', 'Draft assessment report and WBS generated. Use Validate to run the compliance audit.', 'coordinator');
+      await addMessage(session.id, 'agent', 'Proposal DOCX, diagrams, and WBS generated. Use Validate to run the compliance audit.', 'coordinator');
     } else if (coordinatorResult.status === 'clarifying' && coordinatorResult.questions?.length) {
-      const gapReport = buildGapAssessmentReport(
-        data.deal.name || 'Untitled Deal',
-        coordinatorContext || contextBundle,
-        coordinatorResult.questions
-      );
-      finalReportDocumentId = await saveFinalReport(dealId, session.id, gapReport);
-      await markWorkflowStepCompleted(session.id, dealId, 'draft-report', gapReport, {
-        source: 'gap-assessment',
-        missingInputs: coordinatorResult.questions.length,
-      });
-      await markWorkflowStepCompleted(session.id, dealId, 'save-final-report', String(finalReportDocumentId));
-      sessionStatusAfterRun = 'completed';
+      const qContent = coordinatorResult.questions.map((q, i) => `${i + 1}. ${q}`).join('\n');
+      await addMessage(session.id, 'coordinator', qContent);
     }
 
     if (!finalReportDocumentId) {
-      await setSessionStatus(session.id, sessionStatusAfterRun, dealId);
+      await setSessionStatus(session.id, 'active', dealId);
     }
     const updatedMessages = await getSessionMessages(session.id);
     const updatedSession = await query('SELECT * FROM ai_sessions WHERE id = $1', [session.id]);
@@ -1607,7 +1652,7 @@ router.post('/chat', authenticate, requireRole('Superadmin', 'Editor'), async (r
 
     await addChatMessage(dealId, 'user', content);
     const history = await getChatMessages(dealId);
-
+   
     const messages = [
       {
         role: 'user',

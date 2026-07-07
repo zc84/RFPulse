@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { ArrowLeft, Bot, Edit2, KeyRound, HelpCircle, Save, Loader2, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Bot, Edit2, KeyRound, HelpCircle, Save, Loader2, RefreshCw, Upload, Trash2, FileText } from 'lucide-react';
 import { Agent, GlobalAISettings, OpenAIModel, PromptTemplate } from '../types';
 import { agentsApi } from '../api';
 import Header from '../components/Header';
@@ -60,6 +60,8 @@ export default function AgentManagementPage({ embedded = false }: { embedded?: b
   const [modelsLoading, setModelsLoading] = useState(false);
   const [modelsError, setModelsError] = useState<string | null>(null);
   const [savingKey, setSavingKey] = useState(false);
+  const [proposalTemplateFile, setProposalTemplateFile] = useState<File | null>(null);
+  const [savingTemplate, setSavingTemplate] = useState(false);
   const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
   const [form, setForm] = useState<Partial<Agent>>({});
   const [savingAgent, setSavingAgent] = useState(false);
@@ -118,6 +120,36 @@ export default function AgentManagementPage({ embedded = false }: { embedded?: b
       toast.error('Failed to save API key.');
     } finally {
       setSavingKey(false);
+    }
+  };
+
+  const handleUploadProposalTemplate = async () => {
+    if (!proposalTemplateFile) return;
+    setSavingTemplate(true);
+    try {
+      await agentsApi.uploadProposalTemplate(proposalTemplateFile);
+      toast.success('Proposal template saved.');
+      setProposalTemplateFile(null);
+      await load();
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to upload proposal template.');
+    } finally {
+      setSavingTemplate(false);
+    }
+  };
+
+  const handleDeleteProposalTemplate = async () => {
+    if (!window.confirm('Remove the active proposal template? The system will use the built-in fallback layout.')) return;
+    setSavingTemplate(true);
+    try {
+      await agentsApi.deleteProposalTemplate();
+      toast.success('Proposal template removed.');
+      setProposalTemplateFile(null);
+      await load();
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to remove proposal template.');
+    } finally {
+      setSavingTemplate(false);
     }
   };
 
@@ -233,6 +265,56 @@ export default function AgentManagementPage({ embedded = false }: { embedded?: b
             >
               Refresh Models
             </Button>
+          </div>
+        </div>
+
+        <div style={{
+          background: '#fff', border: '1px solid #E2E8F0', borderRadius: 12,
+          padding: '20px', marginBottom: 20, boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+            <FileText size={16} color="#4F46E5" />
+            <h2 style={{ fontSize: 14, fontWeight: 600, color: '#0F172A' }}>Proposal Template</h2>
+          </div>
+          <p style={{ fontSize: 12, color: '#64748B', marginBottom: 12 }}>
+            Upload a DOCX template for the final proposal. If no template is uploaded, the system uses a built-in fallback layout.
+          </p>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+            <label style={{
+              display: 'inline-flex', alignItems: 'center', gap: 8,
+              padding: '10px 12px', borderRadius: 8, border: '1px dashed #CBD5E1',
+              background: '#FAFAFA', cursor: 'pointer', fontSize: 13, color: '#334155',
+            }}>
+              <Upload size={14} />
+              <span>{proposalTemplateFile ? proposalTemplateFile.name : 'Choose DOCX file'}</span>
+              <input
+                type="file"
+                accept=".docx"
+                onChange={e => setProposalTemplateFile(e.target.files?.[0] || null)}
+                style={{ display: 'none' }}
+              />
+            </label>
+            <Button
+              onClick={handleUploadProposalTemplate}
+              loading={savingTemplate}
+              disabled={!proposalTemplateFile}
+              icon={<Save size={14} />}
+            >
+              Save Template
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={handleDeleteProposalTemplate}
+              disabled={!settings?.has_proposal_template || savingTemplate}
+              icon={<Trash2 size={14} />}
+            >
+              Remove Template
+            </Button>
+          </div>
+          <div style={{ marginTop: 12, fontSize: 12, color: '#64748B' }}>
+            {settings?.has_proposal_template
+              ? `Active template: ${settings.proposal_template_name || 'proposal-template.docx'}${settings.proposal_template_uploaded_at ? ` · uploaded ${new Date(settings.proposal_template_uploaded_at).toLocaleString()}` : ''}`
+              : 'No active proposal template. The fallback DOCX layout will be used.'}
           </div>
         </div>
 

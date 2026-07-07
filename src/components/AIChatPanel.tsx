@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Send, Bot, User as UserIcon, Loader2, FileText, CheckCircle, AlertCircle } from 'lucide-react';
+import { Send, Square, Bot, User as UserIcon, Loader2, FileText, CheckCircle, AlertCircle } from 'lucide-react';
 import { AIMessage, AIChatMessage, AIWorkflowStep, AISession } from '../types';
 import Button from './Button';
 
@@ -12,6 +12,16 @@ interface AIChatPanelProps {
   workflowSteps?: AIWorkflowStep[];
   sessionStatus?: AISession['status'] | null;
   streamStatus?: 'connecting' | 'connected' | 'reconnecting' | 'offline';
+  actionTabs?: Array<{
+    key: string;
+    label: string;
+    onClick: () => void;
+    disabled?: boolean;
+    title?: string;
+  }>;
+  onStop?: () => void;
+  stopDisabled?: boolean;
+  stopLoading?: boolean;
   onSend: (content: string) => void;
   disabled?: boolean;
   emptyMessage?: string;
@@ -60,8 +70,8 @@ const EXECUTE_STAGES: WorkflowStage[] = [
     stepKeys: ['estimator-brief', 'estimator'],
   },
   {
-    label: 'Draft package',
-    stepKeys: ['copywriter', 'draft-report'],
+    label: 'Proposal draft',
+    stepKeys: ['draft-report'],
   },
   {
     label: 'Generate diagrams',
@@ -182,7 +192,7 @@ function getPinnedNotice(messages: Array<AIMessage | AIChatMessage>) {
   const interesting = [...messages].reverse().find(message => {
     if (message.role === 'user') return false;
     const content = typeof message.content === 'string' ? message.content : '';
-    return /Validation report saved to AI documents\.|Draft assessment report and WBS generated\.|AI run stopped\.|Validation stopped:/.test(content);
+    return /Validation report saved to AI documents\.|Proposal DOCX, diagrams, and WBS generated\.|AI run stopped\.|Validation stopped:/.test(content);
   });
 
   if (!interesting || typeof interesting.content !== 'string') return null;
@@ -325,29 +335,6 @@ function WorkflowStatusPanel({
         </div>
       </div>
 
-      {runFinished && completedStages.length > 2 && !failedStep && showDetails && (
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-          <div style={{ fontSize: 11, color: '#64748B' }}>
-            {completedStages.length} stages completed
-          </div>
-          <button
-            type="button"
-            onClick={() => setShowDetails(prev => !prev)}
-            style={{
-              border: 'none',
-              background: 'transparent',
-              padding: 0,
-              fontSize: 11,
-              fontWeight: 600,
-              color: '#2563EB',
-              cursor: 'pointer',
-            }}
-          >
-            Collapse run
-          </button>
-        </div>
-      )}
-
       {showDetails && (
         <div style={{ display: 'grid', gap: 8, paddingTop: 4 }}>
         {visibleStages.map(stage => {
@@ -472,6 +459,10 @@ export default function AIChatPanel({
   workflowSteps = [],
   sessionStatus = null,
   streamStatus = 'offline',
+  actionTabs = [],
+  onStop,
+  stopDisabled = false,
+  stopLoading = false,
   onSend,
   disabled,
   emptyMessage,
@@ -589,6 +580,37 @@ export default function AIChatPanel({
           font-weight: 600;
         }
       `}</style>
+      {actionTabs.length > 0 && (
+        <div style={{
+          padding: '12px 16px 0',
+          display: 'flex',
+          gap: 8,
+          flexWrap: 'wrap',
+        }}>
+          {actionTabs.map(tab => (
+            <button
+              key={tab.key}
+              type="button"
+              onClick={tab.onClick}
+              disabled={tab.disabled}
+              title={tab.title}
+              style={{
+                border: '1px solid #CBD5E1',
+                borderBottomColor: tab.disabled ? '#CBD5E1' : '#94A3B8',
+                background: tab.disabled ? '#F8FAFC' : '#FFFFFF',
+                color: tab.disabled ? '#94A3B8' : '#0F172A',
+                borderRadius: 10,
+                padding: '7px 12px',
+                fontSize: 12,
+                fontWeight: 700,
+                cursor: tab.disabled ? 'not-allowed' : 'pointer',
+              }}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      )}
       {/* Extracted docs summary */}
       {extractedDocs && extractedDocs.length > 0 && (
         <div style={{
@@ -644,6 +666,19 @@ export default function AIChatPanel({
             fontSize: 13, outline: 'none', background: disabled ? '#F8FAFC' : '#fff',
           }}
         />
+        {onStop && (
+          <Button
+            type="button"
+            size="md"
+            variant="danger"
+            icon={stopLoading ? <Loader2 size={14} style={{ animation: 'spin 0.8s linear infinite' }} /> : <Square size={14} />}
+            onClick={onStop}
+            disabled={stopDisabled}
+            loading={stopLoading}
+          >
+            Stop
+          </Button>
+        )}
         <Button
           type="submit"
           size="md"

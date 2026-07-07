@@ -2,17 +2,44 @@ import { Router } from 'express';
 import { query } from '../db.js';
 import { authenticate, requireRole } from '../middleware/auth.js';
 import { ensureDefaultAgents, getOpenAIKey, listOpenAIModels, validateOpenAIKey } from '../services/aiOrchestrator.js';
+import multer from 'multer';
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
+import { getProposalTemplateSettings, saveProposalTemplate, deleteProposalTemplate } from '../services/proposalTemplate.js';
 
 const router = Router();
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(__dirname, '..', 'uploads');
+const SYSTEM_DIR = path.join(UPLOAD_DIR, 'system');
+if (!fs.existsSync(SYSTEM_DIR)) {
+  fs.mkdirSync(SYSTEM_DIR, { recursive: true });
+}
 
 const OPENAI_KEY_MASK = '••••••••••••••••••••••••••';
+const TEMPLATE_FILENAME = 'proposal-template.docx';
+const templateUpload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => cb(null, SYSTEM_DIR),
+    filename: (req, file, cb) => cb(null, TEMPLATE_FILENAME),
+  }),
+  limits: { fileSize: 20 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const isDocx = file.mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || path.extname(file.originalname || '').toLowerCase() === '.docx';
+    cb(isDocx ? null : new Error('Proposal template must be a DOCX file.'), isDocx);
+  },
+});
 
 router.get('/settings', authenticate, requireRole('Superadmin'), async (req, res, next) => {
   try {
     const key = await getOpenAIKey();
+    const proposalTemplate = await getProposalTemplateSettings();
     res.json({
       openai_api_key: key ? OPENAI_KEY_MASK : '',
       has_key: !!key,
+      proposal_template_name: proposalTemplate.original_name || '',
+      proposal_template_uploaded_at: proposalTemplate.uploaded_at || null,
+      has_proposal_template: proposalTemplate.has_template,
     });
   } catch (err) {
     next(err);
@@ -55,6 +82,33 @@ router.post('/settings', authenticate, requireRole('Superadmin'), async (req, re
     );
 
     res.json({ openai_api_key: OPENAI_KEY_MASK, has_key: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/proposal-template', authenticate, requireRole('Superadmin'), templateUpload.single('template'), async (req, res, next) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'Proposal template file is required' });
+    const metadata = await saveProposalTemplate(req.file.path, req.file.originalname);
+    res.json({
+      proposal_template_name: metadata.originalName,
+      proposal_template_uploaded_at: metadata.uploadedAt,
+      has_proposal_template: true,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.delete('/proposal-template', authenticate, requireRole('Superadmin'), async (req, res, next) => {
+  try {
+    await deleteProposalTemplate();
+    res.json({
+      proposal_template_name: '',
+      proposal_template_uploaded_at: null,
+      has_proposal_template: false,
+    });
   } catch (err) {
     next(err);
   }

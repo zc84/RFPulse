@@ -163,6 +163,11 @@ export interface AIMessageResponse {
   agentOutputs?: Record<string, string>;
 }
 
+export interface AIValidateRequest {
+  userDocumentIds: string[];
+  aiDocumentIds: string[];
+}
+
 export interface AIValidateResponse {
   documentId: number;
   documentName: string;
@@ -179,6 +184,9 @@ export interface ProposedDealUpdates {
 export interface GlobalAISettings {
   openai_api_key: string;
   has_key: boolean;
+  proposal_template_name?: string;
+  proposal_template_uploaded_at?: string | null;
+  has_proposal_template?: boolean;
 }
 
 export interface OpenAIModel {

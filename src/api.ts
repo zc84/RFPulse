@@ -1,4 +1,4 @@
-import { User, Agent, GlobalAISettings, OpenAIModel, AIMessage, AIStartResponse, AIMessageResponse, AISessionResponse, AIChatMessage, AIValidateResponse, DealLock, PlatformConfigOption, PromptTemplate, Document } from './types';
+import { User, Agent, GlobalAISettings, OpenAIModel, AIMessage, AIStartResponse, AIMessageResponse, AISessionResponse, AIChatMessage, AIValidateResponse, AIValidateRequest, DealLock, PlatformConfigOption, PromptTemplate, Document } from './types';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
@@ -187,6 +187,24 @@ export const agentsApi = {
   getPrompts: () => apiFetch('/ai/agents/prompts/all') as Promise<PromptTemplate[]>,
   updatePrompt: (key: string, content: string) =>
     apiFetch(`/ai/agents/prompts/${encodeURIComponent(key)}`, { method: 'PUT', body: JSON.stringify({ content }) }) as Promise<PromptTemplate>,
+  uploadProposalTemplate: (file: File) => {
+    const formData = new FormData();
+    formData.append('template', file);
+    const token = getToken();
+    return fetch(`${API_BASE_URL}/ai/agents/proposal-template`, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: formData,
+    }).then(async res => {
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.error || 'Proposal template upload failed');
+      }
+      return res.json();
+    }) as Promise<{ proposal_template_name: string; proposal_template_uploaded_at: string | null; has_proposal_template: boolean }>;
+  },
+  deleteProposalTemplate: () =>
+    apiFetch('/ai/agents/proposal-template', { method: 'DELETE' }) as Promise<{ proposal_template_name: string; proposal_template_uploaded_at: string | null; has_proposal_template: boolean }>,
 };
 
 export const platformApi = {
@@ -226,6 +244,6 @@ export const aiApi = {
     apiFetch(`/deals/${dealId}/ai/chat`) as Promise<{ messages: AIChatMessage[] }>,
   sendChat: (dealId: string, content: string) =>
     apiFetch(`/deals/${dealId}/ai/chat`, { method: 'POST', body: JSON.stringify({ content }) }) as Promise<{ messages: AIChatMessage[] }>,
-  validate: (dealId: string, payload: { primaryAssessmentDocumentId: string; primaryWbsDocumentId: string; additionalDocumentIds: string[] }) =>
+  validate: (dealId: string, payload: AIValidateRequest) =>
     apiFetch(`/deals/${dealId}/ai/validate`, { method: 'POST', body: JSON.stringify(payload) }) as Promise<AIValidateResponse>,
 };
