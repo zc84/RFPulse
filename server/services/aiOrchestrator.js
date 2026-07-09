@@ -1,5 +1,7 @@
 import OpenAI from 'openai';
 import { zodResponseFormat } from 'openai/helpers/zod';
+import { readFile } from 'fs/promises';
+import { skillFile as apexGanttSkillFile, referencePath as apexGanttReferencePath } from 'apexgantt-skill';
 import { query } from '../db.js';
 import { DEFAULT_PROMPT_TEMPLATES, getDefaultAgents } from './aiPrompts.js';
 import {
@@ -12,6 +14,7 @@ import {
 
 const DEFAULT_AGENT_SLUGS = ['coordinator', 'legal', 'architect', 'estimator', 'frontend-dev'];
 const REQUIRED_SPECIALIST_SLUGS = ['legal', 'architect', 'estimator'];
+let apexGanttGuidanceCache = null;
 
 function createAiError(message, status = 502) {
   const error = new Error(message);
@@ -71,6 +74,66 @@ function describeOpenAIError(err) {
     return `OpenAI request failed after retries (${statusText}). Please try again in a moment.`;
   }
   return err.message || 'OpenAI request failed.';
+}
+
+function isPreviousResponseNotFoundError(err) {
+  const code = err?.code || err?.error?.code || err?.details?.code;
+  const param = err?.param || err?.error?.param || err?.details?.param;
+  const message = String(err?.message || err?.error?.message || err?.details?.message || '');
+  return (
+    code === 'previous_response_not_found'
+    || param === 'previous_response_id'
+    || /previous response.+not found/i.test(message)
+  );
+}
+
+function stripResponseChainParams(params) {
+  if (!params || typeof params !== 'object') {
+    return { sanitized: params, removedKeys: [] };
+  }
+
+  const sanitized = { ...params };
+  const responseChainKeys = [
+    'previous_response_id',
+    'previousResponseId',
+    'previous_response',
+    'response_id',
+  ];
+  const removedKeys = [];
+
+  for (const key of responseChainKeys) {
+    if (key in sanitized) {
+      delete sanitized[key];
+      removedKeys.push(key);
+    }
+  }
+
+  return { sanitized, removedKeys };
+}
+
+async function createChatCompletionWithFallback(client, params, signal, slug) {
+  const requestOptions = signal ? { signal } : undefined;
+  try {
+    return await client.chat.completions.create(params, requestOptions);
+  } catch (err) {
+    if (!isPreviousResponseNotFoundError(err)) {
+      throw err;
+    }
+
+    const { sanitized, removedKeys } = stripResponseChainParams(params);
+    if (removedKeys.length > 0) {
+      console.warn('OpenAI previous response id was not found; retrying without response-chain params.', {
+        agent: slug,
+        removedKeys,
+      });
+    } else {
+      console.warn('OpenAI previous response id was not found; retrying once with the same request.', {
+        agent: slug,
+      });
+    }
+
+    return await client.chat.completions.create(sanitized, requestOptions);
+  }
 }
 
 function parseAgentJson(raw, label, schema) {
@@ -221,6 +284,9 @@ export async function ensureDefaultAgents() {
 }
 
 export async function loadPromptTemplates(agentSlug, taskPromptKey = null) {
+  if (taskPromptKey && agentSlug !== 'coordinator') {
+    throw new Error(`Task prompt templates are coordinator-only. Received "${taskPromptKey}" for agent ${agentSlug}`);
+  }
   const keys = ['shared.source-boundaries', 'shared.multilingual', 'shared.ai-notes'];
   if (taskPromptKey) keys.push(taskPromptKey);
   const result = await query(
@@ -236,6 +302,29 @@ export async function loadPromptTemplates(agentSlug, taskPromptKey = null) {
     throw new Error(`Prompt template "${taskPromptKey}" does not belong to agent ${agentSlug}`);
   }
   return keys.map(key => byKey.get(key));
+}
+
+async function loadApexGanttGuidance() {
+  if (apexGanttGuidanceCache) return apexGanttGuidanceCache;
+  try {
+    const [skill, dataFormat, dependencies] = await Promise.all([
+      readFile(apexGanttSkillFile, 'utf8'),
+      readFile(apexGanttReferencePath('data-format.md'), 'utf8'),
+      readFile(apexGanttReferencePath('dependencies.md'), 'utf8'),
+    ]);
+    apexGanttGuidanceCache = clipText([
+      '# ApexGantt skill (installed project reference)',
+      skill,
+      '# ApexGantt task data reference',
+      dataFormat,
+      '# ApexGantt dependency reference',
+      dependencies,
+    ].join('\n\n'), 9000, true);
+  } catch (err) {
+    console.warn('ApexGantt skill guidance could not be loaded. Continuing without it.', err?.message || err);
+    apexGanttGuidanceCache = '';
+  }
+  return apexGanttGuidanceCache;
 }
 
 function clipText(text, maxChars = Infinity, tail = false) {
@@ -472,7 +561,7 @@ export async function callAgent(slug, messages, options = {}) {
     try {
       throwIfAborted(options.signal);
       const client = await getOpenAIClient();
-      const response = await client.chat.completions.create(params, options.signal ? { signal: options.signal } : undefined);
+      const response = await createChatCompletionWithFallback(client, params, options.signal, slug);
       const choice = response.choices?.[0];
       if (!choice) {
         throw createAiError(`OpenAI returned no choices for agent ${slug}.`);
@@ -734,6 +823,8 @@ function buildArchitectureDiagramImagePrompt(report, variant) {
       ? 'Create an executive overview architecture diagram that shows the main user, security edge, application layer, data/search layer, AI/integration layer, and operations/support boundaries.'
       : 'Create a supporting architecture diagram that shows the main solution components, external systems, and data flows in more detail while remaining clear and compact.',
     'The output should look like a professional solution architecture slide, not a marketing illustration.',
+    'Do not generate a title page, cover page, brochure, poster, photorealistic scene, or document mockup.',
+    'Avoid large decorative text blocks. Prioritize component boxes, connectors, trust boundaries, and explicit labels.',
     'Render the diagram as a single landscape PNG.',
     'Assessment report:',
     clipText(report, 12000, true).trim(),
@@ -753,8 +844,16 @@ export async function generateArchitectureDiagramImages(report, signal = null) {
   const reportBody = clipText(stripArchitectureDiagramPrompt(report), 12000, true);
   const images = [];
   const variants = [
-    { key: 'overview', title: 'Architecture Overview' },
-    { key: 'detail', title: 'Architecture Detail' },
+    {
+      key: 'overview',
+      title: 'Architecture Overview',
+      description: 'High-level solution view showing core platform layers, trust boundaries, and primary data and interaction paths.',
+    },
+    {
+      key: 'detail',
+      title: 'Architecture Detail',
+      description: 'Detailed component and integration view showing how major services collaborate to deliver required capabilities.',
+    },
   ];
 
   for (const variant of variants) {
@@ -774,6 +873,7 @@ export async function generateArchitectureDiagramImages(report, signal = null) {
     }
     images.push({
       title: variant.title,
+      description: variant.description,
       format: response.output_format || 'png',
       png: Buffer.from(image.b64_json, 'base64'),
       revisedPrompt: image.revised_prompt || null,
@@ -815,6 +915,7 @@ export async function buildFinalProposalMarkdown(dealName, coordinatorContext, c
   const safePriorityInstructions = clipText(priorityInstructions, 3000, true);
   const safeOutputsSummary = formatAgentOutputs(agentOutputs, 7000);
   const safeConversation = formatConversation(conversation, 3000);
+  const apexGanttGuidance = await loadApexGanttGuidance();
   const messages = [{
     role: 'user',
     content: [
@@ -827,6 +928,7 @@ export async function buildFinalProposalMarkdown(dealName, coordinatorContext, c
       agentOutputs.estimator ? `## Estimator summary\n${clipText(buildEstimatorReportSummary(agentOutputs.estimator), 2000, true)}` : '',
       '## Conversation so far',
       safeConversation || 'No conversation yet.',
+      apexGanttGuidance ? `## Timeline charting reference (ApexGantt skill)\n${apexGanttGuidance}` : '',
     ].filter(Boolean).join('\n\n'),
   }];
 

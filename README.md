@@ -7,6 +7,7 @@ RFP & Tender Management Platform with a React frontend and PostgreSQL-backed Exp
 1. Install dependencies:
    ```bash
    yarn install
+   yarn python:deps
    ```
 
 2. Create a PostgreSQL database:
@@ -181,6 +182,7 @@ Change the default password from the profile page immediately after first login.
 
 - The database setup script is idempotent and preserves existing deals.
 - The seed script preserves an existing Superadmin password on later deploys.
+- Proposal DOCX rendering requires Python package `python-docx`. The build process installs it locally via `npm run python:deps` into `server/scripts/.pydeps`.
 - Uploaded documents require persistent storage. Without the Render disk, files may disappear when the service restarts.
 - Render persistent disks require a paid web service plan and are available only at runtime. The Blueprint uses the `starter` web plan and a 5 GB disk.
 - Render's free PostgreSQL plan is suitable for trials only. For production, upgrade the database plan before relying on it for long-term storage.

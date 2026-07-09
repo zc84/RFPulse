@@ -23,6 +23,24 @@ import { randomUUID } from 'crypto';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(__dirname, '..', 'uploads');
+const MAX_DOCUMENT_NAME_LENGTH = 500;
+
+function buildProposalDocumentName(partTitle, index, totalParts) {
+  const rawName = totalParts === 1
+    ? 'AI Proposal.docx'
+    : `AI Proposal - ${partTitle || `Part ${index + 1}`}.docx`;
+  const normalized = String(rawName).replace(/\s+/g, ' ').trim();
+  if (normalized.length <= MAX_DOCUMENT_NAME_LENGTH) return normalized;
+
+  const suffix = '.docx';
+  const prefix = 'AI Proposal - ';
+  const fallbackTitle = String(partTitle || `Part ${index + 1}`)
+    .replace(/\s+/g, ' ')
+    .trim();
+  const maxTitleLength = Math.max(1, MAX_DOCUMENT_NAME_LENGTH - prefix.length - suffix.length);
+  const trimmedTitle = fallbackTitle.slice(0, maxTitleLength).trimEnd();
+  return `${prefix}${trimmedTitle}${suffix}`;
+}
 
 const router = Router({ mergeParams: true });
 const aiSessionStreamSubscribers = new Map();
@@ -587,13 +605,17 @@ async function markWorkflowStepCompleted(sessionId, dealId, stepKey, artifact = 
 
 async function markWorkflowStepFailed(sessionId, dealId, stepKey, error, metadata = {}) {
   try {
+    const rootCause = error?.internalMessage || error?.cause?.message || null;
+    const errorMessage = rootCause
+      ? `${error?.message || String(error)} (root cause: ${rootCause})`
+      : error?.message || String(error);
     await query(
       `INSERT INTO ai_workflow_steps (session_id, deal_id, step_key, status, error, metadata, started_at, updated_at)
        VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
        ON CONFLICT (session_id, step_key)
        DO UPDATE SET status = EXCLUDED.status, error = EXCLUDED.error, metadata = EXCLUDED.metadata, updated_at = CURRENT_TIMESTAMP
        WHERE ai_workflow_steps.status <> 'cancelled'`,
-      [sessionId, dealId, stepKey, 'failed', error?.message || String(error), JSON.stringify(metadata)]
+      [sessionId, dealId, stepKey, 'failed', errorMessage, JSON.stringify(metadata)]
     );
     await publishSessionUpdate(sessionId, dealId);
   } catch (err) {
@@ -755,7 +777,14 @@ async function saveArchitectureDiagramImages(dealId, sessionId, images) {
        VALUES ($1,$2,$3,$4,'ai',$5,'architecture-diagram',$6) RETURNING id`,
       [dealId, name, size, filename, new Date().toISOString().slice(0, 10), sessionId]
     );
-    saved.push({ id: result.rows[0].id, name, filename, size, title: image.title });
+    saved.push({
+      id: result.rows[0].id,
+      name,
+      filename,
+      size,
+      title: image.title,
+      description: image.description || '',
+    });
   }
   return saved;
 }
@@ -771,13 +800,16 @@ async function saveFinalProposal(dealId, sessionId, dealName, markdown, diagramD
     const parts = splitProposalMarkdown(markdown);
     const today = new Date().toISOString().split('T')[0];
 
+    const hasExplicitDiagramTarget = parts.some(part => part.diagrams === true);
     let primaryDocumentId = null;
     for (const [index, part] of parts.entries()) {
       const filename = parts.length === 1
         ? `proposal-${Date.now()}.docx`
         : `proposal-${index + 1}-${Date.now()}.docx`;
       const filePath = path.join(dealDir, filename);
-      const shouldAttachDiagrams = parts.length === 1 ? true : index === 0 || part.diagrams === true;
+      const shouldAttachDiagrams = parts.length === 1
+        ? true
+        : part.diagrams === true || (!hasExplicitDiagramTarget && index === 0);
       renderProposalDocx({
         markdown: part.markdown,
         outputPath: filePath,
@@ -785,6 +817,7 @@ async function saveFinalProposal(dealId, sessionId, dealName, markdown, diagramD
         templatePath,
         diagrams: shouldAttachDiagrams ? diagramDocs.map(doc => ({
           title: doc.title || doc.name || 'Diagram',
+          description: doc.description || '',
           path: path.join(dealDir, doc.filename),
         })) : [],
       });
@@ -793,9 +826,7 @@ async function saveFinalProposal(dealId, sessionId, dealName, markdown, diagramD
       const size = sizeBytes >= 1024 * 1024
         ? `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`
         : `${(sizeBytes / 1024).toFixed(0)} KB`;
-      const docName = parts.length === 1
-        ? 'AI Proposal.docx'
-        : `AI Proposal - ${part.title || `Part ${index + 1}`}.docx`;
+      const docName = buildProposalDocumentName(part.title, index, parts.length);
       const docResult = await query(
         `INSERT INTO documents (deal_id, name, size, filename, source, uploaded_at, artifact_type, ai_session_id, review_status)
          VALUES ($1, $2, $3, $4, $5, $6, 'assessment-report', $7, 'draft') RETURNING id`,
@@ -815,8 +846,16 @@ async function saveFinalProposal(dealId, sessionId, dealName, markdown, diagramD
 
     return primaryDocumentId;
   } catch (err) {
-    console.error('Failed to save final proposal:', err);
-    throw createRouteError('Proposal was generated but could not be saved. Check upload storage and database logs.');
+    console.error('Failed to save final proposal:', {
+      dealId,
+      sessionId,
+      error: err?.message || String(err),
+      stack: err?.stack,
+    });
+    const routeError = createRouteError('Proposal was generated but could not be saved. Check upload storage and database logs.');
+    routeError.internalMessage = err?.message || String(err);
+    routeError.cause = err;
+    throw routeError;
   }
 }
 
@@ -881,6 +920,7 @@ async function finalizeAssessmentArtifacts({ dealId, sessionId, dealName, propos
         filename: doc.filename,
         size: doc.size,
         title: doc.name.replace(/\.png$/i, ''),
+        description: '',
       }));
     } else {
       await markWorkflowStepRunning(sessionId, dealId, 'generate-architecture-diagrams');

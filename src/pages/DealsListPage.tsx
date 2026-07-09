@@ -41,6 +41,7 @@ export default function DealsListPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [configOptions, setConfigOptions] = useState<PlatformConfigOption[]>([]);
+  const [defaultFiltersInitialized, setDefaultFiltersInitialized] = useState(false);
 
   const canEdit = isRole('Superadmin', 'Editor');
 
@@ -60,6 +61,20 @@ export default function DealsListPage() {
       return acc;
     }, {});
   }, [statusOptions]);
+
+  useEffect(() => {
+    if (defaultFiltersInitialized) return;
+
+    const defaultStatuses = statusOptions.filter(status => status !== 'Lost' && status !== 'Won') as DealStatus[];
+    setSelectedStatuses(defaultStatuses);
+
+    if (currentUser?.id) {
+      setSelectedAssignees([currentUser.id]);
+    }
+
+    setDefaultFiltersInitialized(true);
+    setPage(1);
+  }, [defaultFiltersInitialized, statusOptions, currentUser?.id]);
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {

@@ -6,6 +6,25 @@ import { spawnSync } from 'child_process';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SCRIPT_PATH = path.join(__dirname, '..', 'scripts', 'renderProposalDocx.py');
+const PYTHON_DEPS_PATH = path.join(__dirname, '..', 'scripts', '.pydeps');
+
+function buildPythonPath() {
+  return [PYTHON_DEPS_PATH, process.env.PYTHONPATH]
+    .filter(Boolean)
+    .join(path.delimiter);
+}
+
+function enrichRenderError(message) {
+  const raw = String(message || '').trim();
+  if (/ModuleNotFoundError:\s+No module named ['"]docx['"]/i.test(raw)) {
+    return [
+      'Python dependency "python-docx" is missing for proposal DOCX rendering.',
+      'Run "npm run python:deps" (or "yarn python:deps") to install local Python dependencies into server/scripts/.pydeps.',
+      raw,
+    ].join('\n');
+  }
+  return raw || 'Failed to render proposal DOCX.';
+}
 
 export function renderProposalDocx({ markdown, outputPath, title, templatePath = null, diagrams = [] }) {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rfpulse-proposal-'));
@@ -20,6 +39,7 @@ export function renderProposalDocx({ markdown, outputPath, title, templatePath =
         fs.copyFileSync(diagram.path, imagePath);
         return {
           title: diagram.title,
+          description: diagram.description || '',
           path: imagePath,
         };
       }),
@@ -29,10 +49,14 @@ export function renderProposalDocx({ markdown, outputPath, title, templatePath =
       input: JSON.stringify(payload),
       encoding: 'utf8',
       maxBuffer: 20 * 1024 * 1024,
+      env: {
+        ...process.env,
+        PYTHONPATH: buildPythonPath(),
+      },
     });
 
     if (result.status !== 0) {
-      throw new Error(result.stderr || result.stdout || 'Failed to render proposal DOCX.');
+      throw new Error(enrichRenderError(result.stderr || result.stdout || 'Failed to render proposal DOCX.'));
     }
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });

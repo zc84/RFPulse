@@ -13,15 +13,15 @@ export const TEAM_ROLES = [
 ];
 
 export const DEFAULT_ROLE_RATES = {
-  Architect: 90,
-  'Backend Engineer': 55,
-  'Frontend Engineer': 55,
-  'Data Engineer': 65,
-  'AI Engineer': 65,
-  'DevOps Engineer': 65,
+  Architect: 50,
+  'Backend Engineer': 50,
+  'Frontend Engineer': 50,
+  'Data Engineer': 50,
+  'AI Engineer': 50,
+  'DevOps Engineer': 50,
   BA: 50,
   PM: 50,
-  QA: 45,
+  QA: 50,
 };
 
 export const DEFAULT_QA_OVERHEAD_PERCENT = 30;
@@ -44,6 +44,7 @@ export const dealPropertiesSchema = z.object({
 });
 
 export const estimatorResultSchema = z.object({
+  implementationTeam: z.array(z.enum(DELIVERY_ROLES)).min(1),
   workBreakdown: z.array(z.object({
     phase: z.string().min(1),
     workstream: z.string().min(1),
@@ -143,6 +144,9 @@ export function validateEstimatorResult(value) {
     assigned: task.assigned,
     notes: task.notes ?? (task.aiAssisted ? 'Includes AI-assisted production and manual validation.' : ''),
   }));
+  if (!Array.isArray(raw.implementationTeam) || raw.implementationTeam.length === 0) {
+    raw.implementationTeam = [...new Set((raw.workBreakdown || []).map(task => task.assigned).filter(Boolean))];
+  }
   delete raw.teamComposition;
   const parsed = estimatorResultSchema.parse(raw);
   const firstSeen = new Map();
@@ -163,7 +167,12 @@ export function validateEstimatorResult(value) {
   const qaOngoingEffort = targetQaEffort;
   const qaEffort = qaOngoingEffort;
   const pmEffort = roundToQuarterHour((baseEffort + qaEffort) * (DEFAULT_PM_OVERHEAD_PERCENT / 100));
-  const activeRoles = [...new Set([...workBreakdown.map(task => task.assigned), 'QA', 'PM'])];
+  const implementationRoleSet = new Set(parsed.implementationTeam);
+  const unknownTaskRole = workBreakdown.find(task => !implementationRoleSet.has(task.assigned));
+  if (unknownTaskRole) {
+    throw new Error(`Estimator task role "${unknownTaskRole.assigned}" must be listed in implementationTeam.`);
+  }
+  const activeRoles = [...new Set([...parsed.implementationTeam, 'QA', 'PM'])];
   const teamComposition = activeRoles.map(team => ({ team, rate: DEFAULT_ROLE_RATES[team] }));
   const rateByRole = new Map(teamComposition.map(item => [item.team, item.rate]));
   const costRows = [
@@ -218,6 +227,7 @@ export function buildEstimatorReportSummary(raw) {
     assumptions: result.assumptions,
     exclusions: result.exclusions,
     risks: result.risks,
+    implementationTeam: result.implementationTeam,
     detailedWbsArtifact: 'AI Detailed WBS.xlsx',
   }, null, 2);
 }

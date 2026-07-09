@@ -19,6 +19,7 @@ import { splitProposalMarkdown } from '../services/proposalDocument.js';
 
 function validEstimate() {
   return {
+    implementationTeam: ['Architect', 'Backend Engineer'],
     workBreakdown: [
       { phase: '1. Preparation', workstream: 'Solution foundation', title: 'Define solution architecture', efforts: 16, assigned: 'Architect', notes: 'Includes architecture research and decision records.' },
       { phase: '2. Delivery', workstream: 'Core API', title: 'Implement core API capability', efforts: 32, assigned: 'Backend Engineer', notes: 'Includes AI-assisted scaffolding, integration and validation.' },
@@ -70,6 +71,7 @@ test('estimator rejects non-contiguous workstream groups and long notes', () => 
 
 test('legacy estimator output is normalized without AI-prefixed rows', () => {
   const input = validEstimate();
+  input.implementationTeam = ['Backend Engineer'];
   input.workBreakdown = [{ title: 'AI: Generate API foundation', efforts: 8, assigned: 'Backend Engineer', aiAssisted: true }];
   const estimate = validateEstimatorResult(input);
   assert.equal(estimate.workBreakdown[0].phase, 'Legacy');
@@ -86,6 +88,7 @@ test('estimator summary excludes detailed tasks and derives active team', () => 
   assert.match(summary, /softwareLicenses/);
   assert.match(summary, /hardware/);
   assert.match(summary, /"totalEffort": 72/);
+  assert.match(summary, /"implementationTeam": \[/);
 });
 
 test('proposal fallback and diagram prompt helper stay aligned', () => {
@@ -132,13 +135,22 @@ test('WBS workbook contains grouped columns, formulas, and separate rate card', 
   writeWbsWorkbook(outputPath, JSON.stringify(validEstimate()));
   const workbook = XLSX.read(fs.readFileSync(outputPath), { type: 'buffer', cellFormula: true });
   const sheet = workbook.Sheets['Detailed WBS'];
+  const rateSheet = workbook.Sheets['Rate Card'];
   assert.equal(sheet.A3.v, 'Phase');
   assert.equal(sheet.B3.v, 'Feature / Workstream');
   assert.equal(sheet.C3.v, 'Task');
   assert.equal(sheet.F3.v, 'Notes');
   assert.equal(sheet.A4.v, '1. Preparation');
   assert.match(sheet.G4.f, /'Rate Card'/);
-  assert.ok(workbook.Sheets['Rate Card']);
+  assert.ok(rateSheet);
+  const rateRows = XLSX.utils.sheet_to_json(rateSheet, { header: 1 });
+  assert.deepEqual(rateRows.slice(0, 5), [
+    ['Role', 'Hourly Rate'],
+    ['Architect', 50],
+    ['Backend Engineer', 50],
+    ['QA', 50],
+    ['PM', 50],
+  ]);
 });
 
 test('architecture renderer emits safe, styled SVG with groups', async () => {
