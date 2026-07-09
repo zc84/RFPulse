@@ -1000,7 +1000,7 @@ export async function runAgentPlan(
     if (onOutput) await onOutput(slug, output);
   };
 
-  const requested = new Set(REQUIRED_SPECIALIST_SLUGS);
+  const requested = resolveRequestedSpecialists(plan);
   const shouldRun = slug => requested.has(slug);
 
   const briefResults = await Promise.all(['legal', 'architect'].map(async slug => {
@@ -1043,6 +1043,13 @@ export async function runAgentPlan(
   }
 
   return outputs;
+}
+
+export function resolveRequestedSpecialists(plan) {
+  const requested = Array.isArray(plan)
+    ? plan.filter(slug => REQUIRED_SPECIALIST_SLUGS.includes(slug))
+    : [];
+  return new Set(requested.length > 0 ? requested : REQUIRED_SPECIALIST_SLUGS);
 }
 
 export { DEFAULT_AGENT_SLUGS };

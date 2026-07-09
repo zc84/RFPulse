@@ -164,7 +164,7 @@ Include analytics, AI, offline operation, tenancy, or data residency only when r
 - Be realistic: do not propose technologies that are unrelated to the requirements.
 - Prefer lean, proven, competitive approaches; avoid over-engineering.
 - Make a single, decisive technology recommendation per layer or concern.
-- In the alternatives column, list 0 to 2 realistic rejected options only when they are materially plausible. Give a short requirement-based rejection reason for each and end with why the selected option is the best fit overall.
+- In the alternatives column, list 0 to 2 realistic rejected options only when they are materially plausible. For each listed alternative, include a short requirement-based rejection reason and explicitly explain why the selected option is better than that alternative for this scope.
 - If no meaningful alternative exists, write: None materially better for this scope.
 - Do not ask for vendor shortlist sign-off or external technology approval. The goal is to recommend the best variant from the evidence.
 - The Technology Decisions table is mandatory for architecture assessments. Keep the exact column order and naming.
@@ -420,7 +420,7 @@ export function getDefaultAgent(slug) {
   return agent ? {
     ...agent,
     system_prompt: slug === 'validator' ? VALIDATOR_SYSTEM_PROMPT : agent.system_prompt,
-    prompt_version: 17,
+    prompt_version: 18,
   } : undefined;
 }
 
@@ -428,7 +428,7 @@ export function getDefaultAgents() {
   return DEFAULT_AGENTS.map(agent => ({
     ...agent,
     system_prompt: agent.slug === 'validator' ? VALIDATOR_SYSTEM_PROMPT : agent.system_prompt,
-    prompt_version: 17,
+    prompt_version: 18,
   }));
 }
 
@@ -461,7 +461,7 @@ Output Markdown under 1,400 words.` },
   { key: 'coordinator.legal-brief', agent_slug: 'coordinator', name: 'Legal Evidence Brief', kind: 'task', version: 2, content: `Create a Legal-only evidence brief from the extracted source. Include mandatory procurement, eligibility, contract, IP, liability, insurance, privacy, compliance, submission, and governance facts; conflicts; missing facts; and exact provenance. Remove unrelated product and architecture detail. Prefer compact tables and bullets. Do not repeat source prose. Keep the complete brief under 1,800 words. Output Markdown.` },
   { key: 'coordinator.architect-brief', agent_slug: 'coordinator', name: 'Architect Evidence Brief', kind: 'task', version: 2, content: `Create an Architect-only evidence brief from the extracted source. Include actors, workflows, scope, functional/non-functional requirements, integrations, data, security, deployment, scale, constraints, assumptions, conflicts, and exact provenance. Remove unrelated procurement prose. Prefer compact tables and bullets. Do not repeat source prose. Keep the complete brief under 1,800 words. Output Markdown.` },
   { key: 'coordinator.estimator-brief', agent_slug: 'coordinator', name: 'Estimator Brief', kind: 'task', version: 2, content: `Create a focused estimation brief from Coordinator, Legal, and Architect evidence. Include phased scope, feature/workstream groupings, architecture/compliance work, dependencies, assumptions, milestones, contingency risks, pricing rules, and whether software licences or hardware must be priced. For tender-related RFPs, do not frame requested scope as "key exclusions"; highlight scope-reducing exclusions as critical risks instead. Output Markdown under 1,500 words.` },
-  { key: 'coordinator.final-report', agent_slug: 'coordinator', name: 'Final Proposal Draft', kind: 'task', version: 6, content: `Create the final client-ready proposal in Markdown. Reconcile the source evidence, AI notes, and specialist outputs once before finalizing.
+  { key: 'coordinator.final-report', agent_slug: 'coordinator', name: 'Final Proposal Draft', kind: 'task', version: 7, content: `Create the final client-ready proposal in Markdown. Reconcile the source evidence, AI notes, and specialist outputs once before finalizing.
 
 Content requirements:
 - Cover the requested scope with a clear recommended solution, delivery approach, commercial basis, key risks/assumptions, and high-level WBS summary.
@@ -469,6 +469,7 @@ Content requirements:
 - In the technical proposal section, ensure the "Architecture Overview" is concise and factual: maximum 4 sentences with key facts only (pattern, major components/layers, main integration/data boundary, and security/deployment posture).
 - If Architect output is present, include the Technology Decisions table with this exact header set and order:
   | Selected Technology / Pattern | Purpose | Requirement Addressed | Why Chosen | Alternatives Considered (up to 2) |
+- In "Alternatives Considered (up to 2)", include concise explanation for each listed alternative describing why the selected technology/pattern is better for the same requirement and scope.
 - Ensure architecture diagram narrative is not image-only: include a short explanatory subsection that maps core components and decisions to diagram intent.
 - Include manual completion items only where explicitly required.
 

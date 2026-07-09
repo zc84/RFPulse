@@ -8,6 +8,7 @@ import {
   buildFinalProposalMarkdown,
   generateArchitectureDiagramImages,
   runAgentPlan,
+  resolveRequestedSpecialists,
   ensureDefaultAgents,
   extractDealProperties,
   callAgent,
@@ -800,16 +801,13 @@ async function saveFinalProposal(dealId, sessionId, dealName, markdown, diagramD
     const parts = splitProposalMarkdown(markdown);
     const today = new Date().toISOString().split('T')[0];
 
-    const hasExplicitDiagramTarget = parts.some(part => part.diagrams === true);
     let primaryDocumentId = null;
     for (const [index, part] of parts.entries()) {
       const filename = parts.length === 1
         ? `proposal-${Date.now()}.docx`
         : `proposal-${index + 1}-${Date.now()}.docx`;
       const filePath = path.join(dealDir, filename);
-      const shouldAttachDiagrams = parts.length === 1
-        ? true
-        : part.diagrams === true || (!hasExplicitDiagramTarget && index === 0);
+      const shouldAttachDiagrams = parts.length === 1 ? true : index === 0 || part.diagrams === true;
       renderProposalDocx({
         markdown: part.markdown,
         outputPath: filePath,
@@ -1075,6 +1073,9 @@ router.post('/start', authenticate, requireRole('Superadmin', 'Editor'), async (
     );
 
     const coordinatorContext = coordinatorResult.status === 'routing' ? coordinatorResult.context : null;
+    const normalizedRoutingPlan = coordinatorResult.status === 'routing'
+      ? [...resolveRequestedSpecialists(coordinatorResult.plan)]
+      : null;
     if (coordinatorContext) {
       await query('UPDATE ai_sessions SET coordinator_context = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', [coordinatorContext, session.id]);
       await markWorkflowStepCompleted(session.id, dealId, 'coordinator-context', coordinatorContext);
@@ -1083,17 +1084,17 @@ router.post('/start', authenticate, requireRole('Superadmin', 'Editor'), async (
     if (coordinatorResult.status === 'clarifying' && coordinatorResult.questions?.length) {
       const content = coordinatorResult.questions.map((q, i) => `${i + 1}. ${q}`).join('\n');
       await addMessage(session.id, 'coordinator', content);
-    } else if (coordinatorResult.status === 'routing' && coordinatorResult.plan?.length) {
-      await addMessage(session.id, 'coordinator', `Coordinator selected agents: ${coordinatorResult.plan.join(', ')}.`);
+    } else if (coordinatorResult.status === 'routing' && normalizedRoutingPlan?.length) {
+      await addMessage(session.id, 'coordinator', `Coordinator selected agents: ${normalizedRoutingPlan.join(', ')}.`);
     } else if (coordinatorResult.status === 'ready_to_write') {
       await addMessage(session.id, 'coordinator', 'Coordinator has enough context and is ready to draft the proposal.');
     }
     await markWorkflowStepCompleted(session.id, dealId, 'coordinator-routing', coordinatorResult.status, {
-      plan: coordinatorResult.plan || [],
+      plan: normalizedRoutingPlan || [],
       reasoning: coordinatorResult.reasoning || null,
     });
 
-    await setSessionPlan(session.id, coordinatorResult.status === 'routing' ? (coordinatorResult.plan || []) : null, dealId);
+    await setSessionPlan(session.id, normalizedRoutingPlan, dealId);
 
     const updatedMessages = await getSessionMessages(session.id);
     await setSessionStatus(session.id, 'active', dealId);
@@ -1101,7 +1102,7 @@ router.post('/start', authenticate, requireRole('Superadmin', 'Editor'), async (
     res.json({
       sessionId: session.id,
       status: coordinatorResult.status,
-      plan: coordinatorResult.plan,
+      plan: normalizedRoutingPlan,
       reasoning: coordinatorResult.reasoning,
       messages: updatedMessages,
       extractedDocs: extractedDocs.map(d => ({ id: d.id, name: d.name, size: d.size, success: d.success })),
@@ -1370,6 +1371,9 @@ router.post('/message', authenticate, requireRole('Superadmin', 'Editor'), async
       aiNotes,
       signal
     );
+    const normalizedRoutingPlan = coordinatorResult.status === 'routing'
+      ? [...resolveRequestedSpecialists(coordinatorResult.plan)]
+      : null;
 
     // Persist coordinator context when it is produced for routing.
     let coordinatorContext = coordinatorResult.status === 'routing' && coordinatorResult.context
@@ -1384,7 +1388,7 @@ router.post('/message', authenticate, requireRole('Superadmin', 'Editor'), async
       await query('UPDATE ai_sessions SET coordinator_context = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', [coordinatorContext, session.id]);
     }
     await markWorkflowStepCompleted(session.id, dealId, 'coordinator-routing', coordinatorResult.status, {
-      plan: coordinatorResult.plan || [],
+      plan: normalizedRoutingPlan || [],
       reasoning: coordinatorResult.reasoning || null,
     });
 
@@ -1413,26 +1417,26 @@ router.post('/message', authenticate, requireRole('Superadmin', 'Editor'), async
       await markWorkflowStepFailed(session.id, dealId, slug, err, { source: 'agent-plan' });
     };
 
-    if (coordinatorResult.status === 'routing' && coordinatorResult.plan?.length) {
+    if (coordinatorResult.status === 'routing' && normalizedRoutingPlan?.length) {
       const dealRow = await query('SELECT name FROM deals WHERE id = $1', [dealId]);
       const dealName = dealRow.rows[0]?.name || 'Untitled Deal';
-      await setSessionPlan(session.id, coordinatorResult.plan, dealId);
-      await addMessage(session.id, 'agent', 'Running Legal and Architect in parallel. Estimator will follow.', 'coordinator');
+      await setSessionPlan(session.id, normalizedRoutingPlan, dealId);
+      await addMessage(session.id, 'agent', `Running selected specialists: ${normalizedRoutingPlan.join(', ')}.`, 'coordinator');
       try {
-        await markWorkflowStepRunning(session.id, dealId, 'agent-plan', { plan: coordinatorResult.plan });
+        await markWorkflowStepRunning(session.id, dealId, 'agent-plan', { plan: normalizedRoutingPlan });
         newAgentOutputs = await runAgentPlan(
           agentContext,
           messages,
-          coordinatorResult.plan,
+          normalizedRoutingPlan,
           dealName,
           persistAgentOutput,
           aiNotes,
           contextBundle,
           signal
         );
-        await markWorkflowStepCompleted(session.id, dealId, 'agent-plan', JSON.stringify(Object.keys(newAgentOutputs)), { plan: coordinatorResult.plan });
+        await markWorkflowStepCompleted(session.id, dealId, 'agent-plan', JSON.stringify(Object.keys(newAgentOutputs)), { plan: normalizedRoutingPlan });
       } catch (planErr) {
-        await markWorkflowStepFailed(session.id, dealId, 'agent-plan', planErr, { plan: coordinatorResult.plan });
+        await markWorkflowStepFailed(session.id, dealId, 'agent-plan', planErr, { plan: normalizedRoutingPlan });
         throw planErr;
       }
       await setSessionPlan(session.id, [], dealId);

@@ -13,6 +13,7 @@ import {
   buildSpecialistMessages,
   buildArchitectureDiagramPromptInput,
   requireCoordinatorContext,
+  resolveRequestedSpecialists,
   splitCoordinatorSourceContext,
 } from '../services/aiOrchestrator.js';
 import { splitProposalMarkdown } from '../services/proposalDocument.js';
@@ -208,6 +209,7 @@ test('architect prompt makes a single best-fit technology recommendation', () =>
   assert.match(architect.system_prompt, /single, decisive technology recommendation/i);
   assert.match(architect.system_prompt, /Alternatives Considered \(up to 2\)/i);
   assert.match(architect.system_prompt, /0 to 2 realistic rejected options/i);
+  assert.match(architect.system_prompt, /selected option is better than that alternative/i);
   assert.match(architect.system_prompt, /None materially better for this scope/i);
   assert.match(architect.system_prompt, /do not ask for vendor shortlist sign-off/i);
 });
@@ -227,4 +229,11 @@ test('large raw source is chunked only for Coordinator processing', () => {
   assert.equal(chunks.length, 3);
   assert.ok(chunks.every(chunk => chunk.length <= 45000));
   assert.equal(chunks.join('').length, 100001);
+});
+
+test('specialist routing plan is normalized to supported required specialists', () => {
+  assert.deepEqual([...resolveRequestedSpecialists(['legal'])], ['legal']);
+  assert.deepEqual([...resolveRequestedSpecialists(['architect', 'unknown', 'architect'])], ['architect']);
+  assert.deepEqual([...resolveRequestedSpecialists(['frontend-dev'])], ['legal', 'architect', 'estimator']);
+  assert.deepEqual([...resolveRequestedSpecialists(null)], ['legal', 'architect', 'estimator']);
 });

@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { query } from '../db.js';
-import { authenticate, requireRole } from '../middleware/auth.js';
+import { authenticate, requireRole, signShareToken, verifyShareToken, SHARE_TOKEN_TTL } from '../middleware/auth.js';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
@@ -183,10 +183,32 @@ router.get('/', authenticate, async (req, res, next) => {
   }
 });
 
+router.post('/documents/:id/share-link', authenticate, async (req, res, next) => {
+  try {
+    const docId = parseInt(req.params.id.replace('doc-', ''), 10);
+    if (isNaN(docId)) return res.status(400).json({ error: 'Invalid document id' });
+
+    const result = await query('SELECT id, filename FROM documents WHERE id = $1', [docId]);
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Not found' });
+    if (!result.rows[0].filename) return res.status(404).json({ error: 'File not available' });
+
+    const token = signShareToken(docId);
+    res.json({
+      sharePath: `/deals/documents/doc-${docId}/share?token=${encodeURIComponent(token)}`,
+      expiresIn: SHARE_TOKEN_TTL,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get('/documents/:id/share', async (req, res, next) => {
   try {
     const docId = parseInt(req.params.id.replace('doc-', ''), 10);
     if (isNaN(docId)) return res.status(400).json({ error: 'Invalid document id' });
+    if (!verifyShareToken(req.query.token, docId)) {
+      return res.status(401).json({ error: 'Invalid or expired share link' });
+    }
 
     const result = await query('SELECT * FROM documents WHERE id = $1', [docId]);
     if (result.rows.length === 0) return res.status(404).json({ error: 'Not found' });
