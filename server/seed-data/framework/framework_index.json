@@ -1,0 +1,1568 @@
+{
+  "document": "Andersen Delivery Framework",
+  "version": "2.4",
+  "updated": "2026-07-11",
+  "purpose": "Machine-readable index for retrieval: match task/question against summary+tags+rfp_questions, then fetch only the matching section from framework_semantic.md by id (sections are delimited by <!--META ... --> blocks; each is excerpt-standalone).",
+  "retrieval_hint": "For proposal generation: 1) map client RFP question to rfp_questions/tags; 2) pull section body; 3) sections contain no in-text pointers and are fully self-contained; pull related_sections additionally when the proposal needs surrounding context; 4) pull mapped cases from case index and visuals from visual registry; 5) swap CASE boxes for industry-matched cases where available.",
+  "sections": [
+    {
+      "order": 1,
+      "id": "sec-00-answer-map",
+      "title": "Where to Find Answers",
+      "summary": "Mapping table from typical RFP/evaluator questions to framework sections. Use as router: match the client question, fetch the mapped section.",
+      "tags": [
+        "navigation",
+        "rfp-mapping",
+        "index"
+      ],
+      "rfp_questions": [
+        "Where is X answered in your methodology?"
+      ],
+      "engagement_models": [
+        "all"
+      ],
+      "cases": [],
+      "visuals": [],
+      "tables": [
+        "question-to-section map"
+      ],
+      "related_sections": [],
+      "excerpt_standalone": true,
+      "word_count": 343
+    },
+    {
+      "order": 2,
+      "id": "sec-01-purpose",
+      "title": "1. Purpose",
+      "summary": "What the framework is, how sections stand alone for excerpting, and how client standards override defaults via the Delivery Approach Note.",
+      "tags": [
+        "introduction",
+        "tailoring",
+        "delivery-approach-note"
+      ],
+      "rfp_questions": [
+        "How do you tailor your methodology to our organisation?"
+      ],
+      "engagement_models": [
+        "all"
+      ],
+      "cases": [],
+      "visuals": [],
+      "tables": [],
+      "related_sections": [],
+      "excerpt_standalone": true,
+      "word_count": 155
+    },
+    {
+      "order": 3,
+      "id": "sec-02-engagement-models",
+      "title": "2. Engagement Models",
+      "summary": "Four delivery models (PDS, fixed price, dedicated team/T&M, audit) with real case examples and a comparison table: ownership, pricing, duration, best fit, governance depth.",
+      "tags": [
+        "engagement-models",
+        "pds",
+        "fixed-price",
+        "dedicated-team",
+        "t-and-m",
+        "audit",
+        "pricing"
+      ],
+      "rfp_questions": [
+        "What engagement/commercial models do you offer?",
+        "Who owns the delivery outcome?"
+      ],
+      "engagement_models": [
+        "all"
+      ],
+      "cases": [
+        "CASE-01",
+        "CASE-02",
+        "CASE-03",
+        "CASE-04"
+      ],
+      "visuals": [],
+      "tables": [
+        "model comparison"
+      ],
+      "related_sections": [
+        "sec-23-support-sla"
+      ],
+      "excerpt_standalone": true,
+      "word_count": 521
+    },
+    {
+      "order": 4,
+      "id": "sec-03-principles",
+      "title": "3. Delivery Principles",
+      "summary": "Four operating principles with mechanisms: outcome-first analysis (BPMN example), milestone plan + 2-week sprints, hard quality gates, client access to live tooling.",
+      "tags": [
+        "principles",
+        "business-outcome",
+        "transparency",
+        "planning"
+      ],
+      "rfp_questions": [
+        "Describe your delivery approach/philosophy"
+      ],
+      "engagement_models": [
+        "all"
+      ],
+      "cases": [],
+      "visuals": [
+        "VIS-01"
+      ],
+      "tables": [],
+      "related_sections": [
+        "sec-08-engineering",
+        "sec-09-qa",
+        "sec-15-escalation",
+        "sec-app-c-quality-gates"
+      ],
+      "excerpt_standalone": true,
+      "word_count": 230
+    },
+    {
+      "order": 5,
+      "id": "sec-04-mobilisation",
+      "title": "4. Mobilisation: The First Ten Working Days",
+      "summary": "Day-by-day (D1-D10) mobilisation plan with owners and outputs: kickoff, infrastructure, registers, Delivery Approach Note, first sprint planning.",
+      "tags": [
+        "mobilisation",
+        "kickoff",
+        "onboarding",
+        "project-start",
+        "ramp-up"
+      ],
+      "rfp_questions": [
+        "How do you start an engagement?",
+        "What happens in the first weeks?"
+      ],
+      "engagement_models": [
+        "pds",
+        "fixed-price",
+        "dedicated-team"
+      ],
+      "cases": [],
+      "visuals": [
+        "VIS-02"
+      ],
+      "tables": [
+        "day/activity/owner/output plan"
+      ],
+      "related_sections": [
+        "sec-05-discovery"
+      ],
+      "excerpt_standalone": true,
+      "word_count": 230
+    },
+    {
+      "order": 6,
+      "id": "sec-05-discovery",
+      "title": "5. Discovery and Requirements",
+      "summary": "Workshop cadence (2-3/week, minutes in 48h), discovery artefacts, user research and usability testing, Jira-to-test traceability, range-based estimation with velocity calibration.",
+      "tags": [
+        "discovery",
+        "requirements",
+        "business-analysis",
+        "workshops",
+        "user-research",
+        "usability",
+        "traceability",
+        "estimation"
+      ],
+      "rfp_questions": [
+        "How do you involve users and stakeholders?",
+        "How do you gather requirements?",
+        "How do you estimate?"
+      ],
+      "engagement_models": [
+        "pds",
+        "fixed-price"
+      ],
+      "cases": [],
+      "visuals": [],
+      "tables": [],
+      "related_sections": [
+        "sec-09-qa",
+        "sec-29-ux-design"
+      ],
+      "excerpt_standalone": true,
+      "word_count": 360
+    },
+    {
+      "order": 7,
+      "id": "sec-06-architecture",
+      "title": "6. Solution Architecture and Design Governance",
+      "summary": "Named architect, architecture pack contents, ADR discipline (10-20 per 6-month engagement), phased modernisation roadmaps, 3-checkpoint Architecture Review Board with shareable records.",
+      "tags": [
+        "architecture",
+        "adr",
+        "design-governance",
+        "modernisation",
+        "review-board",
+        "c4"
+      ],
+      "rfp_questions": [
+        "How do you govern technical decisions?",
+        "How do you approach modernisation?"
+      ],
+      "engagement_models": [
+        "pds",
+        "fixed-price",
+        "audit"
+      ],
+      "cases": [],
+      "visuals": [],
+      "tables": [],
+      "related_sections": [
+        "sec-05-discovery",
+        "sec-32-regulated"
+      ],
+      "excerpt_standalone": true,
+      "word_count": 272
+    },
+    {
+      "order": 8,
+      "id": "sec-07-execution",
+      "title": "7. Delivery Execution",
+      "summary": "Two-week sprint ceremony set with durations, definition of ready/done verbatim, shared client-visible Jira board, adaptation to client processes.",
+      "tags": [
+        "scrum",
+        "sprints",
+        "ceremonies",
+        "definition-of-ready",
+        "definition-of-done",
+        "kanban",
+        "safe"
+      ],
+      "rfp_questions": [
+        "Describe your development process",
+        "How do you run sprints?"
+      ],
+      "engagement_models": [
+        "pds",
+        "fixed-price",
+        "dedicated-team"
+      ],
+      "cases": [],
+      "visuals": [],
+      "tables": [
+        "ceremony schedule"
+      ],
+      "related_sections": [
+        "sec-08-engineering",
+        "sec-09-qa"
+      ],
+      "excerpt_standalone": true,
+      "word_count": 274
+    },
+    {
+      "order": 9,
+      "id": "sec-08-engineering",
+      "title": "8. Engineering Standards",
+      "summary": "Protected branches, 1-2 reviewer rule with checklists, pipeline gate chain (lint to package), 80% coverage gate, waiver process, 20% tech-debt allocation with billing treatment.",
+      "tags": [
+        "code-review",
+        "ci-cd",
+        "pipeline",
+        "git",
+        "quality-thresholds",
+        "technical-debt",
+        "sonarqube",
+        "coverage"
+      ],
+      "rfp_questions": [
+        "Describe your quality assurance measures (engineering)",
+        "What are your coding standards?"
+      ],
+      "engagement_models": [
+        "pds",
+        "fixed-price",
+        "dedicated-team"
+      ],
+      "cases": [
+        "CASE-05",
+        "CASE-06"
+      ],
+      "visuals": [
+        "VIS-05"
+      ],
+      "tables": [],
+      "related_sections": [
+        "sec-09-qa",
+        "sec-12-release",
+        "sec-28-ai"
+      ],
+      "excerpt_standalone": true,
+      "word_count": 472
+    },
+    {
+      "order": 10,
+      "id": "sec-09-qa",
+      "title": "9. Quality Engineering",
+      "summary": "QA from discovery, test strategy contents, automation toolchain, managed UAT with entry/exit criteria and real users, defect SLAs with clock rules, weekly quality metrics.",
+      "tags": [
+        "testing",
+        "qa",
+        "test-strategy",
+        "automation",
+        "uat",
+        "defect-sla",
+        "test-pyramid",
+        "regression"
+      ],
+      "rfp_questions": [
+        "Describe your quality assurance measures",
+        "How do you organise UAT?",
+        "What are your defect SLAs?"
+      ],
+      "engagement_models": [
+        "all"
+      ],
+      "cases": [
+        "CASE-07"
+      ],
+      "visuals": [
+        "VIS-06"
+      ],
+      "tables": [],
+      "related_sections": [
+        "sec-16-change-certainty",
+        "sec-23-support-sla",
+        "sec-25-accessibility"
+      ],
+      "excerpt_standalone": true,
+      "word_count": 463
+    },
+    {
+      "order": 11,
+      "id": "sec-10-security",
+      "title": "10. Security, Compliance and Data Location",
+      "summary": "ISO 27001/9001 certification, regime mapping (GDPR/HIPAA/PCI/SOC2/DORA), security in design/build/operation, hosting configurations and data-residency options with named-access control.",
+      "tags": [
+        "security",
+        "compliance",
+        "iso-27001",
+        "gdpr",
+        "data-location",
+        "data-residency",
+        "threat-modelling",
+        "access-control"
+      ],
+      "rfp_questions": [
+        "Where is our data stored and who can access it?",
+        "How do you handle security and compliance?"
+      ],
+      "engagement_models": [
+        "all"
+      ],
+      "cases": [
+        "CASE-08"
+      ],
+      "visuals": [],
+      "tables": [],
+      "related_sections": [
+        "sec-28-ai",
+        "sec-32-regulated",
+        "sec-33-gcc"
+      ],
+      "excerpt_standalone": true,
+      "word_count": 379
+    },
+    {
+      "order": 12,
+      "id": "sec-11-data-integration",
+      "title": "11. Data and Integration Delivery",
+      "summary": "Migration as engineered workstream: profiling, signed mapping, 2+ dry runs with reconciliation reports, cutover runbook; integration data contracts, contract tests in CI, third-party dependency tracking.",
+      "tags": [
+        "data-migration",
+        "reconciliation",
+        "cutover",
+        "rollback",
+        "integration",
+        "data-contracts",
+        "third-party"
+      ],
+      "rfp_questions": [
+        "How do you migrate our data safely?",
+        "How do you manage integrations?"
+      ],
+      "engagement_models": [
+        "pds",
+        "fixed-price"
+      ],
+      "cases": [
+        "CASE-09"
+      ],
+      "visuals": [],
+      "tables": [],
+      "related_sections": [
+        "sec-21-risk",
+        "sec-30-takeover",
+        "sec-31-multivendor"
+      ],
+      "excerpt_standalone": true,
+      "word_count": 286
+    },
+    {
+      "order": 13,
+      "id": "sec-12-release",
+      "title": "12. Release and Deployment",
+      "summary": "Environment promotion chain as code, blue/green-canary with SLO-triggered rollback, signed release checklist, observability shipped with each release.",
+      "tags": [
+        "release",
+        "deployment",
+        "blue-green",
+        "canary",
+        "rollback",
+        "observability",
+        "iac",
+        "monitoring"
+      ],
+      "rfp_questions": [
+        "How do you release to production?",
+        "What is your rollback strategy?"
+      ],
+      "engagement_models": [
+        "pds",
+        "fixed-price",
+        "dedicated-team"
+      ],
+      "cases": [
+        "CASE-10"
+      ],
+      "visuals": [
+        "VIS-05"
+      ],
+      "tables": [],
+      "related_sections": [
+        "sec-08-engineering",
+        "sec-23-support-sla"
+      ],
+      "excerpt_standalone": true,
+      "word_count": 326
+    },
+    {
+      "order": 14,
+      "id": "sec-13-transition",
+      "title": "13. Transition, Training and Hypercare",
+      "summary": "Transition package contents, KT by working together with per-person checklist, end-user training workstream (incl. train-the-trainer), 2-4 week hypercare with exit criterion, support tiers up to 24/7.",
+      "tags": [
+        "knowledge-transfer",
+        "transition",
+        "hypercare",
+        "training",
+        "end-user-training",
+        "runbooks",
+        "support-tiers"
+      ],
+      "rfp_questions": [
+        "How do you handle knowledge transfer?",
+        "How do you train our users?",
+        "What happens after go-live?"
+      ],
+      "engagement_models": [
+        "pds",
+        "fixed-price"
+      ],
+      "cases": [],
+      "visuals": [],
+      "tables": [],
+      "related_sections": [
+        "sec-17-continuity",
+        "sec-23-support-sla",
+        "sec-24-team"
+      ],
+      "excerpt_standalone": true,
+      "word_count": 273
+    },
+    {
+      "order": 15,
+      "id": "sec-14-communication",
+      "title": "14. Communication and Reporting",
+      "summary": "Full cadence table (daily to quarterly), contractualisation via Delivery Approach Note/SoW, fixed status-report structure, defined RAG semantics, earned-value steering view.",
+      "tags": [
+        "communication",
+        "reporting",
+        "cadence",
+        "rag",
+        "status-report",
+        "steering-committee"
+      ],
+      "rfp_questions": [
+        "How often do you communicate status, problems, progress?",
+        "How do you report?"
+      ],
+      "engagement_models": [
+        "all"
+      ],
+      "cases": [],
+      "visuals": [
+        "VIS-03"
+      ],
+      "tables": [
+        "cadence table"
+      ],
+      "related_sections": [
+        "sec-15-escalation",
+        "sec-16-change-certainty",
+        "sec-21-risk",
+        "sec-app-b-governance-roles"
+      ],
+      "excerpt_standalone": true,
+      "word_count": 319
+    },
+    {
+      "order": 16,
+      "id": "sec-15-escalation",
+      "title": "15. Escalation and Issue Resolution",
+      "summary": "3-level escalation ladder with tightening response times (L3: 4 business hours + options paper), DM as standing second contact, contractual exit assistance.",
+      "tags": [
+        "escalation",
+        "issues",
+        "delivery-manager",
+        "exit-assistance",
+        "termination"
+      ],
+      "rfp_questions": [
+        "What happens when things go wrong?",
+        "How do we escalate problems?"
+      ],
+      "engagement_models": [
+        "all"
+      ],
+      "cases": [],
+      "visuals": [
+        "VIS-04"
+      ],
+      "tables": [
+        "escalation levels"
+      ],
+      "related_sections": [
+        "sec-14-communication",
+        "sec-17-continuity",
+        "sec-32-regulated"
+      ],
+      "excerpt_standalone": true,
+      "word_count": 181
+    },
+    {
+      "order": 17,
+      "id": "sec-16-change-certainty",
+      "title": "16. Change Control, Cost and Schedule Certainty",
+      "summary": "Impact-before-commitment change process with weekly change review, four cost-certainty mechanisms, schedule early-warning mechanics, flexibility rules per model.",
+      "tags": [
+        "change-control",
+        "cost-certainty",
+        "schedule-certainty",
+        "earned-value",
+        "contingency",
+        "flexibility"
+      ],
+      "rfp_questions": [
+        "How do you ensure cost certainty?",
+        "How do you ensure deadline certainty?",
+        "How flexible are you with changes?"
+      ],
+      "engagement_models": [
+        "all"
+      ],
+      "cases": [],
+      "visuals": [],
+      "tables": [],
+      "related_sections": [
+        "sec-05-discovery",
+        "sec-14-communication",
+        "sec-21-risk"
+      ],
+      "excerpt_standalone": true,
+      "word_count": 223
+    },
+    {
+      "order": 18,
+      "id": "sec-17-continuity",
+      "title": "17. Team Continuity, Substitution and Scaling",
+      "summary": "Named deputies, 2-week paid overlap on rotation at Andersen's expense, replacement-for-cause in 10 business days, named-person bid rules, ramp-up 2-4 weeks/specialist, ramp-down notice.",
+      "tags": [
+        "continuity",
+        "substitution",
+        "replacement",
+        "ramp-up",
+        "ramp-down",
+        "deputies",
+        "rotation",
+        "bench"
+      ],
+      "rfp_questions": [
+        "What are your substitution and continuity arrangements?",
+        "How do you scale the team up or down?"
+      ],
+      "engagement_models": [
+        "all"
+      ],
+      "cases": [],
+      "visuals": [],
+      "tables": [],
+      "related_sections": [
+        "sec-18-working-model",
+        "sec-24-team"
+      ],
+      "excerpt_standalone": true,
+      "word_count": 244
+    },
+    {
+      "order": 19,
+      "id": "sec-18-working-model",
+      "title": "18. Working Model: Locations, Time Zones, Languages",
+      "summary": "Delivery regions, guaranteed overlap windows per client region (table), on-site policy incl. public-sector requirements, language capabilities incl. German for DACH.",
+      "tags": [
+        "locations",
+        "time-zones",
+        "overlap",
+        "nearshore",
+        "on-site",
+        "languages",
+        "german",
+        "dach"
+      ],
+      "rfp_questions": [
+        "Where is the work performed?",
+        "What time-zone overlap do you guarantee?",
+        "Do you support German-language delivery?"
+      ],
+      "engagement_models": [
+        "all"
+      ],
+      "cases": [],
+      "visuals": [],
+      "tables": [
+        "region/staffing/overlap"
+      ],
+      "related_sections": [
+        "sec-23-support-sla",
+        "sec-33-gcc"
+      ],
+      "excerpt_standalone": true,
+      "word_count": 290
+    },
+    {
+      "order": 20,
+      "id": "sec-19-subcontracting",
+      "title": "19. Subcontracting",
+      "summary": "Employees by default; subcontractors only with prior written consent, declared by name, full obligation flow-down, Andersen as single point of responsibility.",
+      "tags": [
+        "subcontracting",
+        "declarations",
+        "flow-down",
+        "public-procurement"
+      ],
+      "rfp_questions": [
+        "Do you subcontract?"
+      ],
+      "engagement_models": [
+        "all"
+      ],
+      "cases": [],
+      "visuals": [],
+      "tables": [],
+      "related_sections": [],
+      "excerpt_standalone": true,
+      "word_count": 77
+    },
+    {
+      "order": 21,
+      "id": "sec-20-ip",
+      "title": "20. Intellectual Property",
+      "summary": "Client owns all work product on payment; background IP identified and licensed without restricting use; OSS inventoried (SBOM) with licence checks in pipeline.",
+      "tags": [
+        "ip",
+        "intellectual-property",
+        "work-for-hire",
+        "background-ip",
+        "open-source",
+        "sbom",
+        "licences"
+      ],
+      "rfp_questions": [
+        "Who owns the intellectual property?"
+      ],
+      "engagement_models": [
+        "all"
+      ],
+      "cases": [],
+      "visuals": [],
+      "tables": [],
+      "related_sections": [
+        "sec-28-ai",
+        "sec-31-multivendor"
+      ],
+      "excerpt_standalone": true,
+      "word_count": 97
+    },
+    {
+      "order": 22,
+      "id": "sec-21-risk",
+      "title": "21. Risk and Dependency Management",
+      "summary": "Day-one risk register with owner/probability/impact/trigger/mitigation, item-by-item weekly review, dependency register with needed-by dates, neutral reporting of client-side dependencies.",
+      "tags": [
+        "risk-register",
+        "dependencies",
+        "mitigation",
+        "early-warning"
+      ],
+      "rfp_questions": [
+        "How do you manage risks?",
+        "How do you track dependencies on us and third parties?"
+      ],
+      "engagement_models": [
+        "all"
+      ],
+      "cases": [],
+      "visuals": [],
+      "tables": [],
+      "related_sections": [
+        "sec-14-communication",
+        "sec-16-change-certainty"
+      ],
+      "excerpt_standalone": true,
+      "word_count": 169
+    },
+    {
+      "order": 23,
+      "id": "sec-22-improvement",
+      "title": "22. Continuous Improvement",
+      "summary": "Retro actions tracked as work items, monthly delivery metrics review (velocity stability, escape rate, cycle time, pipeline health), quarterly relationship review.",
+      "tags": [
+        "retrospectives",
+        "metrics",
+        "improvement",
+        "relationship-review"
+      ],
+      "rfp_questions": [
+        "How do you improve over time?"
+      ],
+      "engagement_models": [
+        "all"
+      ],
+      "cases": [],
+      "visuals": [],
+      "tables": [],
+      "related_sections": [
+        "sec-14-communication"
+      ],
+      "excerpt_standalone": true,
+      "word_count": 113
+    },
+    {
+      "order": 24,
+      "id": "sec-23-support-sla",
+      "title": "23. Support, Service Management and SLAs",
+      "summary": "Support tiers (8x5 to 24/7), warranty (2 months default), full SLA matrix P1-P4 with clock rules and client-update cadence, availability targets, measurement rules and service credits, L1/L2/L3 operation, development capacity within support, monthly/quarterly service reporting, training.",
+      "tags": [
+        "support",
+        "sla",
+        "service-management",
+        "itil",
+        "warranty",
+        "incident",
+        "service-desk",
+        "availability",
+        "service-credits",
+        "training"
+      ],
+      "rfp_questions": [
+        "What are your support tiers, SLAs and warranty?",
+        "Describe your incident response",
+        "What service reporting do you provide?",
+        "Do you provide training?"
+      ],
+      "engagement_models": [
+        "all"
+      ],
+      "cases": [
+        "CASE-11",
+        "CASE-12"
+      ],
+      "visuals": [],
+      "tables": [
+        "support tiers",
+        "SLA matrix P1-P4"
+      ],
+      "related_sections": [
+        "sec-08-engineering",
+        "sec-09-qa",
+        "sec-13-transition",
+        "sec-18-working-model",
+        "sec-30-takeover"
+      ],
+      "excerpt_standalone": true,
+      "word_count": 952
+    },
+    {
+      "order": 25,
+      "id": "sec-24-team",
+      "title": "24. Team Composition and Key Personnel",
+      "summary": "Named-CV bid standard with CV content spec (education+graduation year, certifications, projects, clearance), team shapes per engagement size, seniority mix (max 1 junior per 3 senior/middle), separation of duties, client-side roles with time commitments.",
+      "tags": [
+        "team",
+        "cv",
+        "key-personnel",
+        "staffing",
+        "seniority",
+        "named-persons",
+        "roles"
+      ],
+      "rfp_questions": [
+        "Who exactly will work on our project?",
+        "Describe the quality and balance of the proposed team",
+        "What do your CVs contain?"
+      ],
+      "engagement_models": [
+        "all"
+      ],
+      "cases": [],
+      "visuals": [],
+      "tables": [],
+      "related_sections": [
+        "sec-15-escalation",
+        "sec-17-continuity",
+        "sec-21-risk"
+      ],
+      "excerpt_standalone": true,
+      "word_count": 334
+    },
+    {
+      "order": 26,
+      "id": "sec-25-accessibility",
+      "title": "25. Accessibility and Inclusive Design",
+      "summary": "WCAG 2.2 AA target (exceeding EN 301 549 baseline), correct legal mapping (Directive 2016/2102, EAA 2019/882), accessibility-first design, automated CI checks (axe-core, Lighthouse), named manual AT testing (NVDA/JAWS/VoiceOver), pre-release audit by independent specialist, public accessibility statement, VPAT for non-EU.",
+      "tags": [
+        "accessibility",
+        "wcag",
+        "en-301-549",
+        "inclusive-design",
+        "screen-readers",
+        "audit",
+        "public-sector",
+        "vpat"
+      ],
+      "rfp_questions": [
+        "How do you ensure accessibility (WCAG)?",
+        "Who performs accessibility testing and audits?"
+      ],
+      "engagement_models": [
+        "all"
+      ],
+      "cases": [],
+      "visuals": [],
+      "tables": [],
+      "related_sections": [
+        "sec-09-qa",
+        "sec-29-ux-design"
+      ],
+      "excerpt_standalone": true,
+      "word_count": 374
+    },
+    {
+      "order": 27,
+      "id": "sec-26-bcdr",
+      "title": "26. Business Continuity and Disaster Recovery",
+      "summary": "RTO/RPO default tiering table (Tier 1: RTO 4h/RPO 15min), rehearsed restore tests reported monthly, IaC rebuild, annual DR exercises, distributed-delivery continuity with 2022 relocation as evidence, ISO 27001 ISMS continuity controls, BC policy as annex.",
+      "tags": [
+        "business-continuity",
+        "disaster-recovery",
+        "rto",
+        "rpo",
+        "backups",
+        "resilience",
+        "failover"
+      ],
+      "rfp_questions": [
+        "What are your business continuity / DR arrangements?",
+        "What are your RTO/RPO commitments?"
+      ],
+      "engagement_models": [
+        "all"
+      ],
+      "cases": [],
+      "visuals": [],
+      "tables": [
+        "RTO/RPO tiers"
+      ],
+      "related_sections": [
+        "sec-05-discovery",
+        "sec-10-security",
+        "sec-13-transition",
+        "sec-17-continuity",
+        "sec-18-working-model",
+        "sec-23-support-sla"
+      ],
+      "excerpt_standalone": true,
+      "word_count": 348
+    },
+    {
+      "order": 28,
+      "id": "sec-27-esg",
+      "title": "27. Corporate Responsibility: Social, Environmental and Ethical Practice",
+      "summary": "Policy set as annexes (code of conduct, anti-bribery, modern-slavery statement, D&I), education programmes with volumes in annex, engagement-linked social value for UK/Irish scoring, environmental practice targeting travel/compute with resource efficiency as architecture review item, CSRD alignment.",
+      "tags": [
+        "esg",
+        "csr",
+        "social-value",
+        "environment",
+        "ethics",
+        "modern-slavery",
+        "diversity",
+        "education"
+      ],
+      "rfp_questions": [
+        "What are your social and environmental practices?",
+        "Do you have a modern slavery statement?",
+        "What social value can you deliver?"
+      ],
+      "engagement_models": [
+        "all"
+      ],
+      "cases": [],
+      "visuals": [],
+      "tables": [],
+      "related_sections": [
+        "sec-06-architecture",
+        "sec-18-working-model"
+      ],
+      "excerpt_standalone": true,
+      "word_count": 306
+    },
+    {
+      "order": 29,
+      "id": "sec-28-ai",
+      "title": "28. AI-Assisted Delivery and Responsible AI Use",
+      "summary": "Controls for AI in delivery: enterprise tenancies with training disabled, no client code in public AI services, per-repo/full opt-out, AI output through standard gates, usage logging, AI productivity reflected in estimates. Building AI features: EU AI Act (2024/1689) risk classification, SME-curated evaluation sets with agreed thresholds, guardrails, in-region model hosting, model-specific monitoring. Sensitive data: minimisation, pseudonymisation, tested PII redaction, query-time retrieval scoping, client-tenancy hosting, BAA for PHI, DPIA, synthetic/anonymised eval data.",
+      "tags": [
+        "ai",
+        "responsible-ai",
+        "llm",
+        "genai",
+        "eu-ai-act",
+        "copilot",
+        "rag",
+        "guardrails",
+        "evaluation",
+        "ip-protection"
+      ],
+      "rfp_questions": [
+        "How do you use AI in delivery; is our IP safe?",
+        "How do you govern AI features you build?",
+        "Are you EU AI Act compliant?"
+      ],
+      "engagement_models": [
+        "all"
+      ],
+      "cases": [
+        "CASE-01"
+      ],
+      "visuals": [],
+      "tables": [],
+      "related_sections": [
+        "sec-05-discovery",
+        "sec-08-engineering",
+        "sec-10-security",
+        "sec-12-release",
+        "sec-32-regulated"
+      ],
+      "excerpt_standalone": true,
+      "word_count": 662
+    },
+    {
+      "order": 30,
+      "id": "sec-29-ux-design",
+      "title": "29. UX and Product Design",
+      "summary": "User research in discovery (interviews, task analysis, journeys), wireframe-prototype-visual flow with client review, usability testing 5-8 users/round, design QA in DoD, brand-guideline compliance check, design system governance with contribution rules, privacy-compliant behavioural analytics with event taxonomy.",
+      "tags": [
+        "ux",
+        "design",
+        "figma",
+        "usability-testing",
+        "design-system",
+        "user-research",
+        "analytics",
+        "brand"
+      ],
+      "rfp_questions": [
+        "Describe your UX/design methodology",
+        "How do you govern a design system?",
+        "How do you measure user behaviour?"
+      ],
+      "engagement_models": [
+        "pds",
+        "fixed-price",
+        "dedicated-team"
+      ],
+      "cases": [
+        "CASE-01"
+      ],
+      "visuals": [],
+      "tables": [],
+      "related_sections": [
+        "sec-05-discovery",
+        "sec-16-change-certainty",
+        "sec-20-ip",
+        "sec-22-improvement",
+        "sec-25-accessibility"
+      ],
+      "excerpt_standalone": true,
+      "word_count": 379
+    },
+    {
+      "order": 31,
+      "id": "sec-30-takeover",
+      "title": "30. Taking Over an Existing System or Incumbent Supplier",
+      "summary": "Priced, walk-away-able due diligence (2-6 weeks): code/infra/licence/docs audit with takeover report. Knowledge capture with or without incumbent cooperation. TUPE/ARD and licence novation handling. Shadow-assisted-full phases with entry/exit criteria; SLA clocks from full responsibility; 3-month no-regression window at no charge.",
+      "tags": [
+        "takeover",
+        "incumbent",
+        "transition-in",
+        "due-diligence",
+        "tupe",
+        "novation",
+        "shadowing",
+        "no-regression"
+      ],
+      "rfp_questions": [
+        "How would you take over from our current supplier?",
+        "What is your transition-in plan?",
+        "What happens to inherited technical debt?"
+      ],
+      "engagement_models": [
+        "all"
+      ],
+      "cases": [
+        "CASE-06",
+        "CASE-11"
+      ],
+      "visuals": [],
+      "tables": [],
+      "related_sections": [
+        "sec-02-engagement-models",
+        "sec-08-engineering",
+        "sec-11-data-integration",
+        "sec-13-transition",
+        "sec-23-support-sla"
+      ],
+      "excerpt_standalone": true,
+      "word_count": 453
+    },
+    {
+      "order": 32,
+      "id": "sec-31-multivendor",
+      "title": "31. Working in Multi-Vendor Environments",
+      "summary": "Cross-vendor boundary definition in Delivery Approach Note, SIAM/service-integrator compatibility with OLAs, cause-neutral incident triage on evidence, contract tests as objective boundary arbitration, embedded work in client ceremonies, inter-vendor confidentiality and least-privilege, cross-vendor dependency tracking.",
+      "tags": [
+        "multi-vendor",
+        "siam",
+        "ola",
+        "raci",
+        "cross-vendor",
+        "incidents",
+        "confidentiality",
+        "ecosystem"
+      ],
+      "rfp_questions": [
+        "How do you work alongside our other vendors?",
+        "Do you operate under SIAM?",
+        "How do you handle cross-vendor incidents?"
+      ],
+      "engagement_models": [
+        "all"
+      ],
+      "cases": [
+        "CASE-03"
+      ],
+      "visuals": [],
+      "tables": [],
+      "related_sections": [
+        "sec-07-execution",
+        "sec-08-engineering",
+        "sec-10-security",
+        "sec-11-data-integration",
+        "sec-15-escalation",
+        "sec-16-change-certainty",
+        "sec-20-ip",
+        "sec-21-risk",
+        "sec-30-takeover"
+      ],
+      "excerpt_standalone": true,
+      "word_count": 341
+    },
+    {
+      "order": 33,
+      "id": "sec-32-regulated",
+      "title": "32. Delivery in Regulated Industries: Healthcare, Financial Services, Public Sector",
+      "summary": "Compliance register method (HIPAA/FDA-MDR, PCI DSS, PSD2 SCA, EMD2, DORA, KYC/AML, public-sector baselines incl. clearances), supplier-side obligations (DORA Art.30 terms, audit rights, SAMA/CBUAE outsourcing approvals), field-level tokenisation, audit trails, anonymised test data with documented approvals for production-scale testing, per-release privileged-access recertification, evidence-on-demand.",
+      "tags": [
+        "regulated",
+        "healthcare",
+        "banking",
+        "fintech",
+        "hipaa",
+        "dora",
+        "pci-dss",
+        "psd2",
+        "emd2",
+        "kyc-aml",
+        "public-sector",
+        "audit-trail",
+        "compliance-register",
+        "outsourcing"
+      ],
+      "rfp_questions": [
+        "How do you deliver for healthcare / banking / government?",
+        "Do you accept DORA outsourcing provisions?",
+        "How do you protect sensitive data in engineering?"
+      ],
+      "engagement_models": [
+        "all"
+      ],
+      "cases": [
+        "CASE-08",
+        "CASE-09",
+        "CASE-13"
+      ],
+      "visuals": [],
+      "tables": [],
+      "related_sections": [
+        "sec-05-discovery",
+        "sec-09-qa",
+        "sec-10-security",
+        "sec-15-escalation",
+        "sec-23-support-sla",
+        "sec-28-ai"
+      ],
+      "excerpt_standalone": true,
+      "word_count": 548
+    },
+    {
+      "order": 34,
+      "id": "sec-33-gcc",
+      "title": "33. Delivering in the Middle East and GCC",
+      "summary": "GCC regime set (Saudi PDPL+transfer regs, NCA ECC, CST, SAMA CSF; UAE PDPL, DIFC/ADGM; Qatar PDPPL), in-Kingdom/in-country hosting incl. government clouds, Abu Dhabi TAMM/DGE ecosystem experience (pursuit-stage solutioning + technical defence), Sun-Thu working week, 0-2h Gulf overlap from Caucasus/Central Asia, Arabic/RTL design, on-site expectations, LCGPA local content.",
+      "tags": [
+        "gcc",
+        "middle-east",
+        "saudi-arabia",
+        "uae",
+        "qatar",
+        "pdpl",
+        "nca-ecc",
+        "sama-csf",
+        "difc",
+        "adgm",
+        "data-residency",
+        "arabic",
+        "rtl",
+        "tamm",
+        "dge",
+        "lcgpa"
+      ],
+      "rfp_questions": [
+        "How do you handle GCC data residency, Arabic, local rules?",
+        "What is your experience in Saudi Arabia / UAE?",
+        "Can you host in-Kingdom?"
+      ],
+      "engagement_models": [
+        "all"
+      ],
+      "cases": [],
+      "visuals": [],
+      "tables": [],
+      "related_sections": [
+        "sec-10-security",
+        "sec-18-working-model",
+        "sec-28-ai",
+        "sec-29-ux-design",
+        "sec-32-regulated"
+      ],
+      "excerpt_standalone": true,
+      "word_count": 453
+    },
+    {
+      "order": 35,
+      "id": "sec-app-a-lifecycle",
+      "title": "Appendix A. Delivery Lifecycle with Stage Gates",
+      "summary": "One-line lifecycle: six phases with explicit exit gates from mobilisation to hypercare exit.",
+      "tags": [
+        "lifecycle",
+        "stage-gates",
+        "phases"
+      ],
+      "rfp_questions": [
+        "What is your delivery lifecycle?"
+      ],
+      "engagement_models": [
+        "pds",
+        "fixed-price"
+      ],
+      "cases": [],
+      "visuals": [
+        "VIS-01"
+      ],
+      "tables": [],
+      "related_sections": [
+        "sec-04-mobilisation",
+        "sec-05-discovery",
+        "sec-12-release",
+        "sec-13-transition"
+      ],
+      "excerpt_standalone": true,
+      "word_count": 62
+    },
+    {
+      "order": 36,
+      "id": "sec-app-b-governance-roles",
+      "title": "Appendix B. Governance Roles",
+      "summary": "Three governance layers with Andersen/client roles and scope; account leadership as out-of-chain escalation point.",
+      "tags": [
+        "governance",
+        "roles",
+        "raci"
+      ],
+      "rfp_questions": [
+        "What is your governance structure?"
+      ],
+      "engagement_models": [
+        "all"
+      ],
+      "cases": [],
+      "visuals": [
+        "VIS-03"
+      ],
+      "tables": [
+        "governance layers"
+      ],
+      "related_sections": [
+        "sec-14-communication",
+        "sec-15-escalation"
+      ],
+      "excerpt_standalone": true,
+      "word_count": 82
+    },
+    {
+      "order": 37,
+      "id": "sec-app-c-quality-gates",
+      "title": "Appendix C. Quality Gates Summary",
+      "summary": "Single-table summary of all five quality gates with default criteria (story→sprint, MR→main, story→done, RC→production, go-live→hypercare exit).",
+      "tags": [
+        "quality-gates",
+        "definition-of-done",
+        "release-criteria",
+        "thresholds"
+      ],
+      "rfp_questions": [
+        "Summarise your quality gates"
+      ],
+      "engagement_models": [
+        "all"
+      ],
+      "cases": [],
+      "visuals": [
+        "VIS-05",
+        "VIS-06"
+      ],
+      "tables": [
+        "gate/criteria"
+      ],
+      "related_sections": [
+        "sec-07-execution",
+        "sec-08-engineering",
+        "sec-09-qa",
+        "sec-12-release"
+      ],
+      "excerpt_standalone": true,
+      "word_count": 124
+    },
+    {
+      "order": 38,
+      "id": "sec-app-d-artefacts",
+      "title": "Appendix D. Delivery Artefacts with Owners and Cadence",
+      "summary": "All 14 standing artefacts with owner and production/update cadence.",
+      "tags": [
+        "artefacts",
+        "deliverables",
+        "documentation",
+        "owners"
+      ],
+      "rfp_questions": [
+        "What deliverables/documentation do you produce?"
+      ],
+      "engagement_models": [
+        "all"
+      ],
+      "cases": [],
+      "visuals": [],
+      "tables": [
+        "artefact/owner/cadence"
+      ],
+      "related_sections": [
+        "sec-04-mobilisation",
+        "sec-14-communication"
+      ],
+      "excerpt_standalone": true,
+      "word_count": 171
+    },
+    {
+      "order": 39,
+      "id": "sec-case-index",
+      "title": "Case Index",
+      "summary": "Index of CASE-01..10 with engagement model and section mapping; swap per bid by industry/technology; reference letters available under NDA.",
+      "tags": [
+        "cases",
+        "evidence",
+        "references",
+        "proof"
+      ],
+      "rfp_questions": [
+        "What evidence can you provide?",
+        "Can you provide references?"
+      ],
+      "engagement_models": [
+        "all"
+      ],
+      "cases": [
+        "CASE-01",
+        "CASE-02",
+        "CASE-03",
+        "CASE-04",
+        "CASE-05",
+        "CASE-06",
+        "CASE-07",
+        "CASE-08",
+        "CASE-09",
+        "CASE-10"
+      ],
+      "visuals": [],
+      "tables": [
+        "case index"
+      ],
+      "related_sections": [],
+      "excerpt_standalone": true,
+      "word_count": 239
+    }
+  ],
+  "visuals": [
+    {
+      "id": "VIS-01",
+      "file": "visuals/VIS-01_delivery_lifecycle.svg",
+      "title": "Delivery lifecycle with stage gates",
+      "sections": [
+        "sec-app-a-lifecycle",
+        "sec-03-principles",
+        "sec-04-mobilisation"
+      ],
+      "tags": [
+        "lifecycle",
+        "stage-gates"
+      ],
+      "usage": "methodology overview slide"
+    },
+    {
+      "id": "VIS-02",
+      "file": "visuals/VIS-02_mobilisation_timeline.svg",
+      "title": "Mobilisation 10-day timeline",
+      "sections": [
+        "sec-04-mobilisation"
+      ],
+      "tags": [
+        "mobilisation",
+        "timeline"
+      ],
+      "usage": "project-start slide"
+    },
+    {
+      "id": "VIS-03",
+      "file": "visuals/VIS-03_governance_cadence.svg",
+      "title": "Governance layers and communication cadence",
+      "sections": [
+        "sec-14-communication",
+        "sec-app-b-governance-roles"
+      ],
+      "tags": [
+        "governance",
+        "communication"
+      ],
+      "usage": "communication-frequency answer"
+    },
+    {
+      "id": "VIS-04",
+      "file": "visuals/VIS-04_escalation_ladder.svg",
+      "title": "Escalation ladder",
+      "sections": [
+        "sec-15-escalation"
+      ],
+      "tags": [
+        "escalation"
+      ],
+      "usage": "when-things-go-wrong answer"
+    },
+    {
+      "id": "VIS-05",
+      "file": "visuals/VIS-05_pipeline_promotion.svg",
+      "title": "Engineering pipeline and environment promotion",
+      "sections": [
+        "sec-08-engineering",
+        "sec-12-release"
+      ],
+      "tags": [
+        "ci-cd",
+        "release"
+      ],
+      "usage": "engineering/DevOps answer"
+    },
+    {
+      "id": "VIS-06",
+      "file": "visuals/VIS-06_quality_model.svg",
+      "title": "Quality model: test pyramid and defect SLAs",
+      "sections": [
+        "sec-09-qa",
+        "sec-app-c-quality-gates"
+      ],
+      "tags": [
+        "qa",
+        "testing",
+        "sla"
+      ],
+      "usage": "QA-measures answer"
+    }
+  ],
+  "cases": [
+    {
+      "id": "CASE-01",
+      "client": "UK building-services company",
+      "industry": "Building services / HVAC",
+      "model": "PDS",
+      "topic": "AI knowledge assistant; 8-person team; milestone-based 2-week sprints; Jira/GitLab/Figma",
+      "sections": [
+        "sec-02-engagement-models"
+      ]
+    },
+    {
+      "id": "CASE-02",
+      "client": "US agricultural logistics company",
+      "industry": "Logistics",
+      "model": "Fixed price",
+      "topic": "9-week Salesforce implementation, 3 FTE, phased incl. hypercare",
+      "sections": [
+        "sec-02-engagement-models"
+      ]
+    },
+    {
+      "id": "CASE-03",
+      "client": "UK specialist insurer",
+      "industry": "Insurance",
+      "model": "Augmentation",
+      "topic": "Ways-of-working standardisation across 3 Scrum teams; shared Jira dashboards",
+      "sections": [
+        "sec-02-engagement-models"
+      ]
+    },
+    {
+      "id": "CASE-04",
+      "client": "European online broker",
+      "industry": "Fintech/Trading",
+      "model": "Audit",
+      "topic": "2-month architecture audit, 2.5 FTE; AS-IS/TO-BE, roadmap, TCO",
+      "sections": [
+        "sec-02-engagement-models"
+      ]
+    },
+    {
+      "id": "CASE-05",
+      "client": "US payments network",
+      "industry": "Fintech/Payments",
+      "model": "PDS",
+      "topic": "Regulated CI/CD gate chain; GitOps promotion; immutable registries",
+      "sections": [
+        "sec-08-engineering"
+      ]
+    },
+    {
+      "id": "CASE-06",
+      "client": "Telecom platform",
+      "industry": "Media & Telecom",
+      "model": "PDS (takeover)",
+      "topic": "Engineering remediation: coverage ramp to 80%, CI/CD, monitoring",
+      "sections": [
+        "sec-08-engineering"
+      ]
+    },
+    {
+      "id": "CASE-07",
+      "client": "European pet-supplies retailer",
+      "industry": "E-commerce/Retail",
+      "model": "Augmentation",
+      "topic": "QA process rebuild; Selenium/Appium/Java/Cucumber/JMeter; optimised team",
+      "sections": [
+        "sec-09-qa"
+      ]
+    },
+    {
+      "id": "CASE-08",
+      "client": "German healthcare startup",
+      "industry": "Healthcare",
+      "model": "Fixed scope",
+      "topic": "Compliance evidence demonstrable on demand; automated config+test verification",
+      "sections": [
+        "sec-10-security"
+      ]
+    },
+    {
+      "id": "CASE-09",
+      "client": "US healthcare imaging provider",
+      "industry": "Healthcare",
+      "model": "PDS",
+      "topic": "EHR/RCM migration; weekly Friday release-risk register reviews",
+      "sections": [
+        "sec-11-data-integration"
+      ]
+    },
+    {
+      "id": "CASE-13",
+      "client": "European e-money institution and bank group",
+      "industry": "Fintech/Banking",
+      "model": "Dedicated team",
+      "topic": "Up to 25 FTE, 3 years; PCI DSS, PSD2 SCA, licence-driven audit/retention/HA obligations",
+      "sections": [
+        "sec-32-regulated"
+      ]
+    },
+    {
+      "id": "CASE-11",
+      "client": "New Zealand card-services fintech",
+      "industry": "Fintech",
+      "model": "Managed support",
+      "topic": "L2 8x5 NZT / L3 8x5 CET, tiered SLA plan, support takeover preceded by infrastructure audit",
+      "sections": [
+        "sec-23-support-sla"
+      ]
+    },
+    {
+      "id": "CASE-12",
+      "client": "German media-technology provider",
+      "industry": "Media & Streaming",
+      "model": "Managed support",
+      "topic": "24/7 runbook-driven emergency support, L1 triage, restricted production access, readiness-priced",
+      "sections": [
+        "sec-23-support-sla"
+      ]
+    },
+    {
+      "id": "CASE-10",
+      "client": "Canadian travel-technology company",
+      "industry": "Travel",
+      "model": "Dedicated team",
+      "topic": "32-person team; USD 1B+ transactions; Azure DevOps/AKS/Terraform; full observability",
+      "sections": [
+        "sec-12-release"
+      ]
+    }
+  ]
+}

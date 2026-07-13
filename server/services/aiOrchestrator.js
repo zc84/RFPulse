@@ -15,6 +15,13 @@ import {
 const DEFAULT_AGENT_SLUGS = ['coordinator', 'legal', 'architect', 'estimator', 'frontend-dev'];
 const REQUIRED_SPECIALIST_SLUGS = ['legal', 'architect', 'estimator'];
 let apexGanttGuidanceCache = null;
+const MARKDOWN_HEADING_PATTERN = /^(#{1,6})\s+(.*)$/;
+const ARCHITECTURE_SECTION_PATTERNS = [
+  /^\s*#{1,6}\s+.*\b(proposed architecture|solution architecture|technical solution|proposed solution|solution overview|architecture)\b.*$/i,
+];
+const EXCLUDED_ARCHITECTURE_SUBSECTION_PATTERNS = [
+  /^\s*#{1,6}\s+.*\b(implementation plan|timeline|delivery plan|roadmap|project schedule|schedule|wbs|work breakdown)\b.*$/i,
+];
 
 function createAiError(message, status = 502) {
   const error = new Error(message);
@@ -474,7 +481,7 @@ export async function buildCoordinatorContext(contextBundle, conversation, prior
     const summary = await callAgent('coordinator', messages, {
       taskPromptKey: 'coordinator.context',
       priorityInstructions,
-      maxTokens: 16384,
+      maxTokens: 24576,
       allowPartialOnLength: true,
       partialNote: `Coordinator source summary part ${index + 1} reached its output limit.`,
       signal,
@@ -495,7 +502,7 @@ export async function buildCoordinatorContext(contextBundle, conversation, prior
       }], {
         taskPromptKey: 'coordinator.context',
         priorityInstructions,
-        maxTokens: 16384,
+        maxTokens: 24576,
         allowPartialOnLength: true,
         partialNote: 'The consolidated Coordinator summary reached its output limit.',
         signal,
@@ -633,7 +640,8 @@ export async function coordinatorStep(
   agentOutputs = {},
   existingCoordinatorContext = null,
   priorityInstructions = '',
-  signal = null
+  signal = null,
+  expectedSpecialists = REQUIRED_SPECIALIST_SLUGS
 ) {
   throwIfAborted(signal);
   const agent = await loadAgentConfig('coordinator');
@@ -642,7 +650,11 @@ export async function coordinatorStep(
   const outputsSummary = formatAgentOutputs(agentOutputs, 5000);
   const conversationText = formatConversation(conversation, 3000);
   const hasAgentOutputs = agentOutputs && Object.keys(agentOutputs).length > 0;
-  const hasRequiredOutputs = REQUIRED_SPECIALIST_SLUGS.every(slug => Boolean(agentOutputs?.[slug]));
+  // Readiness is relative to the specialists this session actually committed to (which may be
+  // a subset the Coordinator chose), not always the full set — otherwise a deliberately
+  // reduced plan could never reach "ready_to_write" and would loop.
+  const expected = [...resolveRequestedSpecialists(expectedSpecialists)];
+  const hasRequiredOutputs = expected.every(slug => Boolean(agentOutputs?.[slug]));
   if (hasRequiredOutputs) {
     return {
       status: 'ready_to_write',
@@ -691,14 +703,23 @@ export async function coordinatorStep(
       priorityInstructions,
       schema: coordinatorDecisionSchema,
       schemaName: 'coordinator_decision',
-      maxTokens: 4096,
+      maxTokens: 6144,
       signal: timeoutController.signal,
     });
     const validated = parseAgentJson(raw, 'Coordinator', coordinatorDecisionSchema);
     const forcedRouting = shouldForceCoordinatorRouting(validated, contextBundle);
-    const normalized = (validated.status === 'routing' || forcedRouting)
-      ? { ...validated, status: 'routing', questions: null, plan: REQUIRED_SPECIALIST_SLUGS }
-      : { ...validated, plan: null };
+    let normalized;
+    if (forcedRouting) {
+      // Safety override: the model tried to stop and clarify on a substantial tender pack.
+      // Force the full specialist route rather than trusting a (missing) plan.
+      normalized = { ...validated, status: 'routing', questions: null, plan: [...REQUIRED_SPECIALIST_SLUGS] };
+    } else if (validated.status === 'routing') {
+      // Honor the Coordinator's chosen specialists (normalized/deduped, with dependencies and
+      // the all-three fallback applied) instead of silently replacing them with the full set.
+      normalized = { ...validated, questions: null, plan: [...resolveRequestedSpecialists(validated.plan)] };
+    } else {
+      normalized = { ...validated, plan: null };
+    }
 
     return {
       ...normalized,
@@ -756,7 +777,7 @@ export async function buildEstimatorBrief(context, conversation, agentOutputs, p
   return await callAgent('coordinator', messages, {
     taskPromptKey: 'coordinator.estimator-brief',
     priorityInstructions,
-    maxTokens: 4096,
+    maxTokens: 6144,
     allowPartialOnLength: true,
     partialNote: 'The estimator brief reached the output limit and was capped. Estimator should flag any missing details as assumptions.',
     signal,
@@ -791,7 +812,7 @@ export async function buildRoleBrief(role, sourceContext, conversation, priority
   }], {
     taskPromptKey: role === 'legal' ? 'coordinator.legal-brief' : 'coordinator.architect-brief',
     priorityInstructions,
-    maxTokens: 16384,
+    maxTokens: 24576,
     signal,
   });
 }
@@ -801,21 +822,70 @@ function appendArchitectureDiagramPrompt(report) {
     '## Architecture Diagram Prompt',
     'Use the proposal above as the source of truth and generate client-ready PNG diagrams for the solution architecture.',
     'Use the exact tech stack named in the proposal. Do not substitute a generic stack, an authority-approved provider, or a different implementation just because it has a nicer icon set.',
+    'Treat WBS content, implementation plans, timelines, schedules, roadmaps, pricing, and effort tables as out of scope for these architecture images.',
     'Produce 1 to 5 diagrams as appropriate: an overview, a component or context view, a workflow or sequence view, an integration or data-flow view, and a deployment or trust-boundary view when relevant.',
     'Each diagram should contain only elements grounded in the report: actors, channels, services, data stores, external systems, environments, and security boundaries.',
     'Use small, tech-stack-native icons where relevant for services, platforms, databases, cloud components, and infrastructure layers.',
     'If a technology does not have a native icon, use a neutral label or simple glyph instead of an unrelated icon.',
     'Keep labels concise, typography legible, spacing balanced, and the overall style professional and presentation-ready.',
+    'Do not embed a Gantt chart, delivery plan, WBS table, calendar strip, dates row, or pricing table into the architecture diagrams.',
     'Export each diagram as a separate PNG file.',
   ].join('\n\n');
 
   return `${report.trim()}\n\n${prompt}`;
 }
 
+function extractArchitectureDiagramSource(report) {
+  const body = stripArchitectureDiagramPrompt(report);
+  const lines = body.split(/\r?\n/);
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i].trim();
+    const heading = MARKDOWN_HEADING_PATTERN.exec(line);
+    if (!heading || !ARCHITECTURE_SECTION_PATTERNS.some(pattern => pattern.test(line))) continue;
+
+    const sectionLevel = heading[1].length;
+    let end = i + 1;
+    while (end < lines.length) {
+      const nextHeading = MARKDOWN_HEADING_PATTERN.exec(lines[end].trim());
+      if (nextHeading && nextHeading[1].length <= sectionLevel) break;
+      end += 1;
+    }
+
+    const kept = [lines[i]];
+    let skipSubsectionLevel = null;
+    for (let cursor = i + 1; cursor < end; cursor += 1) {
+      const currentLine = lines[cursor];
+      const currentHeading = MARKDOWN_HEADING_PATTERN.exec(currentLine.trim());
+
+      if (skipSubsectionLevel !== null) {
+        if (currentHeading && currentHeading[1].length <= skipSubsectionLevel) {
+          skipSubsectionLevel = null;
+        } else {
+          continue;
+        }
+      }
+
+      if (currentHeading && EXCLUDED_ARCHITECTURE_SUBSECTION_PATTERNS.some(pattern => pattern.test(currentLine.trim()))) {
+        skipSubsectionLevel = currentHeading[1].length;
+        continue;
+      }
+
+      kept.push(currentLine);
+    }
+
+    const extracted = kept.join('\n').trim();
+    if (extracted) return extracted;
+  }
+
+  return body.trim();
+}
+
 function buildArchitectureDiagramImagePrompt(report, variant) {
   const base = [
     'You are generating a polished enterprise architecture diagram as a PNG image.',
     'Use the proposal below as the source of truth.',
+    'Use only architecture content from the proposal. Ignore WBS content, implementation plans, delivery timelines, schedules, roadmap lanes, pricing, and effort tables.',
     'Use the exact tech stack named in the proposal. Do not replace it with a generic platform or provider-approved substitute.',
     'Use native icons for the technologies named in the report wherever possible. If a native icon is unavailable, use a simple neutral glyph instead of an unrelated icon.',
     'Style requirements: white background, dark navy headline, subtle rounded cards, dashed trust boundaries, clean arrows, legible labels, spacious layout, and a presentation-ready finish.',
@@ -825,6 +895,7 @@ function buildArchitectureDiagramImagePrompt(report, variant) {
     'The output should look like a professional solution architecture slide, not a marketing illustration.',
     'Do not generate a title page, cover page, brochure, poster, photorealistic scene, or document mockup.',
     'Avoid large decorative text blocks. Prioritize component boxes, connectors, trust boundaries, and explicit labels.',
+    'Do not embed a WBS, Gantt chart, date row, roadmap strip, or tabular schedule into the diagram.',
     'Render the diagram as a single landscape PNG.',
     'Assessment report:',
     clipText(report, 12000, true).trim(),
@@ -841,7 +912,7 @@ function stripArchitectureDiagramPrompt(report) {
 export async function generateArchitectureDiagramImages(report, signal = null) {
   throwIfAborted(signal);
   const client = await getOpenAIClient();
-  const reportBody = clipText(stripArchitectureDiagramPrompt(report), 12000, true);
+  const reportBody = clipText(extractArchitectureDiagramSource(report), 12000, true);
   const images = [];
   const variants = [
     {
@@ -936,7 +1007,7 @@ export async function buildFinalProposalMarkdown(dealName, coordinatorContext, c
     const raw = await callAgent('coordinator', messages, {
       taskPromptKey: 'coordinator.final-report',
       priorityInstructions,
-      maxTokens: 8192,
+      maxTokens: 12288,
       signal,
     });
     return raw.trim() || buildFallbackProposalMarkdown(dealName, coordinatorContext, agentOutputs);
@@ -1003,7 +1074,9 @@ export async function runAgentPlan(
   const requested = resolveRequestedSpecialists(plan);
   const shouldRun = slug => requested.has(slug);
 
-  const briefResults = await Promise.all(['legal', 'architect'].map(async slug => {
+  // Only build evidence briefs for specialists that will actually run — building a brief is a
+  // Coordinator LLM call, so skipping unused ones is a direct cost/latency saving.
+  const briefResults = await Promise.all(['legal', 'architect'].filter(shouldRun).map(async slug => {
     const key = `${slug}-brief`;
     if (outputs[key]) return [key, outputs[key]];
     const brief = await runTrackedStep(key, () => buildRoleBrief(slug, sourceContext, conversation, priorityInstructions, signal));
@@ -1046,10 +1119,19 @@ export async function runAgentPlan(
 }
 
 export function resolveRequestedSpecialists(plan) {
-  const requested = Array.isArray(plan)
+  const valid = Array.isArray(plan)
     ? plan.filter(slug => REQUIRED_SPECIALIST_SLUGS.includes(slug))
     : [];
-  return new Set(requested.length > 0 ? requested : REQUIRED_SPECIALIST_SLUGS);
+  // No explicit, valid selection → fall back to the full specialist set. This keeps the
+  // safe default (all three) for real tender packs and for legacy callers that pass null.
+  if (valid.length === 0) return new Set(REQUIRED_SPECIALIST_SLUGS);
+  const chosen = new Set(valid);
+  // Dependency: the Estimator sizes a proposed solution, so it can only run when the
+  // Architect has produced a design to estimate against.
+  if (chosen.has('estimator')) chosen.add('architect');
+  // Return in canonical order so downstream sequencing is deterministic regardless of
+  // the order the Coordinator listed the specialists.
+  return new Set(REQUIRED_SPECIALIST_SLUGS.filter(slug => chosen.has(slug)));
 }
 
 export { DEFAULT_AGENT_SLUGS };

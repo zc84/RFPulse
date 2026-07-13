@@ -32,10 +32,10 @@ export default function LoginPage() {
     setLoading(false);
     if (result.success) {
       navigate('/deals');
-    } else if (result.error === 'username_not_found') {
-      toast.error('Username not recognised. Please contact your administrator.');
+    } else if (result.error === 'network_error') {
+      toast.error('Could not reach the server. Please try again.');
     } else {
-      toast.error('Incorrect password. Please try again.');
+      toast.error('Invalid username or password. Please try again.');
     }
   };
 

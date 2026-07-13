@@ -74,8 +74,22 @@ const EXECUTE_STAGES: WorkflowStage[] = [
     stepKeys: ['draft-report'],
   },
   {
-    label: 'Generate diagrams',
+    label: 'Generate architecture diagrams',
     stepKeys: ['generate-architecture-diagrams'],
+  },
+  {
+    label: 'Generate timeline image',
+    stepKeys: ['generate-timeline-diagram'],
+    detail: steps => {
+      const step = steps.get('generate-timeline-diagram');
+      if (!step) return null;
+      if (step.metadata?.skipped === true) return 'no timeline section detected';
+      if (step.status === 'completed') return 'timeline image saved';
+      if (step.status === 'running') return 'rendering timeline';
+      if (step.status === 'failed') return 'timeline failed';
+      if (step.status === 'cancelled') return 'timeline cancelled';
+      return null;
+    },
   },
   {
     label: 'Save deliverables',
@@ -192,7 +206,7 @@ function getPinnedNotice(messages: Array<AIMessage | AIChatMessage>) {
   const interesting = [...messages].reverse().find(message => {
     if (message.role === 'user') return false;
     const content = typeof message.content === 'string' ? message.content : '';
-    return /Validation report saved to AI documents\.|Proposal DOCX, diagrams, and WBS generated\.|AI run stopped\.|Validation stopped:/.test(content);
+    return /Validation report saved to AI documents\.|Proposal DOCX, (?:diagrams|architecture diagrams(?:, timeline image)?), and WBS generated\.|AI run stopped\.|Validation stopped:/.test(content);
   });
 
   if (!interesting || typeof interesting.content !== 'string') return null;

@@ -26,18 +26,31 @@ function enrichRenderError(message) {
   return raw || 'Failed to render proposal DOCX.';
 }
 
-export function renderProposalDocx({ markdown, outputPath, title, templatePath = null, diagrams = [] }) {
+export function renderProposalDocx({ markdown, outputPath, title, templatePath = null, diagrams = [], timelineDiagrams = [], inlineMermaidDiagrams = [] }) {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rfpulse-proposal-'));
   try {
+    const copyDiagram = (diagram, index, prefix) => {
+      const imagePath = path.join(tempDir, `${prefix}-${index + 1}${path.extname(diagram.path) || '.png'}`);
+      fs.copyFileSync(diagram.path, imagePath);
+      return {
+        title: diagram.title,
+        description: diagram.description || '',
+        path: imagePath,
+      };
+    };
+
     const payload = {
       markdown,
       outputPath,
       title,
       templatePath,
-      diagrams: diagrams.map((diagram, index) => {
-        const imagePath = path.join(tempDir, `diagram-${index + 1}${path.extname(diagram.path) || '.png'}`);
-        fs.copyFileSync(diagram.path, imagePath);
+      diagrams: diagrams.map((diagram, index) => copyDiagram(diagram, index, 'diagram')),
+      timelineDiagrams: timelineDiagrams.map((diagram, index) => copyDiagram(diagram, index, 'timeline')),
+      inlineMermaidDiagrams: inlineMermaidDiagrams.map((diagram, index) => {
+        const imagePath = path.join(tempDir, `inline-mermaid-${index + 1}.png`);
+        fs.writeFileSync(imagePath, diagram.png);
         return {
+          placeholder: diagram.placeholder,
           title: diagram.title,
           description: diagram.description || '',
           path: imagePath,

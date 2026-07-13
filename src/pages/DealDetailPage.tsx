@@ -329,11 +329,15 @@ export default function DealDetailPage() {
     }
   };
 
-  const handleShare = (docId: string) => {
-    const apiBase = import.meta.env.VITE_API_URL || (window.location.origin + '/api');
-    const url = `${apiBase}/deals/documents/${docId}/share`;
-    navigator.clipboard.writeText(url);
-    toast.success('Share URL copied to clipboard');
+  const handleShare = async (docId: string) => {
+    try {
+      const { sharePath } = await dealsApi.createShareLink(docId);
+      const apiBase = import.meta.env.VITE_API_URL || (window.location.origin + '/api');
+      await navigator.clipboard.writeText(`${apiBase}${sharePath}`);
+      toast.success('Share link copied to clipboard (expires in 7 days)');
+    } catch {
+      toast.error('Failed to create share link.');
+    }
   };
 
   const beginEdit = (field: string, value: unknown) => {

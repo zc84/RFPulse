@@ -40,6 +40,8 @@ export default function DocumentSection({
   emptyText = 'No documents.',
   accepted = '.pdf,.docx,.xls,.xlsx,.txt,.md,.markdown,.csv,.json,.html,.htm,.xml,.yaml,.yml',
 }: DocumentSectionProps) {
+  const isPreviewable = (artifactType?: string | null) => artifactType === 'architecture-diagram' || artifactType === 'timeline-diagram';
+
   return (
     <div style={{
       background: '#fff', border: '1px solid #E2E8F0', borderRadius: 12,
@@ -96,7 +98,7 @@ export default function DocumentSection({
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                  {doc.artifactType === 'architecture-diagram' && onPreview && (
+                  {isPreviewable(doc.artifactType) && onPreview && (
                     <button title="Preview diagram" style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #E2E8F0', background: '#fff', cursor: 'pointer' }} onClick={() => onPreview(doc)}>
                       <Eye size={12} />
                     </button>

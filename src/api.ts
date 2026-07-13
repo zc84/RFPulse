@@ -150,6 +150,8 @@ export const dealsApi = {
     a.click();
     window.URL.revokeObjectURL(url);
   },
+  createShareLink: (docId: string) =>
+    apiFetch(`/deals/documents/${docId}/share-link`, { method: 'POST' }) as Promise<{ sharePath: string; expiresIn: string }>,
   deleteDocument: (docId: string) =>
     apiFetch(`/deals/documents/${docId}`, { method: 'DELETE' }),
   updateDocumentReviewStatus: (docId: string, status: 'draft' | 'approved') =>

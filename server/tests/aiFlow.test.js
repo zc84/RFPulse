@@ -6,6 +6,8 @@ import test from 'node:test';
 import * as XLSX from '@e965/xlsx';
 import { buildEstimatorReportSummary, validateEstimatorResult } from '../services/aiSchemas.js';
 import { renderArchitectureDiagram } from '../services/architectureDiagram.js';
+import { renderMermaidBlocksInMarkdown } from '../services/mermaidBlocks.js';
+import { buildTimelineDiagramFromMarkdown, buildTimelineMermaidScript, extractTimelinePhasesFromMarkdown } from '../services/timelineDiagram.js';
 import { writeWbsWorkbook } from '../services/wbsWorkbook.js';
 import { DEFAULT_PROMPT_TEMPLATES, getDefaultAgent } from '../services/aiPrompts.js';
 import {
@@ -103,6 +105,8 @@ test('proposal fallback and diagram prompt helper stay aligned', () => {
   assert.match(diagramPrompt, /## Architecture Diagram Prompt/);
   assert.match(diagramPrompt, /proposal above as the source of truth/);
   assert.match(diagramPrompt, /tech-stack-native icons/);
+  assert.match(diagramPrompt, /Treat WBS content, implementation plans, timelines, schedules, roadmaps, pricing, and effort tables as out of scope/i);
+  assert.match(diagramPrompt, /Do not embed a Gantt chart, delivery plan, WBS table, calendar strip, dates row, or pricing table/i);
 });
 
 test('proposal fallback includes the specialist outputs', () => {
@@ -173,6 +177,50 @@ test('architecture renderer emits safe, styled SVG with groups', async () => {
   assert.doesNotMatch(svg, /<script|foreignObject|(?:href|src)=["']https?:/i);
 });
 
+test('timeline renderer emits Mermaid source and a separate PNG image', async () => {
+  const markdown = `# Proposal
+
+## Implementation Plan
+- Phase I: Discovery and setup - 2 weeks
+- Phase II: Delivery and validation - 5 weeks
+`;
+  const extracted = extractTimelinePhasesFromMarkdown(markdown);
+  assert.ok(extracted);
+  assert.equal(extracted.phases.length, 2);
+  const mermaid = buildTimelineMermaidScript(extracted);
+  assert.match(mermaid, /^%%\{init:/);
+  assert.match(mermaid, /\ngantt\n/);
+  assert.match(mermaid, /Phase I \(2 weeks\)/);
+  assert.match(mermaid, /after phase-i-1, 5w/);
+  const diagram = await buildTimelineDiagramFromMarkdown(markdown);
+  assert.ok(diagram);
+  assert.equal(diagram.format, 'png');
+  assert.equal(diagram.mermaid, mermaid);
+  assert.ok(Buffer.isBuffer(diagram.png));
+  assert.ok(diagram.png.length > 1000);
+  assert.match(diagram.svg, /<svg/i);
+  assert.doesNotMatch(diagram.svg, /<script|foreignObject|(?:href|src)=["']https?:/i);
+});
+
+test('embedded Mermaid fences are replaced with inline rendered images', async () => {
+  const markdown = `# Proposal
+
+\`\`\`mermaid
+flowchart LR
+  A[Discovery] --> B[Build]
+\`\`\`
+
+## Architecture Overview
+Body.
+`;
+  const rendered = await renderMermaidBlocksInMarkdown(markdown);
+  assert.match(rendered.markdown, /@@RFPULSE-MERMAID@@mermaid-1/);
+  assert.equal(rendered.diagrams.length, 1);
+  assert.equal(rendered.diagrams[0].title, 'WBS Diagram 1');
+  assert.ok(Buffer.isBuffer(rendered.diagrams[0].png));
+  assert.ok(rendered.diagrams[0].png.length > 1000);
+});
+
 test('strict validator prompt is current and coordinator review prompt is removed', () => {
   const validator = getDefaultAgent('validator');
   assert.match(validator.system_prompt, /Explicit evidence only/i);
@@ -236,4 +284,30 @@ test('specialist routing plan is normalized to supported required specialists', 
   assert.deepEqual([...resolveRequestedSpecialists(['architect', 'unknown', 'architect'])], ['architect']);
   assert.deepEqual([...resolveRequestedSpecialists(['frontend-dev'])], ['legal', 'architect', 'estimator']);
   assert.deepEqual([...resolveRequestedSpecialists(null)], ['legal', 'architect', 'estimator']);
+});
+
+test('a valid specialist subset survives normalization instead of being forced to all three', () => {
+  // The Coordinator can genuinely drop a specialist; a legal+architect plan must stay reduced.
+  assert.deepEqual([...resolveRequestedSpecialists(['legal', 'architect'])], ['legal', 'architect']);
+  assert.deepEqual([...resolveRequestedSpecialists(['architect'])], ['architect']);
+});
+
+test('the Estimator dependency pulls in the Architect and output is canonically ordered', () => {
+  // The Estimator sizes a design, so requesting it must also run the Architect.
+  assert.deepEqual([...resolveRequestedSpecialists(['estimator'])], ['architect', 'estimator']);
+  assert.deepEqual([...resolveRequestedSpecialists(['estimator', 'legal'])], ['legal', 'architect', 'estimator']);
+  // Regardless of input order, the result is canonical [legal, architect, estimator].
+  assert.deepEqual([...resolveRequestedSpecialists(['estimator', 'architect', 'legal'])], ['legal', 'architect', 'estimator']);
+});
+
+test('coordinator routing allows conditional specialists while blocking scope cuts', () => {
+  const coordinator = getDefaultAgent('coordinator');
+  const decision = DEFAULT_PROMPT_TEMPLATES.find(prompt => prompt.key === 'coordinator.decision');
+  // Conditional routing is now expressible...
+  assert.match(coordinator.system_prompt, /Omit a specialist only when it is genuinely inapplicable/i);
+  assert.match(coordinator.system_prompt, /Estimator depends on the Architect/i);
+  assert.match(decision.content, /select which specialists to run in the plan field/i);
+  // ...but the anti-scope-cutting guardrail is preserved and the old absolute rule is gone.
+  assert.match(coordinator.system_prompt, /Never drop a specialist to reduce/i);
+  assert.doesNotMatch(coordinator.system_prompt, /Never decide that a partial set of specialist outputs is sufficient/i);
 });

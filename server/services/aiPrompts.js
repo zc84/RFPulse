@@ -32,9 +32,12 @@ Deal-owner instructions guide the analysis but do not alter facts stated in sour
 ## Decision rules
 - Ask at most three focused questions only when the source package is so incomplete that no useful specialist assessment can be made at all.
 - Do not ask questions solely because appendices, BOQ, technical specs, delivery schedules, SLAs, submission instructions, evaluation rules, pricing rules, or legal/commercial terms are missing or only referenced.
-- If the RFP contains substantial scope or technical requirements, route to Legal, Architect, and Estimator even when those referenced materials are absent. Treat those absences as downstream assumptions, risks, or gaps for specialist review.
-- Otherwise route to Legal, Architect, and Estimator.
-- Never decide that a partial set of specialist outputs is sufficient; workflow completion is enforced by the application.
+- Select which specialists to run in the plan field. Default to all three — Legal, Architect, and Estimator — for any tender or RFP with substantial scope or technical requirements, even when referenced materials are absent (treat those absences as downstream assumptions, risks, or gaps).
+- Omit a specialist only when it is genuinely inapplicable to the requested work:
+  - Omit Legal only when the request has no contractual, procurement, eligibility, compliance, IP, liability, privacy, or governance dimension (rare for tenders).
+  - Omit the Estimator only when no delivery effort or price is being proposed, for example a pure advisory, audit, or discovery brief with no build.
+  - Keep the Architect whenever any solution, system, or delivery is in scope. The Estimator depends on the Architect and cannot run without it.
+- When in doubt, include the specialist. Never drop a specialist to reduce, narrow, defer, or condition requested client scope — scope-reducing exclusions are critical risks, not routing decisions.
 - Return only the requested structured decision object.
 
 ## Quality standards
@@ -43,7 +46,7 @@ Deal-owner instructions guide the analysis but do not alter facts stated in sour
 - Do not let important tender requirements disappear into summary compression. If the RFP contains detailed matrices, response forms, pricing rules, mandatory deliverables, or acceptance conditions, preserve them explicitly for downstream agents.
 - Be concise and evidence-based.`,
     temperature: 0.2,
-    max_tokens: 16384,
+    max_tokens: 24576,
     top_p: 1,
     presence_penalty: 0,
     frequency_penalty: 0,
@@ -420,7 +423,7 @@ export function getDefaultAgent(slug) {
   return agent ? {
     ...agent,
     system_prompt: slug === 'validator' ? VALIDATOR_SYSTEM_PROMPT : agent.system_prompt,
-    prompt_version: 18,
+    prompt_version: 19,
   } : undefined;
 }
 
@@ -428,7 +431,7 @@ export function getDefaultAgents() {
   return DEFAULT_AGENTS.map(agent => ({
     ...agent,
     system_prompt: agent.slug === 'validator' ? VALIDATOR_SYSTEM_PROMPT : agent.system_prompt,
-    prompt_version: 18,
+    prompt_version: 19,
   }));
 }
 
@@ -457,7 +460,7 @@ Verbosity guardrails:
 - Preserve provenance in compact form (document + page/section/table) only where it matters for traceability.
 
 Output Markdown under 1,400 words.` },
-  { key: 'coordinator.decision', agent_slug: 'coordinator', name: 'Routing Decision', kind: 'task', version: 3, content: `Decide only whether the source package is so incomplete that no useful specialist assessment can be made at all. Ask at most three focused questions only for that extreme case. For tender-related RFPs, do not stop the flow because appendices, BOQ, technical specs, delivery schedule, SLA, submission/evaluation instructions, pricing rules, or legal/commercial terms are missing or only referenced. If the RFP contains substantial scope or technical requirements, route to Legal, Architect, and Estimator and let downstream specialists treat those missing items as assumptions, risks, or gaps. For tender-related RFPs, treat scope-reducing exclusions as critical downstream risks rather than normal proposal structure. Return only the supplied structured decision schema.` },
+  { key: 'coordinator.decision', agent_slug: 'coordinator', name: 'Routing Decision', kind: 'task', version: 4, content: `Decide whether the source package is so incomplete that no useful specialist assessment can be made at all (ask at most three focused questions only for that extreme case), and otherwise select which specialists to run in the plan field. For tender-related RFPs, do not stop the flow because appendices, BOQ, technical specs, delivery schedule, SLA, submission/evaluation instructions, pricing rules, or legal/commercial terms are missing or only referenced. Default the plan to Legal, Architect, and Estimator whenever the RFP has substantial scope or technical requirements, and let downstream specialists treat missing items as assumptions, risks, or gaps. Omit Legal only when there is no contractual, procurement, compliance, IP, liability, privacy, or governance dimension; omit the Estimator only when no delivery effort or price is being proposed; keep the Architect whenever any solution or delivery is in scope (the Estimator depends on it). When in doubt, include the specialist. For tender-related RFPs, treat scope-reducing exclusions as critical downstream risks rather than normal proposal structure, and never drop a specialist to reduce requested scope. Return only the supplied structured decision schema.` },
   { key: 'coordinator.legal-brief', agent_slug: 'coordinator', name: 'Legal Evidence Brief', kind: 'task', version: 2, content: `Create a Legal-only evidence brief from the extracted source. Include mandatory procurement, eligibility, contract, IP, liability, insurance, privacy, compliance, submission, and governance facts; conflicts; missing facts; and exact provenance. Remove unrelated product and architecture detail. Prefer compact tables and bullets. Do not repeat source prose. Keep the complete brief under 1,800 words. Output Markdown.` },
   { key: 'coordinator.architect-brief', agent_slug: 'coordinator', name: 'Architect Evidence Brief', kind: 'task', version: 2, content: `Create an Architect-only evidence brief from the extracted source. Include actors, workflows, scope, functional/non-functional requirements, integrations, data, security, deployment, scale, constraints, assumptions, conflicts, and exact provenance. Remove unrelated procurement prose. Prefer compact tables and bullets. Do not repeat source prose. Keep the complete brief under 1,800 words. Output Markdown.` },
   { key: 'coordinator.estimator-brief', agent_slug: 'coordinator', name: 'Estimator Brief', kind: 'task', version: 2, content: `Create a focused estimation brief from Coordinator, Legal, and Architect evidence. Include phased scope, feature/workstream groupings, architecture/compliance work, dependencies, assumptions, milestones, contingency risks, pricing rules, and whether software licences or hardware must be priced. For tender-related RFPs, do not frame requested scope as "key exclusions"; highlight scope-reducing exclusions as critical risks instead. Output Markdown under 1,500 words.` },

@@ -33,6 +33,7 @@ const storage = multer.diskStorage({
 const upload = multer({ storage, limits: { fileSize: 20 * 1024 * 1024 } });
 
 const router = Router();
+const PREVIEWABLE_ARTIFACT_TYPES = new Set(['architecture-diagram', 'timeline-diagram']);
 
 function formatUserId(id) {
   return `U-${String(id).padStart(3, '0')}`;
@@ -251,7 +252,9 @@ router.get('/documents/:id/preview', authenticate, async (req, res, next) => {
     const result = await query('SELECT * FROM documents WHERE id = $1', [docId]);
     if (!result.rows.length) return res.status(404).json({ error: 'Not found' });
     const doc = result.rows[0];
-    if (doc.artifact_type !== 'architecture-diagram' || !doc.filename) return res.status(400).json({ error: 'Preview is available only for architecture diagrams' });
+    if (!PREVIEWABLE_ARTIFACT_TYPES.has(doc.artifact_type) || !doc.filename) {
+      return res.status(400).json({ error: 'Preview is available only for generated diagram images' });
+    }
     const filePath = path.join(UPLOAD_DIR, String(doc.deal_id), doc.filename);
     if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File missing' });
     const ext = path.extname(doc.filename).toLowerCase();

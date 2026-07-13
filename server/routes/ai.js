@@ -2,7 +2,9 @@ import { Router } from 'express';
 import { query } from '../db.js';
 import { authenticate, requireRole } from '../middleware/auth.js';
 import { buildDealContextBundle, summarizeContextBundle } from '../services/documentExtractor.js';
+import { renderMermaidBlocksInMarkdown } from '../services/mermaidBlocks.js';
 import { writeWbsWorkbook } from '../services/wbsWorkbook.js';
+import { buildTimelineDiagramFromMarkdown } from '../services/timelineDiagram.js';
 import {
   coordinatorStep,
   buildFinalProposalMarkdown,
@@ -25,6 +27,12 @@ import { randomUUID } from 'crypto';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(__dirname, '..', 'uploads');
 const MAX_DOCUMENT_NAME_LENGTH = 500;
+
+function formatStoredFileSize(sizeBytes) {
+  return sizeBytes >= 1024 * 1024
+    ? `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`
+    : `${Math.max(1, Math.round(sizeBytes / 1024))} KB`;
+}
 
 function buildProposalDocumentName(partTitle, index, totalParts) {
   const rawName = totalParts === 1
@@ -431,6 +439,19 @@ async function getWorkflowStepMap(sessionId) {
   return new Map(steps.map(step => [step.step_key, step]));
 }
 
+// The specialist set this session committed to, recovered from the most recent routing
+// decision so a cold resume honors a reduced plan instead of forcing the full set.
+async function getCommittedPlan(sessionId) {
+  const steps = await getWorkflowSteps(sessionId);
+  const routing = steps.filter(step => step.step_key === 'coordinator-routing').pop();
+  let metadata = routing?.metadata;
+  if (typeof metadata === 'string') {
+    try { metadata = JSON.parse(metadata); } catch { metadata = null; }
+  }
+  const plan = metadata?.plan;
+  return Array.isArray(plan) && plan.length > 0 ? plan : null;
+}
+
 async function buildSessionPayloadByDealId(dealId) {
   const session = await query('SELECT * FROM ai_sessions WHERE deal_id = $1 ORDER BY id DESC LIMIT 1', [dealId]);
   if (session.rows.length === 0) {
@@ -720,13 +741,23 @@ async function deleteAssessmentReport(dealId) {
   const deletedLegacyReport = await deleteDocumentsByName(dealId, 'AI Assessment Report.md');
   const deletedWbs = await deleteDocumentsByName(dealId, 'AI Detailed WBS.xlsx');
   const deletedValidation = await deleteDocumentsByName(dealId, 'Validation Report.md');
-  const diagrams = await query(`SELECT * FROM documents WHERE deal_id = $1 AND artifact_type = 'architecture-diagram'`, [dealId]);
-  for (const doc of diagrams.rows) {
+  const visuals = await query(
+    `SELECT * FROM documents
+     WHERE deal_id = $1
+       AND artifact_type IN ('architecture-diagram', 'timeline-diagram')`,
+    [dealId]
+  );
+  for (const doc of visuals.rows) {
     const filePath = doc.filename && path.join(UPLOAD_DIR, String(dealId), doc.filename);
     if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
   }
-  await query(`DELETE FROM documents WHERE deal_id = $1 AND artifact_type = 'architecture-diagram'`, [dealId]);
-  return [...deletedProposalDocs, ...deletedLegacyReport, ...deletedWbs, ...deletedValidation, ...diagrams.rows];
+  await query(
+    `DELETE FROM documents
+     WHERE deal_id = $1
+       AND artifact_type IN ('architecture-diagram', 'timeline-diagram')`,
+    [dealId]
+  );
+  return [...deletedProposalDocs, ...deletedLegacyReport, ...deletedWbs, ...deletedValidation, ...visuals.rows];
 }
 
 async function saveDetailedWbs(dealId, sessionId, estimatorOutput) {
@@ -738,10 +769,7 @@ async function saveDetailedWbs(dealId, sessionId, estimatorOutput) {
   const filename = `ai-detailed-wbs-${Date.now()}.xlsx`;
   const filePath = path.join(dealDir, filename);
   writeWbsWorkbook(filePath, estimatorOutput);
-  const sizeBytes = fs.statSync(filePath).size;
-  const size = sizeBytes >= 1024 * 1024
-    ? `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`
-    : `${Math.max(1, Math.round(sizeBytes / 1024))} KB`;
+  const size = formatStoredFileSize(fs.statSync(filePath).size);
   const today = new Date().toISOString().split('T')[0];
   const result = await query(
     `INSERT INTO documents (deal_id, name, size, filename, source, uploaded_at, artifact_type, ai_session_id)
@@ -769,10 +797,7 @@ async function saveArchitectureDiagramImages(dealId, sessionId, images) {
     const filename = `architecture-${index + 1}-${Date.now()}.png`;
     fs.writeFileSync(path.join(dealDir, filename), image.png);
     const name = `${image.title}.png`;
-    const sizeBytes = image.png.length;
-    const size = sizeBytes >= 1024 * 1024
-      ? `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`
-      : `${Math.max(1, Math.round(sizeBytes / 1024))} KB`;
+    const size = formatStoredFileSize(image.png.length);
     const result = await query(
       `INSERT INTO documents (deal_id, name, size, filename, source, uploaded_at, artifact_type, ai_session_id)
        VALUES ($1,$2,$3,$4,'ai',$5,'architecture-diagram',$6) RETURNING id`,
@@ -790,7 +815,58 @@ async function saveArchitectureDiagramImages(dealId, sessionId, images) {
   return saved;
 }
 
-async function saveFinalProposal(dealId, sessionId, dealName, markdown, diagramDocs = []) {
+async function saveTimelineDiagram(dealId, sessionId, image) {
+  if (!image) return null;
+
+  const dealDir = path.join(UPLOAD_DIR, String(dealId));
+  if (!fs.existsSync(dealDir)) {
+    fs.mkdirSync(dealDir, { recursive: true });
+  }
+
+  const previous = await query(
+    `SELECT * FROM documents
+     WHERE deal_id = $1
+       AND ai_session_id = $2
+       AND artifact_type = 'timeline-diagram'`,
+    [dealId, sessionId]
+  );
+  for (const doc of previous.rows) {
+    const filePath = doc.filename && path.join(dealDir, doc.filename);
+    if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
+  }
+  await query(
+    `DELETE FROM documents
+     WHERE deal_id = $1
+       AND ai_session_id = $2
+       AND artifact_type = 'timeline-diagram'`,
+    [dealId, sessionId]
+  );
+
+  const extension = String(image.format || 'svg').toLowerCase() === 'png' ? 'png' : 'svg';
+  const payload = extension === 'png'
+    ? image.png
+    : Buffer.from(String(image.svg || ''), 'utf8');
+  const filename = `timeline-${Date.now()}.${extension}`;
+  fs.writeFileSync(path.join(dealDir, filename), payload);
+  const name = `${image.title}.${extension}`;
+  const size = formatStoredFileSize(payload.length);
+  const result = await query(
+    `INSERT INTO documents (deal_id, name, size, filename, source, uploaded_at, artifact_type, ai_session_id)
+     VALUES ($1,$2,$3,$4,'ai',$5,'timeline-diagram',$6) RETURNING id`,
+    [dealId, name, size, filename, new Date().toISOString().slice(0, 10), sessionId]
+  );
+
+  return {
+    id: result.rows[0].id,
+    name,
+    filename,
+    size,
+    title: image.title,
+    description: image.description || '',
+  };
+}
+
+async function saveFinalProposal(dealId, sessionId, dealName, markdown, diagramDocs = [], timelineDiagramDocs = []) {
   try {
     const dealDir = path.join(UPLOAD_DIR, String(dealId));
     if (!fs.existsSync(dealDir)) {
@@ -808,8 +884,9 @@ async function saveFinalProposal(dealId, sessionId, dealName, markdown, diagramD
         : `proposal-${index + 1}-${Date.now()}.docx`;
       const filePath = path.join(dealDir, filename);
       const shouldAttachDiagrams = parts.length === 1 ? true : index === 0 || part.diagrams === true;
+      const mermaidContent = await renderMermaidBlocksInMarkdown(part.markdown);
       renderProposalDocx({
-        markdown: part.markdown,
+        markdown: mermaidContent.markdown,
         outputPath: filePath,
         title: part.title || (dealName ? `Proposal: ${dealName}` : 'Proposal'),
         templatePath,
@@ -818,6 +895,12 @@ async function saveFinalProposal(dealId, sessionId, dealName, markdown, diagramD
           description: doc.description || '',
           path: path.join(dealDir, doc.filename),
         })) : [],
+        timelineDiagrams: shouldAttachDiagrams ? timelineDiagramDocs.map(doc => ({
+          title: doc.title || doc.name || 'Diagram',
+          description: doc.description || '',
+          path: path.join(dealDir, doc.filename),
+        })) : [],
+        inlineMermaidDiagrams: mermaidContent.diagrams,
       });
 
       const sizeBytes = fs.statSync(filePath).size;
@@ -896,10 +979,12 @@ async function finalizeAssessmentArtifacts({ dealId, sessionId, dealName, propos
 
   const workflowStepMap = new Map((resumeWorkflowSteps || []).map(step => [step.step_key, step]));
   const existingDiagramStep = workflowStepMap.get('generate-architecture-diagrams');
+  const existingTimelineStep = workflowStepMap.get('generate-timeline-diagram');
   const existingWbsStep = workflowStepMap.get('save-wbs-workbook');
   const existingFinalStep = workflowStepMap.get('save-final-report');
 
   let finalReportDocumentId = null;
+  let timelineDocumentId = null;
   let wbsDocumentId = null;
 
   try {
@@ -932,6 +1017,42 @@ async function finalizeAssessmentArtifacts({ dealId, sessionId, dealName, propos
     }
 
     throwIfAborted(signal);
+    let timelineDoc = null;
+    if (existingTimelineStep?.status === 'completed') {
+      const existingTimeline = await query(
+        `SELECT * FROM documents
+         WHERE deal_id = $1 AND ai_session_id = $2 AND artifact_type = 'timeline-diagram'
+         ORDER BY id DESC
+         LIMIT 1`,
+        [dealId, sessionId]
+      );
+      if (existingTimeline.rows[0]?.id) {
+        timelineDocumentId = existingTimeline.rows[0].id;
+        timelineDoc = {
+          id: existingTimeline.rows[0].id,
+          name: existingTimeline.rows[0].name,
+          filename: existingTimeline.rows[0].filename,
+          size: existingTimeline.rows[0].size,
+          title: String(existingTimeline.rows[0].name || 'Delivery Timeline').replace(/\.(png|svg)$/i, ''),
+          description: '',
+        };
+      }
+    } else {
+      await markWorkflowStepRunning(sessionId, dealId, 'generate-timeline-diagram');
+      const timelineDiagram = await buildTimelineDiagramFromMarkdown(proposalMarkdown);
+      throwIfAborted(signal);
+      timelineDoc = await saveTimelineDiagram(dealId, sessionId, timelineDiagram);
+      timelineDocumentId = timelineDoc?.id || null;
+      await markWorkflowStepCompleted(sessionId, dealId, 'generate-timeline-diagram', timelineDocumentId ? String(timelineDocumentId) : null, {
+        generated: Boolean(timelineDoc),
+        format: timelineDiagram?.format || null,
+        renderer: timelineDoc ? 'mermaid' : null,
+        mermaid: timelineDiagram?.mermaid || null,
+        skipped: !timelineDoc,
+      });
+    }
+
+    throwIfAborted(signal);
     if (existingWbsStep?.status === 'completed' && existingWbsStep.artifact) {
       const parsedWbsId = parseInt(String(existingWbsStep.artifact), 10);
       if (!Number.isNaN(parsedWbsId)) {
@@ -951,7 +1072,14 @@ async function finalizeAssessmentArtifacts({ dealId, sessionId, dealName, propos
       }
     } else {
       await markWorkflowStepRunning(sessionId, dealId, 'save-final-report');
-      finalReportDocumentId = await saveFinalProposal(dealId, sessionId, dealName, proposalMarkdown, diagramDocs);
+      finalReportDocumentId = await saveFinalProposal(
+        dealId,
+        sessionId,
+        dealName,
+        proposalMarkdown,
+        diagramDocs,
+        timelineDoc ? [timelineDoc] : []
+      );
       await markWorkflowStepCompleted(sessionId, dealId, 'save-final-report', String(finalReportDocumentId));
     }
   } catch (finalizeErr) {
@@ -973,6 +1101,7 @@ async function finalizeAssessmentArtifacts({ dealId, sessionId, dealName, propos
   return {
     draftReport: proposalMarkdown,
     finalReportDocumentId,
+    timelineDocumentId,
     wbsDocumentId,
     proposedUpdates,
   };
@@ -1358,6 +1487,7 @@ router.post('/message', authenticate, requireRole('Superadmin', 'Editor'), async
       ...savedAgentOutputs,
     };
     const aiNotes = getAiNotes(dealData?.deal);
+    const committedPlan = await getCommittedPlan(session.id);
 
     await markWorkflowStepRunning(session.id, dealId, 'coordinator-routing', {
       mode: session.coordinator_context ? 'resume' : 'start',
@@ -1369,7 +1499,8 @@ router.post('/message', authenticate, requireRole('Superadmin', 'Editor'), async
       agentOutputs,
       session.coordinator_context,
       aiNotes,
-      signal
+      signal,
+      committedPlan || undefined
     );
     const normalizedRoutingPlan = coordinatorResult.status === 'routing'
       ? [...resolveRequestedSpecialists(coordinatorResult.plan)]
@@ -1401,6 +1532,7 @@ router.post('/message', authenticate, requireRole('Superadmin', 'Editor'), async
 
     let newAgentOutputs = null;
     let finalReportDocumentId = null;
+    let timelineDocumentId = null;
     let wbsDocumentId = null;
     let proposedUpdates = null;
     const persistAgentOutput = async (slug, output) => {
@@ -1449,7 +1581,8 @@ router.post('/message', authenticate, requireRole('Superadmin', 'Editor'), async
         updatedOutputs,
         coordinatorContext,
         aiNotes,
-        signal
+        signal,
+        normalizedRoutingPlan
       );
       if (nextResult.status === 'ready_to_write') {
         await addMessage(session.id, 'agent', 'Agents complete. Coordinator is finalizing the proposal draft.', 'coordinator');
@@ -1461,6 +1594,7 @@ router.post('/message', authenticate, requireRole('Superadmin', 'Editor'), async
           : await buildFinalProposalMarkdown(dealName, agentContext, updatedMessages, updatedOutputs, aiNotes, signal);
         ({
           finalReportDocumentId,
+          timelineDocumentId,
           wbsDocumentId,
           proposedUpdates,
         } = await finalizeAssessmentArtifacts({
@@ -1474,21 +1608,31 @@ router.post('/message', authenticate, requireRole('Superadmin', 'Editor'), async
           signal,
           resumeWorkflowSteps: finalWorkflowSteps,
         }));
-        await addMessage(session.id, 'agent', 'Proposal DOCX, diagrams, and WBS generated. Use Validate to run the compliance audit.', 'coordinator');
+        await addMessage(
+          session.id,
+          'agent',
+          timelineDocumentId
+            ? 'Proposal DOCX, architecture diagrams, timeline image, and WBS generated. Use Validate to run the compliance audit.'
+            : 'Proposal DOCX, architecture diagrams, and WBS generated. Use Validate to run the compliance audit.',
+          'coordinator'
+        );
       } else if (nextResult.status === 'clarifying' && nextResult.questions?.length) {
         const qContent = nextResult.questions.map((q, i) => `${i + 1}. ${q}`).join('\n');
         await addMessage(session.id, 'coordinator', qContent);
       }
     } else if (coordinatorResult.status === 'ready_to_write') {
       const updatedOutputs = await getAgentOutputs(session.id);
-      const requiredOutputs = ['legal', 'architect', 'estimator'];
+      // Only require the specialists this session committed to (a subset when the Coordinator
+      // chose one), falling back to the full set for legacy sessions with no recorded plan.
+      const requiredOutputs = [...resolveRequestedSpecialists(committedPlan)];
       if (requiredOutputs.some(slug => !updatedOutputs[slug])) {
-        // Resume any missing required steps before finalization.
-        const defaultPlan = ['legal', 'architect', 'estimator'];
+        // Resume any missing planned steps before finalization.
+        const defaultPlan = requiredOutputs;
         const dealRow = await query('SELECT name FROM deals WHERE id = $1', [dealId]);
         const dealName = dealRow.rows[0]?.name || 'Untitled Deal';
         await setSessionPlan(session.id, defaultPlan, dealId);
-        await addMessage(session.id, 'agent', 'Running Legal and Architect in parallel. Estimator will follow.', 'coordinator');
+        const missing = requiredOutputs.filter(slug => !updatedOutputs[slug]);
+        await addMessage(session.id, 'agent', `Running remaining specialists: ${missing.join(', ')}.`, 'coordinator');
         try {
           await markWorkflowStepRunning(session.id, dealId, 'agent-plan', { plan: defaultPlan });
           newAgentOutputs = await runAgentPlan(
@@ -1520,6 +1664,7 @@ router.post('/message', authenticate, requireRole('Superadmin', 'Editor'), async
       await addMessage(session.id, 'agent', 'Agents complete. Coordinator is finalizing the proposal draft.', 'coordinator');
       ({
         finalReportDocumentId,
+        timelineDocumentId,
         wbsDocumentId,
         proposedUpdates,
         } = await finalizeAssessmentArtifacts({
@@ -1533,7 +1678,14 @@ router.post('/message', authenticate, requireRole('Superadmin', 'Editor'), async
         signal,
         resumeWorkflowSteps: finalWorkflowSteps,
       }));
-      await addMessage(session.id, 'agent', 'Proposal DOCX, diagrams, and WBS generated. Use Validate to run the compliance audit.', 'coordinator');
+      await addMessage(
+        session.id,
+        'agent',
+        timelineDocumentId
+          ? 'Proposal DOCX, architecture diagrams, timeline image, and WBS generated. Use Validate to run the compliance audit.'
+          : 'Proposal DOCX, architecture diagrams, and WBS generated. Use Validate to run the compliance audit.',
+        'coordinator'
+      );
     } else if (coordinatorResult.status === 'clarifying' && coordinatorResult.questions?.length) {
       const qContent = coordinatorResult.questions.map((q, i) => `${i + 1}. ${q}`).join('\n');
       await addMessage(session.id, 'coordinator', qContent);

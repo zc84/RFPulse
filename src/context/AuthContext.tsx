@@ -59,7 +59,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await loadUsers();
       return { success: true };
     } catch (err: any) {
-      const error = err.message === 'username_not_found' ? 'username_not_found' : 'wrong_password';
+      const error = err.message === 'invalid_credentials' ? 'invalid_credentials' : 'network_error';
       return { success: false, error };
     }
   }, [loadUsers]);

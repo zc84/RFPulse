@@ -5,6 +5,10 @@ import { signToken, authenticate } from '../middleware/auth.js';
 
 const router = Router();
 
+// A valid bcrypt hash (of a random string) used to keep login timing constant when the
+// username does not exist, so an attacker cannot distinguish "no such user" from "wrong password".
+const DUMMY_PASSWORD_HASH = '$2a$10$BzT5uOpN.orxnUF4p5q3lO6584KuFd/RkY28TXecwnCb/tbNzvLhe';
+
 function formatUser(row) {
   return {
     id: `U-${String(row.id).padStart(3, '0')}`,
@@ -115,13 +119,11 @@ router.post('/login', async (req, res, next) => {
     );
 
     const user = result.rows[0];
-    if (!user) {
-      return res.status(401).json({ error: 'username_not_found' });
-    }
-
-    const valid = await bcrypt.compare(password, user.password_hash);
-    if (!valid) {
-      return res.status(401).json({ error: 'wrong_password' });
+    // Always run bcrypt (even for unknown users) to keep response timing uniform, and return a
+    // single generic error so this endpoint cannot be used as a username-enumeration oracle.
+    const valid = await bcrypt.compare(password, user?.password_hash || DUMMY_PASSWORD_HASH);
+    if (!user || !valid) {
+      return res.status(401).json({ error: 'invalid_credentials' });
     }
 
     const { password_hash, ...publicUser } = user;
