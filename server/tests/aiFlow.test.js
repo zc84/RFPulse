@@ -4,7 +4,11 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import * as XLSX from '@e965/xlsx';
-import { buildEstimatorReportSummary, validateEstimatorResult } from '../services/aiSchemas.js';
+import {
+  buildEstimatorReportSummary,
+  isEstimatorAccuracyPolicyError,
+  validateEstimatorResult,
+} from '../services/aiSchemas.js';
 import { renderArchitectureDiagram } from '../services/architectureDiagram.js';
 import { renderMermaidBlocksInMarkdown } from '../services/mermaidBlocks.js';
 import { buildTimelineDiagramFromMarkdown, buildTimelineMermaidScript, extractTimelinePhasesFromMarkdown } from '../services/timelineDiagram.js';
@@ -14,6 +18,8 @@ import {
   buildReportFromOutputs,
   buildSpecialistMessages,
   buildArchitectureDiagramPromptInput,
+  applyEstimatorOnePassCorrection,
+  extractEstimatorPolicyContext,
   requireCoordinatorContext,
   resolveRequestedSpecialists,
   splitCoordinatorSourceContext,
@@ -30,6 +36,9 @@ function validEstimate() {
     contingencyPercent: 15,
     estimatedDuration: '4 weeks',
     basisOfEstimate: ['Scope is limited to the stated deliverables.'],
+    estimateConfidence: 'medium',
+    confidenceRationale: 'Confidence is moderate due to a compact but partially assumption-based scope.',
+    topUncertaintyDrivers: ['Dependency timing with client systems'],
     commercialProposal: 'We propose a lean, delivery-focused engagement that balances speed, quality, and commercial realism. The estimate is structured for transparency, with clearly scoped work packages, disciplined contingency, and a pragmatic team mix designed to minimize risk while maximizing value.',
     phasePricing: [
       { phase: '1. Preparation', scopeSummary: 'Discovery and architecture definition.', effortHours: 16, amount: 1440, pricingBasis: 'Time and materials based on task-level effort.' },
@@ -76,10 +85,42 @@ test('legacy estimator output is normalized without AI-prefixed rows', () => {
   const input = validEstimate();
   input.implementationTeam = ['Backend Engineer'];
   input.workBreakdown = [{ title: 'AI: Generate API foundation', efforts: 8, assigned: 'Backend Engineer', aiAssisted: true }];
+  input.estimatedDuration = '1 week';
+  input.phasePricing = [
+    { phase: 'Legacy', scopeSummary: 'Legacy normalized task.', effortHours: 8, amount: 800, pricingBasis: 'Time and materials based on task-level effort.' },
+  ];
   const estimate = validateEstimatorResult(input);
   assert.equal(estimate.workBreakdown[0].phase, 'Legacy');
   assert.equal(estimate.workBreakdown[0].title, 'Generate API foundation');
   assert.match(estimate.workBreakdown[0].notes, /AI-assisted/);
+});
+
+test('estimator accepts AI-defined custom delivery roles and keeps fixed default rate card', () => {
+  const input = validEstimate();
+  input.implementationTeam = ['Tech Lead', 'Platform Engineer'];
+  input.workBreakdown = [
+    { phase: '1. Preparation', workstream: 'Planning', title: 'Architecture and delivery planning', efforts: 16, assigned: 'Tech Lead', notes: 'Scope shaping and architecture alignment.' },
+    { phase: '2. Delivery', workstream: 'Platform', title: 'Platform enablement and automation', efforts: 24, assigned: 'Platform Engineer', notes: 'Environment setup and CI/CD baseline.' },
+  ];
+  input.phasePricing = [
+    { phase: '1. Preparation', scopeSummary: 'Planning and solution definition.', effortHours: 16, amount: 800, pricingBasis: 'Time and materials based on task-level effort.' },
+    { phase: '2. Delivery', scopeSummary: 'Platform build and validation.', effortHours: 24, amount: 1200, pricingBasis: 'Time and materials based on task-level effort.' },
+  ];
+  const estimate = validateEstimatorResult(input);
+  assert.deepEqual(estimate.teamComposition.map(item => item.team), ['Tech Lead', 'Platform Engineer', 'QA', 'PM']);
+  assert.ok(estimate.teamComposition.every(item => item.rate === 50));
+});
+
+test('estimator rejects PM/QA as explicit implementation or task roles', () => {
+  const withPmInTeam = validEstimate();
+  withPmInTeam.implementationTeam = ['Architect', 'PM'];
+  assert.throws(() => validateEstimatorResult(withPmInTeam), /delivery roles only/i);
+
+  const withQaTask = validEstimate();
+  withQaTask.workBreakdown = [{ phase: 'A', workstream: 'B', title: 'Manual QA row', efforts: 8, assigned: 'QA', notes: '' }];
+  withQaTask.implementationTeam = ['Architect'];
+  withQaTask.phasePricing = [{ phase: 'A', scopeSummary: 'Single-row test.', effortHours: 8, amount: 400, pricingBasis: 'Time and materials based on task-level effort.' }];
+  assert.throws(() => validateEstimatorResult(withQaTask), /reserved for automatic overhead rows/i);
 });
 
 test('estimator summary excludes detailed tasks and derives active team', () => {
@@ -92,6 +133,58 @@ test('estimator summary excludes detailed tasks and derives active team', () => 
   assert.match(summary, /hardware/);
   assert.match(summary, /"totalEffort": 72/);
   assert.match(summary, /"implementationTeam": \[/);
+  assert.match(summary, /"estimateConfidence": "medium"/);
+  assert.match(summary, /"topUncertaintyDrivers": \[/);
+});
+
+test('accuracy policy flags unrealistic duration versus effort', () => {
+  const input = validEstimate();
+  input.estimatedDuration = '0.4 week';
+  assert.throws(
+    () => validateEstimatorResult(input),
+    err => isEstimatorAccuracyPolicyError(err) && err.violations.some(v => v.code === 'effort_duration_unrealistic')
+  );
+});
+
+test('accuracy policy flags phase pricing effort drift', () => {
+  const input = validEstimate();
+  input.phasePricing = [
+    { phase: '1. Preparation', scopeSummary: 'Discovery and architecture definition.', effortHours: 8, amount: 1440, pricingBasis: 'Time and materials based on task-level effort.' },
+    { phase: '2. Delivery', scopeSummary: 'Core API implementation and validation.', effortHours: 8, amount: 1760, pricingBasis: 'Time and materials based on task-level effort.' },
+  ];
+  assert.throws(
+    () => validateEstimatorResult(input),
+    err => isEstimatorAccuracyPolicyError(err) && err.violations.some(v => v.code === 'phase_pricing_effort_drift')
+  );
+});
+
+test('accuracy policy requires assumptions under high uncertainty', () => {
+  const input = validEstimate();
+  input.assumptions = ['Access will be provided'];
+  assert.throws(
+    () => validateEstimatorResult(input, { policyContext: { sourceUncertaintyLevel: 'high' } }),
+    err => isEstimatorAccuracyPolicyError(err) && err.violations.some(v => v.code === 'assumptions_coverage_missing')
+  );
+});
+
+test('one-pass estimator correction succeeds on first invalid response', async () => {
+  const invalid = validEstimate();
+  invalid.estimatedDuration = '0.4 week';
+
+  const corrected = validEstimate();
+  corrected.estimatedDuration = '4 weeks';
+
+  const result = await applyEstimatorOnePassCorrection(invalid, {
+    requestCorrection: async violations => {
+      assert.ok(Array.isArray(violations));
+      assert.ok(violations.some(v => v.code === 'effort_duration_unrealistic'));
+      return corrected;
+    },
+  });
+
+  assert.equal(result.corrected, true);
+  assert.equal(result.value.estimatedDuration, '4 weeks');
+  assert.equal(result.value.totalEffort, 72);
 });
 
 test('proposal fallback and diagram prompt helper stay aligned', () => {
@@ -245,6 +338,7 @@ test('tender prompts require deep coordinator capture and reject scope-cutting e
   assert.match(coordinator.system_prompt, /requested client scope as unacceptable proposal behavior/i);
   assert.match(estimator.system_prompt, /phased pricing/i);
   assert.match(estimator.system_prompt, /high-level WBS/i);
+  assert.match(estimator.system_prompt, /Define delivery roles dynamically based on project scope/i);
   assert.match(estimator.system_prompt, /software licence pricing/i);
   assert.match(estimator.system_prompt, /USD only/i);
   assert.match(estimator.system_prompt, /do not hide them behind "key exclusions"/i);
@@ -310,4 +404,36 @@ test('coordinator routing allows conditional specialists while blocking scope cu
   // ...but the anti-scope-cutting guardrail is preserved and the old absolute rule is gone.
   assert.match(coordinator.system_prompt, /Never drop a specialist to reduce/i);
   assert.doesNotMatch(coordinator.system_prompt, /Never decide that a partial set of specialist outputs is sufficient/i);
+});
+
+test('final proposal prompt is AI-driven by RFP submission structure instead of canned sections', () => {
+  const coordinator = getDefaultAgent('coordinator');
+  const finalReport = DEFAULT_PROMPT_TEMPLATES.find(prompt => prompt.key === 'coordinator.final-report');
+
+  assert.ok(finalReport);
+  assert.match(coordinator.system_prompt, /final document structure follow the actual RFP response format/i);
+  assert.match(finalReport.content, /Build the section hierarchy from the RFP's explicit submission instructions/i);
+  assert.match(finalReport.content, /Do not force a canned section set/i);
+
+  assert.doesNotMatch(finalReport.content, /delivery approach/i);
+  assert.doesNotMatch(finalReport.content, /commercial basis/i);
+  assert.doesNotMatch(finalReport.content, /Andersen Credentials & Company Profile \(Manual Content\)/i);
+});
+
+test('estimator policy context parsing is null-safe for partial or malformed labels', () => {
+  const context = extractEstimatorPolicyContext(`
+Estimation Basis Pack
+- source uncertainty level: high
+- dependencyCriticality - medium
+- integrationComplexity: low
+- non-functional load and security: medium
+
+scope certainty level
+`);
+
+  assert.equal(context.sourceUncertaintyLevel, 'high');
+  assert.equal(context.dependencyCriticality, 'medium');
+  assert.equal(context.integrationComplexity, 'low');
+  assert.equal(context.nonFunctionalLoadAndSecurity, 'medium');
+  assert.equal(context.highRiskScope, true);
 });

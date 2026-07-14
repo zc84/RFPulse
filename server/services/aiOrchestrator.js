@@ -9,7 +9,9 @@ import {
   coordinatorDecisionSchema,
   dealPropertiesSchema,
   estimatorResultSchema,
+  isEstimatorAccuracyPolicyError,
   parseEstimatorOutput,
+  validateEstimatorResult,
 } from './aiSchemas.js';
 
 const DEFAULT_AGENT_SLUGS = ['coordinator', 'legal', 'architect', 'estimator', 'frontend-dev'];
@@ -768,6 +770,16 @@ export async function buildEstimatorBrief(context, conversation, agentOutputs, p
         '## Coordinator context summary',
         context,
         outputsSummary,
+        '## Required Estimation Basis Pack',
+        [
+          'Include a dedicated "Estimation Basis Pack" section in your brief with explicit fields:',
+          '- scopeCertaintyLevel: low | medium | high',
+          '- dependencyCriticality: low | medium | high',
+          '- integrationComplexity: low | medium | high (include integration count)',
+          '- nonFunctionalLoadAndSecurity: low | medium | high with key drivers',
+          '- sourceUncertaintyLevel: low | medium | high',
+          'If evidence is missing, set the level conservatively and explain as an assumption.',
+        ].join('\n'),
         '## Conversation so far',
         conversationText || 'No conversation yet.',
       ].filter(Boolean).join('\n\n'),
@@ -784,7 +796,61 @@ export async function buildEstimatorBrief(context, conversation, agentOutputs, p
   });
 }
 
+export function extractEstimatorPolicyContext(brief) {
+  const text = String(brief || '');
+  const matchLevel = label => {
+    const re = new RegExp(`(?:${label})\\s*[:\\-]\\s*(low|medium|high)\\b`, 'i');
+    const match = text.match(re);
+    const level = match?.[1];
+    return typeof level === 'string' ? level.toLowerCase() : null;
+  };
+
+  const sourceUncertaintyLevel = matchLevel('sourceUncertaintyLevel|source uncertainty level|scope certainty level');
+  const dependencyCriticality = matchLevel('dependencyCriticality|dependency criticality');
+  const integrationComplexity = matchLevel('integrationComplexity|integration complexity');
+  const nonFunctionalLoadAndSecurity = matchLevel('nonFunctionalLoadAndSecurity|non-functional load and security');
+
+  const highRiskScope = [sourceUncertaintyLevel, dependencyCriticality, integrationComplexity, nonFunctionalLoadAndSecurity]
+    .some(level => level === 'high');
+
+  return {
+    sourceUncertaintyLevel,
+    dependencyCriticality,
+    integrationComplexity,
+    nonFunctionalLoadAndSecurity,
+    highRiskScope,
+  };
+}
+
+function formatEstimatorViolationsForCorrection(violations) {
+  return violations
+    .map((violation, index) => `${index + 1}. [${violation.code}] ${violation.message}`)
+    .join('\n');
+}
+
+export async function applyEstimatorOnePassCorrection(initialValue, options = {}) {
+  const policyContext = options.policyContext || {};
+  try {
+    return {
+      value: validateEstimatorResult(initialValue, { policyContext }),
+      corrected: false,
+      violations: [],
+    };
+  } catch (err) {
+    if (!isEstimatorAccuracyPolicyError(err) || typeof options.requestCorrection !== 'function') {
+      throw err;
+    }
+    const correctedValue = await options.requestCorrection(err.violations);
+    return {
+      value: validateEstimatorResult(correctedValue, { policyContext }),
+      corrected: true,
+      violations: err.violations,
+    };
+  }
+}
+
 export async function runEstimator(context, conversation, priorityInstructions = '', signal = null) {
+  const policyContext = extractEstimatorPolicyContext(context);
   const messages = [
     {
       role: 'user',
@@ -801,7 +867,32 @@ export async function runEstimator(context, conversation, priorityInstructions =
     maxTokens: 32768,
     signal,
   });
-  return JSON.stringify(parseAgentJson(raw, 'Estimator', estimatorResultSchema), null, 2);
+
+  const initialParsed = parseAgentJson(raw, 'Estimator', estimatorResultSchema);
+  const evaluated = await applyEstimatorOnePassCorrection(initialParsed, {
+    policyContext,
+    requestCorrection: async violations => {
+      const correctionRaw = await callAgent('estimator', [{
+        role: 'user',
+        content: [
+          '## Coordinator estimation brief',
+          context,
+          '## Accuracy policy violations to fix',
+          formatEstimatorViolationsForCorrection(violations),
+          'Return a corrected JSON output that resolves all violations while preserving requested scope. Keep any uncertain items in assumptions, risks, and confidence rationale.',
+        ].join('\n\n'),
+      }], {
+        priorityInstructions,
+        schema: estimatorResultSchema,
+        schemaName: 'estimator_result_correction',
+        maxTokens: 32768,
+        signal,
+      });
+      return parseAgentJson(correctionRaw, 'Estimator (correction)', estimatorResultSchema);
+    },
+  });
+
+  return JSON.stringify(evaluated.value, null, 2);
 }
 
 export async function buildRoleBrief(role, sourceContext, conversation, priorityInstructions = '', signal = null) {
