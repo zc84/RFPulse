@@ -1,33 +1,10 @@
 import { z } from 'zod';
 
-export const TEAM_ROLES = [
-  'Architect',
-  'Backend Engineer',
-  'Frontend Engineer',
-  'Data Engineer',
-  'AI Engineer',
-  'DevOps Engineer',
-  'BA',
-  'PM',
-  'QA',
-];
-
-export const DEFAULT_ROLE_RATES = {
-  Architect: 50,
-  'Backend Engineer': 50,
-  'Frontend Engineer': 50,
-  'Data Engineer': 50,
-  'AI Engineer': 50,
-  'DevOps Engineer': 50,
-  BA: 50,
-  PM: 50,
-  QA: 50,
-};
+export const DEFAULT_ROLE_RATE = 50;
+const RESERVED_OVERHEAD_ROLES = new Set(['PM', 'QA']);
 
 export const DEFAULT_QA_OVERHEAD_PERCENT = 30;
 export const DEFAULT_PM_OVERHEAD_PERCENT = 15;
-
-export const DELIVERY_ROLES = TEAM_ROLES.filter(role => role !== 'PM' && role !== 'QA');
 
 export const coordinatorDecisionSchema = z.object({
   status: z.enum(['clarifying', 'routing']),
@@ -44,19 +21,22 @@ export const dealPropertiesSchema = z.object({
 });
 
 export const estimatorResultSchema = z.object({
-  implementationTeam: z.array(z.enum(DELIVERY_ROLES)).min(1),
+  implementationTeam: z.array(z.string().min(1).max(80)).min(1),
   workBreakdown: z.array(z.object({
     phase: z.string().min(1),
     workstream: z.string().min(1),
     title: z.string().min(1),
     efforts: z.number().min(8).max(40).multipleOf(0.25),
-    assigned: z.enum(DELIVERY_ROLES),
+    assigned: z.string().min(1).max(80),
     notes: z.string().max(240),
   })).min(1),
   contingencyPercent: z.number().int().min(0).max(100),
   estimatedDuration: z.string().min(1),
   basisOfEstimate: z.array(z.string()).min(1),
   commercialProposal: z.string().min(1),
+  estimateConfidence: z.enum(['low', 'medium', 'high']),
+  confidenceRationale: z.string().min(1),
+  topUncertaintyDrivers: z.array(z.string().min(1)).min(1).max(5),
   phasePricing: z.array(z.object({
     phase: z.string().min(1),
     scopeSummary: z.string().min(1),
@@ -86,6 +66,130 @@ export const estimatorResultSchema = z.object({
     mitigation: z.string().min(1),
   })),
 });
+
+function parseDurationToWeeks(durationText) {
+  const text = String(durationText || '').toLowerCase();
+  if (!text.trim()) return null;
+
+  const capture = (unitPattern) => {
+    const match = text.match(unitPattern);
+    return match ? Number(match[1]) : null;
+  };
+
+  const weeks = capture(/(\d+(?:\.\d+)?)\s*(?:week|weeks|wk|w)\b/);
+  if (weeks) return weeks;
+
+  const days = capture(/(\d+(?:\.\d+)?)\s*(?:business\s*)?(?:day|days|d)\b/);
+  if (days) return days / 5;
+
+  const months = capture(/(\d+(?:\.\d+)?)\s*(?:month|months|mo)\b/);
+  if (months) return months * 4.345;
+
+  return null;
+}
+
+function createEstimatorAccuracyPolicyError(violations) {
+  const details = violations.map(v => `[${v.code}] ${v.message}`).join('; ');
+  const error = new Error(`Estimator accuracy policy failed: ${details}`);
+  error.code = 'ESTIMATOR_ACCURACY_POLICY_FAILED';
+  error.violations = violations;
+  return error;
+}
+
+export function isEstimatorAccuracyPolicyError(err) {
+  return err?.code === 'ESTIMATOR_ACCURACY_POLICY_FAILED' && Array.isArray(err?.violations);
+}
+
+export function evaluateEstimatorAccuracyPolicy(result, policyContext = {}) {
+  const violations = [];
+  const weeks = parseDurationToWeeks(result.estimatedDuration);
+  const deliveryTeamSize = result.implementationTeam.length;
+
+  if (weeks && deliveryTeamSize > 0) {
+    const expectedCapacityHours = deliveryTeamSize * weeks * 40;
+    const maxRealisticEffort = expectedCapacityHours * 1.2;
+    const minRealisticEffort = expectedCapacityHours * 0.12;
+    if (result.baseEffort > maxRealisticEffort) {
+      violations.push({
+        code: 'effort_duration_unrealistic',
+        severity: 'high',
+        message: `Base effort (${result.baseEffort}h) is too high for ${deliveryTeamSize} delivery role(s) over ${result.estimatedDuration}.`,
+        details: {
+          baseEffortHours: result.baseEffort,
+          deliveryTeamSize,
+          estimatedDuration: result.estimatedDuration,
+          expectedCapacityHours,
+        },
+      });
+    }
+    if (result.baseEffort < minRealisticEffort) {
+      violations.push({
+        code: 'effort_duration_unrealistic',
+        severity: 'medium',
+        message: `Base effort (${result.baseEffort}h) is likely too low for the stated duration (${result.estimatedDuration}) and team size (${deliveryTeamSize}).`,
+        details: {
+          baseEffortHours: result.baseEffort,
+          deliveryTeamSize,
+          estimatedDuration: result.estimatedDuration,
+          expectedCapacityHours,
+        },
+      });
+    }
+  }
+
+  const pricedEffort = result.phasePricing.reduce((sum, phase) => sum + phase.effortHours, 0);
+  const effortDrift = Math.abs(pricedEffort - result.baseEffort);
+  const driftTolerance = Math.max(8, result.baseEffort * 0.1);
+  if (effortDrift > driftTolerance) {
+    violations.push({
+      code: 'phase_pricing_effort_drift',
+      severity: 'high',
+      message: `Phase pricing effort total (${pricedEffort}h) drifts from WBS base effort (${result.baseEffort}h) beyond tolerance (${Math.round(driftTolerance * 100) / 100}h).`,
+      details: {
+        pricedEffortHours: pricedEffort,
+        baseEffortHours: result.baseEffort,
+        driftHours: effortDrift,
+        toleranceHours: driftTolerance,
+      },
+    });
+  }
+
+  const highRiskScope = policyContext.highRiskScope === true;
+  const uncertaintyHigh = String(policyContext.sourceUncertaintyLevel || '').toLowerCase() === 'high';
+  const integrationHigh = String(policyContext.integrationComplexity || '').toLowerCase() === 'high';
+  const dependencyCritical = String(policyContext.dependencyCriticality || '').toLowerCase() === 'high';
+  const elevatedRiskSignals = highRiskScope || uncertaintyHigh || integrationHigh || dependencyCritical || (result.risks?.length || 0) >= 3;
+  if (elevatedRiskSignals && result.contingencyPercent < 12) {
+    violations.push({
+      code: 'contingency_too_low_for_risk',
+      severity: 'medium',
+      message: `Contingency (${result.contingencyPercent}%) is too low for the current risk/uncertainty profile.`,
+      details: {
+        contingencyPercent: result.contingencyPercent,
+        sourceUncertaintyLevel: policyContext.sourceUncertaintyLevel || null,
+        dependencyCriticality: policyContext.dependencyCriticality || null,
+        integrationComplexity: policyContext.integrationComplexity || null,
+      },
+    });
+  }
+
+  if (uncertaintyHigh) {
+    const assumptionsCount = (result.assumptions || []).length;
+    if (assumptionsCount < 2) {
+      violations.push({
+        code: 'assumptions_coverage_missing',
+        severity: 'medium',
+        message: 'High source uncertainty requires explicit key assumptions (minimum 2).',
+        details: {
+          assumptionsCount,
+          sourceUncertaintyLevel: policyContext.sourceUncertaintyLevel,
+        },
+      });
+    }
+  }
+
+  return violations;
+}
 
 const diagramNodeSchema = z.object({
   id: z.string().min(1),
@@ -134,19 +238,35 @@ export const reportReviewSchema = z.object({
   tbcItems: z.array(z.string()),
 });
 
-export function validateEstimatorResult(value) {
+export function validateEstimatorResult(value, options = {}) {
   const raw = structuredClone(value);
+  if (!raw.estimateConfidence) {
+    raw.estimateConfidence = 'medium';
+  }
+  if (!raw.confidenceRationale) {
+    raw.confidenceRationale = 'Confidence is based on the available scope and assumptions at estimation time.';
+  }
+  if (!Array.isArray(raw.topUncertaintyDrivers) || raw.topUncertaintyDrivers.length === 0) {
+    raw.topUncertaintyDrivers = (raw.risks || [])
+      .map(item => item?.risk)
+      .filter(Boolean)
+      .slice(0, 5);
+    if (raw.topUncertaintyDrivers.length === 0) {
+      raw.topUncertaintyDrivers = ['Final scope and dependencies confirmation'];
+    }
+  }
   raw.workBreakdown = (raw.workBreakdown || []).map(task => ({
     phase: task.phase || 'Legacy',
     workstream: task.workstream || 'Ungrouped',
     title: String(task.title || '').replace(/^AI:\s*/i, ''),
     efforts: task.efforts,
-    assigned: task.assigned,
+    assigned: String(task.assigned || '').trim(),
     notes: task.notes ?? (task.aiAssisted ? 'Includes AI-assisted production and manual validation.' : ''),
   }));
   if (!Array.isArray(raw.implementationTeam) || raw.implementationTeam.length === 0) {
     raw.implementationTeam = [...new Set((raw.workBreakdown || []).map(task => task.assigned).filter(Boolean))];
   }
+  raw.implementationTeam = [...new Set(raw.implementationTeam.map(role => String(role || '').trim()).filter(Boolean))];
   delete raw.teamComposition;
   const parsed = estimatorResultSchema.parse(raw);
   const firstSeen = new Map();
@@ -167,13 +287,24 @@ export function validateEstimatorResult(value) {
   const qaOngoingEffort = targetQaEffort;
   const qaEffort = qaOngoingEffort;
   const pmEffort = roundToQuarterHour((baseEffort + qaEffort) * (DEFAULT_PM_OVERHEAD_PERCENT / 100));
+
+  const deliveryRoleWithOverhead = parsed.implementationTeam.find(role => RESERVED_OVERHEAD_ROLES.has(role));
+  if (deliveryRoleWithOverhead) {
+    throw new Error(`implementationTeam must list delivery roles only. "${deliveryRoleWithOverhead}" is added automatically as overhead.`);
+  }
+
+  const overheadTaskRole = workBreakdown.find(task => RESERVED_OVERHEAD_ROLES.has(task.assigned));
+  if (overheadTaskRole) {
+    throw new Error(`Estimator task role "${overheadTaskRole.assigned}" is reserved for automatic overhead rows and cannot be assigned directly.`);
+  }
+
   const implementationRoleSet = new Set(parsed.implementationTeam);
   const unknownTaskRole = workBreakdown.find(task => !implementationRoleSet.has(task.assigned));
   if (unknownTaskRole) {
     throw new Error(`Estimator task role "${unknownTaskRole.assigned}" must be listed in implementationTeam.`);
   }
   const activeRoles = [...new Set([...parsed.implementationTeam, 'QA', 'PM'])];
-  const teamComposition = activeRoles.map(team => ({ team, rate: DEFAULT_ROLE_RATES[team] }));
+  const teamComposition = activeRoles.map(team => ({ team, rate: DEFAULT_ROLE_RATE }));
   const rateByRole = new Map(teamComposition.map(item => [item.team, item.rate]));
   const costRows = [
     ...workBreakdown.map(task => ({
@@ -186,7 +317,7 @@ export function validateEstimatorResult(value) {
   const totalCost = costRows.some(row => row.rate === null || row.rate === undefined)
     ? null
     : costRows.reduce((sum, row) => sum + row.efforts * row.rate, 0);
-  return {
+  const result = {
     ...parsed,
     workBreakdown,
     teamComposition,
@@ -198,15 +329,22 @@ export function validateEstimatorResult(value) {
     totalEffort: baseEffort + qaEffort + pmEffort,
     totalCost,
   };
+
+  const violations = evaluateEstimatorAccuracyPolicy(result, options.policyContext || {});
+  if (violations.length > 0) {
+    throw createEstimatorAccuracyPolicyError(violations);
+  }
+
+  return result;
 }
 
-export function parseEstimatorOutput(raw) {
+export function parseEstimatorOutput(raw, options = {}) {
   const value = typeof raw === 'string' ? JSON.parse(raw) : raw;
-  return validateEstimatorResult(value);
+  return validateEstimatorResult(value, options);
 }
 
-export function buildEstimatorReportSummary(raw) {
-  const result = parseEstimatorOutput(raw);
+export function buildEstimatorReportSummary(raw, options = {}) {
+  const result = parseEstimatorOutput(raw, options);
   return JSON.stringify({
     totalEffort: result.totalEffort,
     baseEffort: result.baseEffort,
@@ -218,6 +356,9 @@ export function buildEstimatorReportSummary(raw) {
     pmOverheadPercent: DEFAULT_PM_OVERHEAD_PERCENT,
     contingencyPercent: result.contingencyPercent,
     estimatedDuration: result.estimatedDuration,
+    estimateConfidence: result.estimateConfidence,
+    confidenceRationale: result.confidenceRationale,
+    topUncertaintyDrivers: result.topUncertaintyDrivers,
     commercialProposal: result.commercialProposal,
     phasePricing: result.phasePricing,
     softwareLicenses: result.softwareLicenses,
