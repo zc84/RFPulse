@@ -1,4 +1,4 @@
-import { User, Agent, GlobalAISettings, OpenAIModel, AIMessage, AIStartResponse, AIMessageResponse, AISessionResponse, AIChatMessage, AIValidateResponse, AIValidateRequest, DealLock, PlatformConfigOption, PromptTemplate, Document } from './types';
+import { User, Agent, GlobalAISettings, OpenAIModel, AIMessage, AIStartResponse, AIMessageResponse, AISessionResponse, AIChatMessage, AIValidateResponse, AIValidateRequest, DealLock, PlatformConfigOption, PromptTemplate, Document, AIRequirementInventoryResponse, AIKnowledgeRetrieveRequest, AIKnowledgeRetrieveResponse } from './types';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
@@ -248,4 +248,13 @@ export const aiApi = {
     apiFetch(`/deals/${dealId}/ai/chat`, { method: 'POST', body: JSON.stringify({ content }) }) as Promise<{ messages: AIChatMessage[] }>,
   validate: (dealId: string, payload: AIValidateRequest) =>
     apiFetch(`/deals/${dealId}/ai/validate`, { method: 'POST', body: JSON.stringify(payload) }) as Promise<AIValidateResponse>,
+  getRequirements: (dealId: string, sessionId?: number | null) => {
+    const query = sessionId ? `?sessionId=${encodeURIComponent(String(sessionId))}` : '';
+    return apiFetch(`/deals/${dealId}/ai/requirements${query}`) as Promise<AIRequirementInventoryResponse>;
+  },
+  retrieveKnowledge: (dealId: string, payload: AIKnowledgeRetrieveRequest) =>
+    apiFetch(`/deals/${dealId}/ai/knowledge/retrieve`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }) as Promise<AIKnowledgeRetrieveResponse>,
 };

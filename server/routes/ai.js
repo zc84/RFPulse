@@ -17,6 +17,16 @@ import {
   buildCoordinatorContext,
   requireCoordinatorContext,
 } from '../services/aiOrchestrator.js';
+import { buildRequirementInventorySummary, listRequirementInventory, persistRunEvidenceAndRequirements } from '../services/evidenceInventory.js';
+import { ensureDefaultCapabilities } from '../ai-runtime/capabilities/capabilityRegistry.js';
+import { runPhase3PlanExecution } from '../ai-runtime/application/phase3RuntimeService.js';
+import {
+  generateWorkflowPlanShadow,
+  isShadowModeEnabled,
+  persistWorkflowPlanSnapshot,
+} from '../ai-runtime/planner/plannerService.js';
+import { retrieveFrameworkSections } from '../ai-runtime/knowledge/frameworkRetriever.js';
+import { retrieveCompanyProfileSections } from '../ai-runtime/knowledge/companyProfileRetriever.js';
 import { renderProposalDocx, splitProposalMarkdown } from '../services/proposalDocument.js';
 import { resolveProposalTemplatePath } from '../services/proposalTemplate.js';
 import fs from 'fs';
@@ -1114,6 +1124,7 @@ router.post('/start', authenticate, requireRole('Superadmin', 'Editor'), async (
   let operationEntry = null;
   try {
     await ensureDefaultAgents();
+    await ensureDefaultCapabilities();
     dealId = parseDealId(req.params.id);
     if (!dealId) return res.status(400).json({ error: 'Invalid deal id' });
 
@@ -1172,13 +1183,39 @@ router.post('/start', authenticate, requireRole('Superadmin', 'Editor'), async (
       await markWorkflowStepCompleted(session.id, dealId, 'extracted-context', contextBundle, {
         documents: extractedDocs.map(d => ({ id: d.id, name: d.name, success: d.success })),
       });
+      await persistPhase1EvidenceInventory({
+        sessionId: session.id,
+        dealId,
+        extractedDocs,
+        stepKey: 'phase1-evidence-inventory',
+      });
       const readableDocs = extractedDocs.filter(d => d.success).length;
       await addMessage(session.id, 'coordinator', `Document extraction complete: ${readableDocs}/${extractedDocs.length} document(s) readable.`);
     } else {
       contextBundle = refreshAiNotesInContext(contextBundle, data.deal);
       await query('UPDATE ai_sessions SET extracted_context = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', [contextBundle, session.id]);
       await addMessage(session.id, 'coordinator', 'Document extraction reused from the saved session state.');
+      const sourceDocumentsForInventory = sourceDocuments.length > 0
+        ? sourceDocuments
+        : data.documents.filter(doc => doc.source === 'user' || !doc.source);
+      extractedDocs = await buildDealContextBundle(req.params.id, sourceDocumentsForInventory);
+      await persistPhase1EvidenceInventory({
+        sessionId: session.id,
+        dealId,
+        extractedDocs,
+        stepKey: 'phase1-evidence-inventory',
+      });
     }
+
+    await maybeGeneratePhase2ShadowPlan({
+      sessionId: session.id,
+      dealId,
+      objective: `Process deal ${data.deal?.name || req.params.id} into a compliant proposal package`,
+      contextSummary: contextBundle,
+      priorityInstructions: getAiNotes(data.deal),
+      signal,
+    });
+
     const messages = await getSessionMessages(session.id);
     const savedAgentOutputs = await getAgentOutputs(session.id);
     const workflowSteps = await getWorkflowSteps(session.id);
@@ -1341,6 +1378,12 @@ router.post('/validate', authenticate, requireRole('Superadmin', 'Editor'), asyn
     await markWorkflowStepCompleted(session.id, dealId, currentStepKey, clientContext, {
       documents: clientExtracted.map(doc => ({ id: doc.id, name: doc.name, success: doc.success })),
     });
+    await persistPhase1EvidenceInventory({
+      sessionId: session.id,
+      dealId,
+      extractedDocs: clientExtracted,
+      stepKey: 'phase1-evidence-inventory-validation-client',
+    });
 
     currentStepKey = 'validation-supplier-context';
     await markWorkflowStepRunning(session.id, dealId, currentStepKey, {
@@ -1446,6 +1489,7 @@ router.post('/message', authenticate, requireRole('Superadmin', 'Editor'), async
   let lockToken = null;
   let operationEntry = null;
   try {
+    await ensureDefaultCapabilities();
     dealId = parseDealId(req.params.id);
     if (!dealId) return res.status(400).json({ error: 'Invalid deal id' });
 
@@ -1487,6 +1531,131 @@ router.post('/message', authenticate, requireRole('Superadmin', 'Editor'), async
       ...savedAgentOutputs,
     };
     const aiNotes = getAiNotes(dealData?.deal);
+
+    await maybeGeneratePhase2ShadowPlan({
+      sessionId: session.id,
+      dealId,
+      objective: `Continue deal ${dealData?.deal?.name || req.params.id} proposal workflow`,
+      contextSummary: contextBundle,
+      priorityInstructions: aiNotes,
+      signal,
+    });
+
+    const runtimeV2Enabled = await isRuntimeV2Enabled();
+    if (runtimeV2Enabled) {
+      await markWorkflowStepRunning(session.id, dealId, 'phase3-v2-execution');
+      try {
+        const execution = await runPhase3PlanExecution({
+          session,
+          dealId,
+          dealName: dealData?.deal?.name || 'Untitled Deal',
+          contextBundle,
+          messages,
+          aiNotes,
+          externalInputs: {
+            coordinator_context: withAiNotesForAgents(requireCoordinatorContext(session.coordinator_context || contextBundle), dealData?.deal),
+            context_summary: contextBundle,
+            source_documents: contextBundle,
+            deal_ai_notes: aiNotes,
+            framework_retrieval_query: contextBundle,
+            framework_retrieval_intents: [],
+            company_retrieval_query: contextBundle,
+            company_retrieval_intents: [],
+          },
+          signal,
+          publishSessionUpdate,
+        });
+
+        if (execution) {
+          const dealRow = await query('SELECT name FROM deals WHERE id = $1', [dealId]);
+          const dealName = dealRow.rows[0]?.name || 'Untitled Deal';
+          const executionOutputs = execution.outputRefs || {};
+
+          if (executionOutputs.legal) {
+            await saveAgentOutput(session.id, 'legal', String(executionOutputs.legal));
+          }
+          if (executionOutputs.architect) {
+            await saveAgentOutput(session.id, 'architect', String(executionOutputs.architect));
+          }
+          if (executionOutputs.estimator) {
+            await saveAgentOutput(session.id, 'estimator', String(executionOutputs.estimator));
+          }
+
+          let proposalMarkdown = typeof executionOutputs.proposal_markdown === 'string'
+            ? executionOutputs.proposal_markdown
+            : null;
+
+          if (!proposalMarkdown) {
+            const finalMessages = await getSessionMessages(session.id);
+            proposalMarkdown = await buildFinalProposalMarkdown(
+              dealName,
+              withAiNotesForAgents(requireCoordinatorContext(session.coordinator_context || contextBundle), dealData?.deal),
+              finalMessages,
+              {
+                legal: executionOutputs.legal || executionOutputs.legal_analysis || '',
+                architect: executionOutputs.architect || executionOutputs.solution_design || '',
+                estimator: executionOutputs.estimator || executionOutputs.estimation_package || '',
+              },
+              aiNotes,
+              signal
+            );
+          }
+
+          const finalWorkflowSteps = await getWorkflowSteps(session.id);
+          const finalizeOutputs = {
+            ...executionOutputs,
+            estimator: executionOutputs.estimator || executionOutputs.estimation_package || '',
+          };
+          const finalized = await finalizeAssessmentArtifacts({
+            dealId,
+            sessionId: session.id,
+            dealName,
+            proposalMarkdown,
+            contextBundle,
+            outputs: finalizeOutputs,
+            aiNotes,
+            signal,
+            resumeWorkflowSteps: finalWorkflowSteps,
+          });
+
+          await markWorkflowStepCompleted(
+            session.id,
+            dealId,
+            'phase3-v2-execution',
+            JSON.stringify({ tasks: Object.keys(execution.taskStates || {}) }),
+            {
+              runtimeVersion: 'v2',
+              executedTaskCount: Object.keys(execution.taskStates || {}).length,
+            }
+          );
+
+          await addMessage(session.id, 'agent', 'V2 runtime completed dynamic task execution and generated proposal artifacts.', 'coordinator');
+
+          const updatedMessages = await getSessionMessages(session.id);
+          const updatedSession = await query('SELECT * FROM ai_sessions WHERE id = $1', [session.id]);
+          res.json({
+            sessionId: session.id,
+            status: updatedSession.rows[0].status,
+            runtimeVersion: 'v2',
+            messages: updatedMessages,
+            finalReportDocumentId: finalized.finalReportDocumentId,
+            wbsDocumentId: finalized.wbsDocumentId,
+            proposedUpdates: finalized.proposedUpdates,
+            agentOutputs: {
+              legal: executionOutputs.legal || executionOutputs.legal_analysis || undefined,
+              architect: executionOutputs.architect || executionOutputs.solution_design || undefined,
+              estimator: executionOutputs.estimator || executionOutputs.estimation_package || undefined,
+              proposal_markdown: proposalMarkdown,
+            },
+          });
+          return;
+        }
+      } catch (phase3Err) {
+        await markWorkflowStepFailed(session.id, dealId, 'phase3-v2-execution', phase3Err, { runtimeVersion: 'v2' });
+        throw phase3Err;
+      }
+    }
+
     const committedPlan = await getCommittedPlan(session.id);
 
     await markWorkflowStepRunning(session.id, dealId, 'coordinator-routing', {
@@ -1769,6 +1938,82 @@ router.get('/session', authenticate, requireRole('Superadmin', 'Editor'), async 
   }
 });
 
+router.get('/requirements', authenticate, requireRole('Superadmin', 'Editor'), async (req, res, next) => {
+  try {
+    const dealId = parseDealId(req.params.id);
+    if (!dealId) return res.status(400).json({ error: 'Invalid deal id' });
+
+    const sessionFilter = req.query.sessionId ? Number(req.query.sessionId) : null;
+    const latestSessionResult = await query('SELECT id FROM ai_sessions WHERE deal_id = $1 ORDER BY id DESC LIMIT 1', [dealId]);
+    const latestSessionId = latestSessionResult.rows[0]?.id || null;
+    const sessionId = Number.isFinite(sessionFilter) && sessionFilter > 0
+      ? sessionFilter
+      : latestSessionId;
+
+    const requirements = await listRequirementInventory({ dealId, sessionId });
+    const summary = buildRequirementInventorySummary(requirements);
+    res.json({
+      dealId: req.params.id,
+      sessionId,
+      count: requirements.length,
+      summary,
+      requirements,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/knowledge/retrieve', authenticate, requireRole('Superadmin', 'Editor'), async (req, res, next) => {
+  try {
+    const dealId = parseDealId(req.params.id);
+    if (!dealId) return res.status(400).json({ error: 'Invalid deal id' });
+
+    const {
+      source = 'framework',
+      queryText = '',
+      intents = [],
+      limit = 5,
+      includeRelated = true,
+      relatedLimit = 2,
+    } = req.body || {};
+
+    if (!queryText || typeof queryText !== 'string') {
+      return res.status(400).json({ error: 'queryText is required for knowledge retrieval.' });
+    }
+
+    if (source === 'framework') {
+      const retrieval = await retrieveFrameworkSections({
+        queryText,
+        intents,
+        limit,
+        includeRelated,
+        relatedLimit,
+      });
+      return res.json({
+        source,
+        retrieval,
+      });
+    }
+
+    if (source === 'company') {
+      const retrieval = await retrieveCompanyProfileSections({
+        queryText,
+        intents,
+        limit,
+      });
+      return res.json({
+        source,
+        retrieval,
+      });
+    }
+
+    return res.status(400).json({ error: "source must be either 'framework' or 'company'." });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get('/stream', authenticate, requireRole('Superadmin', 'Editor'), async (req, res, next) => {
   try {
     const dealId = parseDealId(req.params.id);
@@ -1904,6 +2149,98 @@ function formatDealForChat(deal) {
     `- Description: ${deal.description || 'N/A'}`,
     `- AI Notes: ${deal.ai_notes || 'N/A'}`,
   ].join('\n');
+}
+
+async function persistPhase1EvidenceInventory({ sessionId, dealId, extractedDocs, stepKey }) {
+  const result = await persistRunEvidenceAndRequirements({ sessionId, dealId, extractedDocs });
+  if (!result.skipped) {
+    await markWorkflowStepCompleted(sessionId, dealId, stepKey, JSON.stringify({
+      evidenceCount: result.evidenceCount,
+      requirementCount: result.requirementCount,
+    }), {
+      evidenceCount: result.evidenceCount,
+      requirementCount: result.requirementCount,
+      source: 'phase1-evidence-inventory',
+    });
+  }
+  return result;
+}
+
+async function getGlobalSetting(key) {
+  const result = await query('SELECT value FROM global_settings WHERE key = $1', [key]);
+  return result.rows[0]?.value ?? null;
+}
+
+async function isRuntimeV2Enabled() {
+  const value = await getGlobalSetting('ai_runtime_v2_enabled');
+  return String(value || 'false').toLowerCase() === 'true';
+}
+
+function parseWorkflowPlanFromSession(session) {
+  const raw = session?.workflow_plan;
+  if (!raw) return null;
+  if (typeof raw === 'object') return raw;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+async function maybeGeneratePhase2ShadowPlan({
+  sessionId,
+  dealId,
+  objective,
+  contextSummary,
+  priorityInstructions,
+  signal,
+}) {
+  const shadowEnabled = await isShadowModeEnabled();
+  if (!shadowEnabled) return null;
+
+  try {
+    await markWorkflowStepRunning(sessionId, dealId, 'phase2-shadow-plan');
+    const shadow = await generateWorkflowPlanShadow({
+      objective,
+      contextSummary,
+      requiredArtifacts: ['proposal-docx', 'detailed-wbs-xlsx'],
+      budgets: { maxTasks: 24, maxRepairCycles: 2, maxParallelTasks: 4 },
+      priorityInstructions,
+      signal,
+    });
+
+    await persistWorkflowPlanSnapshot({
+      sessionId,
+      runObjective: objective,
+      workflowPlan: shadow.plan,
+      plannerModel: shadow.plannerModel,
+      plannerPromptVersion: shadow.plannerPromptVersion,
+      runtimeVersion: 'legacy',
+    });
+
+    await markWorkflowStepCompleted(
+      sessionId,
+      dealId,
+      'phase2-shadow-plan',
+      JSON.stringify(shadow.plan),
+      {
+        valid: shadow.validation.valid,
+        errors: shadow.validation.errors || [],
+        usedFallback: shadow.usedFallback,
+        usedRepair: shadow.usedRepair || false,
+        fallbackReason: shadow.fallbackReason || [],
+        repairReason: shadow.repairReason || [],
+        repairErrors: shadow.repairErrors || [],
+        configuredFallbackErrors: shadow.configuredFallbackErrors || [],
+      }
+    );
+
+    return shadow;
+  } catch (err) {
+    await markWorkflowStepFailed(sessionId, dealId, 'phase2-shadow-plan', err);
+    console.error('Phase 2 shadow planning failed:', err);
+    return null;
+  }
 }
 
 export default router;

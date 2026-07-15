@@ -2,8 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { ArrowLeft, Bot, Edit2, KeyRound, HelpCircle, Save, Loader2, RefreshCw, Upload, Trash2, FileText } from 'lucide-react';
-import { Agent, GlobalAISettings, OpenAIModel, PromptTemplate } from '../types';
-import { agentsApi } from '../api';
+import { Agent, AIKnowledgeRetrieveResponse, GlobalAISettings, OpenAIModel, PromptTemplate } from '../types';
+import { agentsApi, aiApi } from '../api';
 import Header from '../components/Header';
 import Button from '../components/Button';
 import Modal from '../components/Modal';
@@ -67,6 +67,47 @@ export default function AgentManagementPage({ embedded = false }: { embedded?: b
   const [savingAgent, setSavingAgent] = useState(false);
   const [promptTemplates, setPromptTemplates] = useState<PromptTemplate[]>([]);
   const [promptDrafts, setPromptDrafts] = useState<Record<string, string>>({});
+  const [knowledgeDealId, setKnowledgeDealId] = useState('');
+  const [knowledgeSource, setKnowledgeSource] = useState<'framework' | 'company'>('framework');
+  const [knowledgeQuery, setKnowledgeQuery] = useState('');
+  const [knowledgeIntents, setKnowledgeIntents] = useState('');
+  const [knowledgeLimit, setKnowledgeLimit] = useState(5);
+  const [knowledgeIncludeRelated, setKnowledgeIncludeRelated] = useState(true);
+  const [knowledgeRelatedLimit, setKnowledgeRelatedLimit] = useState(2);
+  const [knowledgeLoading, setKnowledgeLoading] = useState(false);
+  const [knowledgeResult, setKnowledgeResult] = useState<AIKnowledgeRetrieveResponse | null>(null);
+
+  const handleKnowledgeRetrieve = async () => {
+    if (!knowledgeDealId.trim()) {
+      toast.error('Enter a deal ID (for example D-12) to run retrieval test.');
+      return;
+    }
+    if (!knowledgeQuery.trim()) {
+      toast.error('Enter a retrieval query.');
+      return;
+    }
+
+    setKnowledgeLoading(true);
+    try {
+      const response = await aiApi.retrieveKnowledge(knowledgeDealId.trim(), {
+        source: knowledgeSource,
+        queryText: knowledgeQuery.trim(),
+        intents: knowledgeIntents
+          .split(',')
+          .map(intent => intent.trim())
+          .filter(Boolean),
+        limit: knowledgeLimit,
+        includeRelated: knowledgeSource === 'framework' ? knowledgeIncludeRelated : false,
+        relatedLimit: knowledgeSource === 'framework' ? knowledgeRelatedLimit : 0,
+      });
+      setKnowledgeResult(response);
+      toast.success('Knowledge retrieval completed.');
+    } catch (err: any) {
+      toast.error(err.message || 'Knowledge retrieval failed.');
+    } finally {
+      setKnowledgeLoading(false);
+    }
+  };
 
   const load = async () => {
     setLoading(true);
@@ -316,6 +357,113 @@ export default function AgentManagementPage({ embedded = false }: { embedded?: b
               ? `Active template: ${settings.proposal_template_name || 'proposal-template.docx'}${settings.proposal_template_uploaded_at ? ` · uploaded ${new Date(settings.proposal_template_uploaded_at).toLocaleString()}` : ''}`
               : 'No active proposal template. The fallback DOCX layout will be used.'}
           </div>
+        </div>
+
+        <div style={{
+          background: '#fff', border: '1px solid #E2E8F0', borderRadius: 12,
+          padding: '20px', marginBottom: 20, boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+            <Bot size={16} color="#0EA5E9" />
+            <h2 style={{ fontSize: 14, fontWeight: 600, color: '#0F172A' }}>Knowledge Retrieval Test Console</h2>
+          </div>
+          <p style={{ fontSize: 12, color: '#64748B', marginBottom: 12 }}>
+            Test framework/company retrieval behavior for a specific deal context and inspect ranked candidates and selected sections.
+          </p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10, marginBottom: 10 }}>
+            <FormField label="Deal ID" required>
+              <Input
+                value={knowledgeDealId}
+                onChange={event => setKnowledgeDealId(event.target.value)}
+                placeholder="D-12"
+              />
+            </FormField>
+            <FormField label="Knowledge Source" required>
+              <Select value={knowledgeSource} onChange={event => setKnowledgeSource(event.target.value as 'framework' | 'company')}>
+                <option value="framework">Framework</option>
+                <option value="company">Company Profile</option>
+              </Select>
+            </FormField>
+            <FormField label="Limit">
+              <Input
+                type="number"
+                min={1}
+                max={10}
+                value={knowledgeLimit}
+                onChange={event => setKnowledgeLimit(Math.max(1, Math.min(10, Number(event.target.value) || 5)))}
+              />
+            </FormField>
+          </div>
+          <FormField label="Query" required>
+            <textarea
+              value={knowledgeQuery}
+              onChange={event => setKnowledgeQuery(event.target.value)}
+              rows={4}
+              style={{ width: '100%', padding: '10px 12px', borderRadius: 7, border: '1px solid #E2E8F0', fontSize: 13, lineHeight: 1.5, resize: 'vertical' }}
+              placeholder="security compliance data residency"
+            />
+          </FormField>
+          <FormField label="Intents (comma-separated, optional)">
+            <Input
+              value={knowledgeIntents}
+              onChange={event => setKnowledgeIntents(event.target.value)}
+              placeholder="security governance, delivery governance"
+            />
+          </FormField>
+          {knowledgeSource === 'framework' && (
+            <div style={{ display: 'flex', gap: 12, marginBottom: 10, marginTop: 2 }}>
+              <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#334155' }}>
+                <input
+                  type="checkbox"
+                  checked={knowledgeIncludeRelated}
+                  onChange={event => setKnowledgeIncludeRelated(event.target.checked)}
+                />
+                Include related sections
+              </label>
+              <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#334155' }}>
+                Related limit
+                <input
+                  type="number"
+                  min={0}
+                  max={5}
+                  value={knowledgeRelatedLimit}
+                  onChange={event => setKnowledgeRelatedLimit(Math.max(0, Math.min(5, Number(event.target.value) || 0)))}
+                  style={{ width: 72, padding: '6px 8px', borderRadius: 6, border: '1px solid #CBD5E1' }}
+                />
+              </label>
+            </div>
+          )}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 6 }}>
+            <Button onClick={handleKnowledgeRetrieve} loading={knowledgeLoading} icon={<RefreshCw size={14} />}>
+              Run Retrieval Test
+            </Button>
+          </div>
+          {knowledgeResult && (
+            <div style={{ marginTop: 14, border: '1px solid #E2E8F0', borderRadius: 8, overflow: 'hidden' }}>
+              <div style={{ padding: '10px 12px', background: '#F8FAFC', borderBottom: '1px solid #E2E8F0', fontSize: 12, color: '#334155' }}>
+                <strong>Result:</strong> {knowledgeResult.source} · intents: {knowledgeResult.retrieval.intents.join(', ') || 'none'} · source version: {knowledgeResult.retrieval.sourceVersion || 'n/a'}
+              </div>
+              <div style={{ padding: 12, display: 'grid', gap: 10 }}>
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: '#334155', marginBottom: 6 }}>Top Candidates</div>
+                  {knowledgeResult.retrieval.candidates.slice(0, 5).map(candidate => (
+                    <div key={`candidate-${candidate.sectionId}`} style={{ fontSize: 12, color: '#475569', padding: '4px 0' }}>
+                      <strong>{candidate.sectionId}</strong> — {candidate.title} (score: {candidate.score})
+                    </div>
+                  ))}
+                </div>
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: '#334155', marginBottom: 6 }}>Selected Sections</div>
+                  {knowledgeResult.retrieval.sections.map(section => (
+                    <div key={`section-${section.sectionId}`} style={{ fontSize: 12, color: '#334155', padding: '6px 0', borderTop: '1px solid #F1F5F9' }}>
+                      <strong>{section.sectionId}</strong> · {section.title}
+                      {section.summary ? <div style={{ color: '#64748B', marginTop: 2 }}>{section.summary}</div> : null}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Agents table */}

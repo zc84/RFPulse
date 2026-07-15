@@ -1,0 +1,58 @@
+[
+  {
+    "id": "public-sector-full-proposal",
+    "objective": "Produce a compliant public-sector technical and commercial proposal package.",
+    "contextSummary": "RFP includes legal terms, technical architecture requirements, and priced delivery milestones.",
+    "expectedCapabilities": [
+      "analysis.legal",
+      "analysis.solution",
+      "analysis.estimation",
+      "proposal.integrate"
+    ],
+    "requiredArtifacts": ["proposal-docx", "detailed-wbs-xlsx"]
+  },
+  {
+    "id": "architecture-and-delivery-response",
+    "objective": "Prepare a technical architecture and delivery plan response for a complex integration tender.",
+    "contextSummary": "Tender emphasizes integration architecture and delivery execution, with estimated effort required.",
+    "expectedCapabilities": [
+      "analysis.solution",
+      "analysis.estimation",
+      "proposal.integrate"
+    ],
+    "requiredArtifacts": ["proposal-docx", "detailed-wbs-xlsx"]
+  },
+  {
+    "id": "legal-heavy-procurement",
+    "objective": "Respond to a procurement-heavy tender with strict legal and compliance conditions.",
+    "contextSummary": "Submission requires legal compliance narrative plus technical and commercial response sections.",
+    "expectedCapabilities": [
+      "analysis.legal",
+      "proposal.integrate"
+    ],
+    "requiredArtifacts": ["proposal-docx"]
+  },
+  {
+    "id": "commercial-bid-with-pricing",
+    "objective": "Prepare a commercial bid with implementation approach and estimation rationale.",
+    "contextSummary": "Client asks for implementation approach, WBS, timeline assumptions, and pricing logic.",
+    "expectedCapabilities": [
+      "analysis.solution",
+      "analysis.estimation",
+      "proposal.integrate"
+    ],
+    "requiredArtifacts": ["proposal-docx", "detailed-wbs-xlsx"]
+  },
+  {
+    "id": "end-to-end-rfp-package",
+    "objective": "Generate a full RFP response package covering compliance, solution, and commercial estimate.",
+    "contextSummary": "RFP contains compliance obligations, architecture constraints, and priced implementation scope.",
+    "expectedCapabilities": [
+      "analysis.legal",
+      "analysis.solution",
+      "analysis.estimation",
+      "proposal.integrate"
+    ],
+    "requiredArtifacts": ["proposal-docx", "detailed-wbs-xlsx"]
+  }
+]

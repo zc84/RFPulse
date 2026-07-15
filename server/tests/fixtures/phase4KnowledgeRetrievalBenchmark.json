@@ -1,0 +1,58 @@
+[
+  {
+    "id": "phase4-001",
+    "source": "framework",
+    "queryText": "Describe your security compliance and data residency approach for regulated deployments",
+    "intents": ["security governance"],
+    "expectedSectionIds": ["sec-17-security", "sec-16-risk", "sec-32-regulated"]
+  },
+  {
+    "id": "phase4-002",
+    "source": "framework",
+    "queryText": "How do you start an engagement in the first weeks and onboard stakeholders",
+    "intents": ["mobilisation"],
+    "expectedSectionIds": ["sec-04-mobilisation", "sec-05-discovery"]
+  },
+  {
+    "id": "phase4-003",
+    "source": "framework",
+    "queryText": "What delivery governance, escalation, and reporting cadence do you follow",
+    "intents": ["delivery governance"],
+    "expectedSectionIds": ["sec-15-escalation", "sec-03-principles"]
+  },
+  {
+    "id": "phase4-004",
+    "source": "framework",
+    "queryText": "Explain your support SLA and incident response model",
+    "intents": ["support and sla"],
+    "expectedSectionIds": ["sec-23-support-sla"]
+  },
+  {
+    "id": "phase4-005",
+    "source": "company",
+    "queryText": "Do you have UAE local presence and in-country representation",
+    "intents": ["local presence"],
+    "expectedSectionIds": ["company-uae-local-presence-and-delivery-capacity"]
+  },
+  {
+    "id": "phase4-006",
+    "source": "company",
+    "queryText": "Summarize your delivery capacity and staffing scale",
+    "intents": ["delivery capacity"],
+    "expectedSectionIds": ["company-key-facts", "company-uae-local-presence-and-delivery-capacity"]
+  },
+  {
+    "id": "phase4-007",
+    "source": "company",
+    "queryText": "What enterprise clients and references demonstrate your credibility",
+    "intents": ["delivery capacity"],
+    "expectedSectionIds": ["company-prestigious-clientele", "company-proven-track-record-growth-history"]
+  },
+  {
+    "id": "phase4-008",
+    "source": "company",
+    "queryText": "What capabilities do you provide across software, consulting, QA and modernization",
+    "intents": ["delivery capacity"],
+    "expectedSectionIds": ["company-comprehensive-service-capabilities"]
+  }
+]

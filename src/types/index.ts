@@ -174,6 +174,88 @@ export interface AIValidateResponse {
   dealId: string;
 }
 
+export interface AIRequirementInventorySummary {
+  total: number;
+  byObligationLevel: Record<string, number>;
+  byStatus: Record<string, number>;
+  byPriority: Record<string, number>;
+  byResponseType: Record<string, number>;
+  byCategory: Record<string, number>;
+  missingAppendixGapCount: number;
+  coveredDocuments: number;
+}
+
+export interface AIRequirementInventoryItem {
+  id: number;
+  session_id: number;
+  deal_id: number;
+  source_document_id: number | null;
+  source_document_name?: string | null;
+  source_locator: string | null;
+  text: string;
+  normalized_text: string;
+  category: string;
+  obligation_level: string;
+  response_type: string;
+  priority: string;
+  status: string;
+  conflict_group: string | null;
+  metadata?: Record<string, unknown> | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface AIRequirementInventoryResponse {
+  sessionId: number | null;
+  count: number;
+  summary: AIRequirementInventorySummary;
+  requirements: AIRequirementInventoryItem[];
+}
+
+export interface AIKnowledgeRetrieveRequest {
+  source: 'framework' | 'company';
+  queryText: string;
+  intents?: string[];
+  limit?: number;
+  includeRelated?: boolean;
+  relatedLimit?: number;
+}
+
+export interface AIKnowledgeSection {
+  sectionId: string;
+  title: string;
+  summary?: string | null;
+  content?: string | null;
+  score?: number;
+  reasons?: string[];
+  sourceVersion?: string | null;
+  tags?: string[];
+  rfpQuestions?: string[];
+  relatedSections?: string[];
+}
+
+export interface AIKnowledgeCandidate {
+  sectionId: string;
+  title: string;
+  score: number;
+  reasons: string[];
+}
+
+export interface AIKnowledgeRetrieveResult {
+  query: string;
+  intents: string[];
+  sourceVersion: string | null;
+  retrievalMode?: string;
+  candidates: AIKnowledgeCandidate[];
+  sections: AIKnowledgeSection[];
+  rationale?: Array<{ sectionId: string; rationale: string }>;
+}
+
+export interface AIKnowledgeRetrieveResponse {
+  source: 'framework' | 'company';
+  retrieval: AIKnowledgeRetrieveResult;
+}
+
 export interface ProposedDealUpdates {
   dueDate?: string | null;
   budget?: number | null;

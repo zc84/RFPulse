@@ -8,6 +8,8 @@
     "dev:frontend": "vite --host 0.0.0.0 --port 5001",
     "build": "tsc -b && vite build",
     "test": "node --test server/tests/*.test.js",
+    "benchmark:phase2-planner": "node server/scripts/phase2PlannerBenchmark.js",
+    "benchmark:phase4-knowledge": "node server/scripts/phase4KnowledgeRetrievalBenchmark.js",
     "python:deps": "python3 -m pip install -r server/scripts/requirements.txt --target server/scripts/.pydeps --upgrade",
     "db:setup": "node server/scripts/setupDatabase.js",
     "db:seed": "node server/seed.js",

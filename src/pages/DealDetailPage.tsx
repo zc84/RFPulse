@@ -7,7 +7,7 @@ import { ArrowLeft, Trash2, FileText, Calendar, DollarSign, Tag, AlignLeft, Hash
 import { useDeals } from '../context/DealsContext';
 import { useAuth } from '../context/AuthContext';
 import { dealsApi, aiApi, agentsApi, platformApi } from '../api';
-import { AIMessage, Document, AIChatMessage, ProposedDealUpdates, PlatformConfigOption, AIWorkflowStep, AISession } from '../types';
+import { AIMessage, Document, AIChatMessage, ProposedDealUpdates, PlatformConfigOption, AIWorkflowStep, AISession, AIRequirementInventoryResponse } from '../types';
 import Header from '../components/Header';
 import StatusBadge from '../components/StatusBadge';
 import Button from '../components/Button';
@@ -92,6 +92,9 @@ export default function DealDetailPage() {
   const [configOptions, setConfigOptions] = useState<PlatformConfigOption[]>([]);
 
   const [proposedUpdates, setProposedUpdates] = useState<ProposedDealUpdates | null>(null);
+  const [requirementInventory, setRequirementInventory] = useState<AIRequirementInventoryResponse | null>(null);
+  const [requirementsLoading, setRequirementsLoading] = useState(false);
+  const [requirementsError, setRequirementsError] = useState<string | null>(null);
 
   const [aiDocConfirm, setAiDocConfirm] = useState<{ show: boolean; names: string[] }>({ show: false, names: [] });
   const aiPollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -198,11 +201,30 @@ export default function DealDetailPage() {
     }
   };
 
+  const loadRequirementInventory = async (sessionIdOverride?: number | null) => {
+    if (!id || !canEdit) return;
+    setRequirementsLoading(true);
+    setRequirementsError(null);
+    try {
+      const data = await aiApi.getRequirements(id, sessionIdOverride ?? aiSessionId ?? undefined);
+      setRequirementInventory(data);
+    } catch (err: any) {
+      setRequirementsError(err?.message || 'Failed to load requirement inventory.');
+    } finally {
+      setRequirementsLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (id) loadAISession();
     validateAIKey();
     platformApi.getOptions().then(setConfigOptions).catch(() => setConfigOptions([]));
   }, [id]);
+
+  useEffect(() => {
+    if (!id || !canEdit) return;
+    loadRequirementInventory(aiSessionId);
+  }, [id, canEdit, aiSessionId]);
 
   useEffect(() => () => stopAISessionPolling(), []);
 
@@ -973,6 +995,74 @@ export default function DealDetailPage() {
             emptyText="No AI documents yet. Run Process to generate the proposal, WBS, and diagrams. Validate lets you choose which AI files to audit."
           />
         </div>
+
+        {/* Requirement inventory (Phase 1) */}
+        {canEdit && (
+          <div style={{
+            background: '#fff', border: '1px solid #E2E8F0', borderRadius: 12,
+            padding: 20, marginBottom: 16, boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#64748B' }}>
+                <ShieldCheck size={14} />
+                <span style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Requirement Inventory
+                </span>
+              </div>
+              <Button size="sm" variant="secondary" onClick={() => loadRequirementInventory(aiSessionId)} loading={requirementsLoading}>
+                Refresh
+              </Button>
+            </div>
+
+            {requirementsError ? (
+              <div style={{ fontSize: 12, color: '#991B1B', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 8, padding: 10 }}>
+                {requirementsError}
+              </div>
+            ) : requirementsLoading && !requirementInventory ? (
+              <div style={{ fontSize: 12, color: '#64748B' }}>Loading requirement inventory…</div>
+            ) : (
+              <>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: 10, marginBottom: 12 }}>
+                  <InfoCard icon={<Hash size={13} />} label="Requirements" value={String(requirementInventory?.summary.total || 0)} />
+                  <InfoCard icon={<FileText size={13} />} label="Documents Covered" value={String(requirementInventory?.summary.coveredDocuments || 0)} />
+                  <InfoCard icon={<ShieldCheck size={13} />} label="Critical" value={String(requirementInventory?.summary.byPriority?.critical || 0)} />
+                  <InfoCard icon={<Sparkles size={13} />} label="Gaps" value={String(requirementInventory?.summary.missingAppendixGapCount || 0)} />
+                </div>
+
+                {requirementInventory && requirementInventory.requirements.length > 0 ? (
+                  <div style={{ border: '1px solid #E2E8F0', borderRadius: 10, overflow: 'hidden' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '110px 90px 110px 1fr', gap: 10, padding: '8px 10px', background: '#F8FAFC', fontSize: 11, fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                      <div>Priority</div>
+                      <div>Status</div>
+                      <div>Category</div>
+                      <div>Requirement</div>
+                    </div>
+                    {requirementInventory.requirements.slice(0, 8).map(req => (
+                      <div key={req.id} style={{ display: 'grid', gridTemplateColumns: '110px 90px 110px 1fr', gap: 10, padding: '10px', borderTop: '1px solid #F1F5F9' }}>
+                        <div style={{ fontSize: 12, color: '#0F172A', fontWeight: 600 }}>{req.priority}</div>
+                        <div style={{ fontSize: 12, color: req.status === 'gap' ? '#B45309' : '#334155', fontWeight: 600 }}>{req.status}</div>
+                        <div style={{ fontSize: 12, color: '#475569' }}>{req.category}</div>
+                        <div style={{ fontSize: 12, color: '#334155', lineHeight: 1.5 }}>
+                          {req.text}
+                          <div style={{ marginTop: 4, color: '#94A3B8' }}>
+                            {req.source_document_name || 'Unknown source'}{req.source_locator ? ` · ${req.source_locator}` : ''}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                    {requirementInventory.requirements.length > 8 && (
+                      <div style={{ padding: 10, borderTop: '1px solid #F1F5F9', fontSize: 12, color: '#64748B', background: '#FAFAFA' }}>
+                        Showing first 8 of {requirementInventory.requirements.length} requirements.
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 12, color: '#94A3B8' }}>No extracted requirements yet. Run Process or Validate to generate inventory.</div>
+                )}
+              </>
+            )}
+          </div>
+        )}
 
         {/* AI workspace */}
         {canEdit && (
