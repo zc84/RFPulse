@@ -24,6 +24,7 @@ import {
   resolveRequestedSpecialists,
   splitCoordinatorSourceContext,
 } from '../services/aiOrchestrator.js';
+import { buildChatDiagramSourceMarkdown, buildDiagramChatResponseMessage, detectDiagramRequest, parseValidationVerdict } from '../routes/ai.js';
 import { splitProposalMarkdown } from '../services/proposalDocument.js';
 
 function validEstimate() {
@@ -317,17 +318,25 @@ Body.
 test('strict validator prompt is current and coordinator review prompt is removed', () => {
   const validator = getDefaultAgent('validator');
   assert.match(validator.system_prompt, /Explicit evidence only/i);
-  assert.match(validator.system_prompt, /PASS is exactly >= 90\.0%/);
-  assert.match(validator.system_prompt, /Accepted Andersen manual-content item/);
+  assert.match(validator.system_prompt, /PASS requires score >= 90/);
+  assert.match(validator.system_prompt, /Not Verified \/ Not Verifiable/);
+  assert.match(validator.system_prompt, /marker makes.*not evidence/i);
+  assert.match(validator.system_prompt, /Eight mandatory validation blocks/);
   assert.match(validator.system_prompt, /Key Exclusions|equivalent language/i);
   assert.match(validator.system_prompt, /software licence pricing and hardware pricing/i);
   assert.match(validator.system_prompt, /\| Requirement ID \| Client Requirement \| Status \| Proposal Reference \| Evidence Summary \| Gap \/ Notes \| Proposed Improvement \|/);
   assert.match(validator.system_prompt, /For Proposed Improvement:/);
-  assert.match(validator.system_prompt, /Assign Full status/);
+  assert.match(validator.system_prompt, /never earns automatic compliance credit/i);
   assert.doesNotMatch(validator.system_prompt, /Terminology Consistency/);
   assert.doesNotMatch(validator.system_prompt, /Language and Spelling Quality/);
   assert.equal(DEFAULT_PROMPT_TEMPLATES.some(prompt => prompt.key === 'coordinator.report-review'), false);
   assert.equal(DEFAULT_PROMPT_TEMPLATES.some(prompt => prompt.key === 'coordinator.final-report'), true);
+});
+
+test('final validator verdict parsing fails closed', () => {
+  assert.equal(parseValidationVerdict('The proposal receives FAIL because a mandatory annex is missing.'), 'fail');
+  assert.equal(parseValidationVerdict('## Final Decision: CONDITIONAL PASS\nConditions remain.'), 'conditional-pass');
+  assert.equal(parseValidationVerdict('No explicit decision.'), null);
 });
 
 test('tender prompts require deep coordinator capture and reject scope-cutting exclusions', () => {
@@ -418,6 +427,7 @@ test('final proposal prompt is AI-driven by RFP submission structure instead of 
   assert.doesNotMatch(finalReport.content, /delivery approach/i);
   assert.doesNotMatch(finalReport.content, /commercial basis/i);
   assert.doesNotMatch(finalReport.content, /Andersen Credentials & Company Profile \(Manual Content\)/i);
+  assert.match(finalReport.content, /Requirement Inventory and Submission Readiness Manifest as internal control artifacts only/i);
 });
 
 test('estimator policy context parsing is null-safe for partial or malformed labels', () => {
@@ -436,4 +446,69 @@ scope certainty level
   assert.equal(context.integrationComplexity, 'low');
   assert.equal(context.nonFunctionalLoadAndSecurity, 'medium');
   assert.equal(context.highRiskScope, true);
+});
+
+test('chat diagram intent detection recognizes architecture and timeline requests', () => {
+  assert.equal(detectDiagramRequest('How are you today?'), null);
+
+  assert.deepEqual(
+    detectDiagramRequest('Please generate architecture diagrams for this proposal'),
+    { architecture: true, timeline: false }
+  );
+
+  assert.deepEqual(
+    detectDiagramRequest('Create a timeline gantt visual for delivery milestones'),
+    { architecture: false, timeline: true }
+  );
+
+  assert.deepEqual(
+    detectDiagramRequest('Generate architecture and timeline diagrams'),
+    { architecture: true, timeline: true }
+  );
+});
+
+test('chat diagram response message includes preview links and persistence note', () => {
+  const markdown = buildDiagramChatResponseMessage({
+    architectureDocs: [
+      { id: 17, title: 'Overview Diagram' },
+      { id: 18, title: 'Integration Diagram' },
+    ],
+    timelineDoc: { id: 29, title: 'Delivery Timeline' },
+  });
+
+  assert.match(markdown, /Generated diagrams:/);
+  assert.match(markdown, /\/api\/deals\/documents\/doc-17\/preview/);
+  assert.match(markdown, /\/api\/deals\/documents\/doc-18\/preview/);
+  assert.match(markdown, /\/api\/deals\/documents\/doc-29\/preview/);
+  assert.match(markdown, /saved in the deal Documents list/i);
+});
+
+test('chat diagram source prefers proposal markdown when available', () => {
+  const source = buildChatDiagramSourceMarkdown({
+    proposalMarkdown: '# Proposal\n\n## Architecture\nAPI + DB',
+    docContext: '## User Documents\n--- rfp.pdf ---\nRaw text',
+    dealName: 'Ignored Deal Name',
+  });
+
+  assert.equal(source, '# Proposal\n\n## Architecture\nAPI + DB');
+});
+
+test('chat diagram source falls back to extracted user-doc context when no proposal exists', () => {
+  const source = buildChatDiagramSourceMarkdown({
+    proposalMarkdown: '',
+    docContext: '## User Documents (reference context)\n--- rfp-1.pdf ---\nNeed integration architecture with SSO boundary.',
+    dealName: 'Acme RFP',
+  });
+
+  assert.match(source, /^# Proposal: Acme RFP/m);
+  assert.match(source, /## Source RFP Context/);
+  assert.match(source, /Generated from uploaded deal documents because no AI proposal draft is available yet\./);
+  assert.match(source, /Need integration architecture with SSO boundary\./);
+});
+
+test('chat diagram source returns null when neither proposal nor extracted context exists', () => {
+  assert.equal(
+    buildChatDiagramSourceMarkdown({ proposalMarkdown: '', docContext: '   ', dealName: 'Acme' }),
+    null
+  );
 });

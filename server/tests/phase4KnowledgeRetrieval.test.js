@@ -100,7 +100,9 @@ Body B.
 
 test('phase4 capability registry seeds knowledge retrieval capabilities', async () => {
   const insertedCapabilityKeys = [];
+  const statements = [];
   await ensureDefaultCapabilities(async (text, params = []) => {
+    statements.push(text);
     if (/INSERT INTO ai_capabilities/i.test(text)) {
       insertedCapabilityKeys.push(params[0]);
     }
@@ -109,6 +111,7 @@ test('phase4 capability registry seeds knowledge retrieval capabilities', async 
 
   assert.ok(insertedCapabilityKeys.includes('knowledge.retrieve.framework'));
   assert.ok(insertedCapabilityKeys.includes('knowledge.retrieve.company'));
+  assert.ok(statements.every(statement => !/enabled\s*=\s*EXCLUDED\.enabled/i.test(statement)));
 });
 
 test('phase4 framework retrieval returns relevant sections with trace and related expansion', async () => {

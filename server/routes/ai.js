@@ -7,6 +7,7 @@ import { writeWbsWorkbook } from '../services/wbsWorkbook.js';
 import { buildTimelineDiagramFromMarkdown } from '../services/timelineDiagram.js';
 import {
   coordinatorStep,
+  coordinatorChatArtifactStep,
   buildFinalProposalMarkdown,
   generateArchitectureDiagramImages,
   runAgentPlan,
@@ -25,8 +26,12 @@ import {
   isShadowModeEnabled,
   persistWorkflowPlanSnapshot,
 } from '../ai-runtime/planner/plannerService.js';
+import { buildArtifactPlan, isArtifactSelected } from '../ai-runtime/artifacts/artifactPlanningService.js';
+import { validateArtifactRendererSelection } from '../ai-runtime/artifacts/artifactRendererRegistry.js';
 import { retrieveFrameworkSections } from '../ai-runtime/knowledge/frameworkRetriever.js';
 import { retrieveCompanyProfileSections } from '../ai-runtime/knowledge/companyProfileRetriever.js';
+import { evaluateReleaseReadiness, runPhase5QualityRepairLoop } from '../ai-runtime/quality/phase5QualityService.js';
+import { buildBidQualificationSnapshot, evaluateCompetitivenessReadiness } from '../ai-runtime/strategy/bidStrategyService.js';
 import { renderProposalDocx, splitProposalMarkdown } from '../services/proposalDocument.js';
 import { resolveProposalTemplatePath } from '../services/proposalTemplate.js';
 import fs from 'fs';
@@ -42,6 +47,22 @@ function formatStoredFileSize(sizeBytes) {
   return sizeBytes >= 1024 * 1024
     ? `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`
     : `${Math.max(1, Math.round(sizeBytes / 1024))} KB`;
+}
+
+function readEstimationPolicySnapshot(outputs = {}) {
+  const candidate = outputs?.estimator ?? outputs?.estimation_package;
+  if (candidate && typeof candidate === 'object' && candidate.estimationPolicy) {
+    return candidate.estimationPolicy;
+  }
+  if (typeof candidate === 'string') {
+    try {
+      const parsed = JSON.parse(candidate);
+      return parsed?.estimationPolicy || null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
 }
 
 function buildProposalDocumentName(partTitle, index, totalParts) {
@@ -314,6 +335,201 @@ async function addChatMessage(dealId, role, content) {
     [dealId, role, content]
   );
   return result.rows[0];
+}
+
+export function detectDiagramRequest(content) {
+  const text = String(content || '').toLowerCase();
+  if (!text.trim()) return null;
+
+  const asksForDiagram = /\b(diagram|diagrams|flowchart|visual|mermaid|gantt|timeline)\b/.test(text);
+  if (!asksForDiagram) return null;
+
+  const wantsArchitecture = /\b(architecture|system\s+design|solution\s+design|component|integration|data\s+flow|flowchart)\b/.test(text);
+  const wantsTimeline = /\b(timeline|gantt|roadmap|schedule|milestone)\b/.test(text);
+
+  if (!wantsArchitecture && !wantsTimeline) {
+    return { architecture: true, timeline: false };
+  }
+
+  return {
+    architecture: wantsArchitecture,
+    timeline: wantsTimeline,
+  };
+}
+
+async function getLatestSessionForDeal(dealId) {
+  const result = await query('SELECT * FROM ai_sessions WHERE deal_id = $1 ORDER BY id DESC LIMIT 1', [dealId]);
+  return result.rows[0] || null;
+}
+
+async function getLatestDraftProposalMarkdown(sessionId) {
+  if (!sessionId) return null;
+  const result = await query(
+    `SELECT artifact
+     FROM ai_workflow_steps
+     WHERE session_id = $1 AND step_key = 'draft-report' AND status = 'completed' AND artifact IS NOT NULL
+     ORDER BY id DESC
+     LIMIT 1`,
+    [sessionId]
+  );
+  const artifact = result.rows[0]?.artifact;
+  return artifact && typeof artifact === 'string' ? artifact : null;
+}
+
+async function buildProposalMarkdownForChatDiagram({ dealId, deal, signal }) {
+  const latestSession = await getLatestSessionForDeal(dealId);
+  if (!latestSession) return { proposalMarkdown: null, sessionId: null };
+
+  const fromDraftStep = await getLatestDraftProposalMarkdown(latestSession.id);
+  if (fromDraftStep) {
+    return { proposalMarkdown: fromDraftStep, sessionId: latestSession.id };
+  }
+
+  const outputs = await getAgentOutputs(latestSession.id);
+  if (!outputs || Object.keys(outputs).length === 0) {
+    return { proposalMarkdown: null, sessionId: latestSession.id };
+  }
+
+  const messages = await getSessionMessages(latestSession.id);
+  const contextBundle = refreshAiNotesInContext(latestSession.extracted_context || '', deal);
+  const coordinatorContext = withAiNotesForAgents(requireCoordinatorContext(latestSession.coordinator_context || contextBundle), deal);
+  const proposalMarkdown = await buildFinalProposalMarkdown(
+    deal?.name || `Deal ${dealId}`,
+    coordinatorContext,
+    messages,
+    outputs,
+    getAiNotes(deal),
+    signal
+  );
+
+  return {
+    proposalMarkdown,
+    sessionId: latestSession.id,
+  };
+}
+
+async function saveArchitectureDiagramsForChat(dealId, sessionId, diagramImages) {
+  if (!Array.isArray(diagramImages) || diagramImages.length === 0) return [];
+
+  const dealDir = path.join(UPLOAD_DIR, String(dealId));
+  if (!fs.existsSync(dealDir)) {
+    fs.mkdirSync(dealDir, { recursive: true });
+  }
+
+  const uploadedAt = new Date().toISOString().slice(0, 10);
+  const saved = [];
+  for (const [index, image] of diagramImages.entries()) {
+    const filename = `chat-architecture-${Date.now()}-${index + 1}.png`;
+    const filePath = path.join(dealDir, filename);
+    fs.writeFileSync(filePath, image.png);
+
+    const title = image.title || `Architecture Diagram ${index + 1}`;
+    const name = `AI Chat ${title}.png`;
+    const size = formatStoredFileSize(image.png.length);
+    const result = await query(
+      `INSERT INTO documents (deal_id, name, size, filename, source, uploaded_at, artifact_type, ai_session_id)
+       VALUES ($1, $2, $3, $4, 'ai', $5, 'architecture-diagram', $6)
+       RETURNING id`,
+      [dealId, name, size, filename, uploadedAt, sessionId]
+    );
+
+    saved.push({
+      id: result.rows[0].id,
+      title,
+      description: image.description || '',
+      filename,
+    });
+  }
+
+  return saved;
+}
+
+function normalizeRequestedDiagramTypes(requestedDiagramTypes = []) {
+  const allowed = new Set(['architecture', 'timeline']);
+  const selected = Array.isArray(requestedDiagramTypes)
+    ? requestedDiagramTypes.filter(type => allowed.has(type))
+    : [];
+  if (selected.length === 0) return ['architecture'];
+  return [...new Set(selected)];
+}
+
+async function executeDiagramGenerationForMarkdown({
+  dealId,
+  sessionId,
+  proposalMarkdown,
+  signal,
+  requestedDiagramTypes = ['architecture'],
+  persistArchitectureDocuments = false,
+}) {
+  const selectedDiagramTypes = normalizeRequestedDiagramTypes(requestedDiagramTypes);
+  let architectureDocs = [];
+  let timelineDoc = null;
+  let timelineDiagram = null;
+
+  if (selectedDiagramTypes.includes('architecture')) {
+    const architectureImages = await generateArchitectureDiagramImages(proposalMarkdown, signal);
+    throwIfAborted(signal);
+    architectureDocs = persistArchitectureDocuments
+      ? await saveArchitectureDiagramsForChat(dealId, sessionId, architectureImages)
+      : architectureImages.map(image => ({
+        title: image.title,
+        description: image.description || '',
+        png: image.png,
+      }));
+  }
+
+  if (selectedDiagramTypes.includes('timeline')) {
+    timelineDiagram = await buildTimelineDiagramFromMarkdown(proposalMarkdown);
+    throwIfAborted(signal);
+    timelineDoc = await saveTimelineDiagram(dealId, sessionId, timelineDiagram);
+  }
+
+  return {
+    selectedDiagramTypes,
+    architectureDocs,
+    timelineDoc,
+    timelineDocumentId: timelineDoc?.id || null,
+    timelineDiagram,
+  };
+}
+
+export function buildDiagramChatResponseMessage({ architectureDocs = [], timelineDoc = null }) {
+  const sections = ['Generated diagrams:'];
+
+  if (architectureDocs.length > 0) {
+    sections.push('');
+    sections.push('### Architecture diagrams');
+    for (const doc of architectureDocs) {
+      sections.push(`- [${doc.title}](/api/deals/documents/doc-${doc.id}/preview)`);
+    }
+  }
+
+  if (timelineDoc?.id) {
+    sections.push('');
+    sections.push('### Timeline diagram');
+    sections.push(`- [${timelineDoc.title || timelineDoc.name || 'Timeline diagram'}](/api/deals/documents/doc-${timelineDoc.id}/preview)`);
+  }
+
+  sections.push('');
+  sections.push('The generated files are also saved in the deal Documents list.');
+  return sections.join('\n');
+}
+
+export function buildChatDiagramSourceMarkdown({ proposalMarkdown = null, docContext = '', dealName = '' }) {
+  const proposal = String(proposalMarkdown || '').trim();
+  if (proposal) return proposal;
+
+  const context = String(docContext || '').trim();
+  if (!context) return null;
+
+  return [
+    `# Proposal: ${dealName || 'Untitled Deal'}`,
+    '',
+    '## Source RFP Context',
+    'Generated from uploaded deal documents because no AI proposal draft is available yet.',
+    '',
+    context,
+  ].join('\n');
 }
 
 async function buildChatContext(dealId, documents) {
@@ -750,6 +966,8 @@ async function deleteAssessmentReport(dealId) {
   const deletedProposalDocs = await deleteAiDocumentsByPattern(dealId, 'AI Proposal%');
   const deletedLegacyReport = await deleteDocumentsByName(dealId, 'AI Assessment Report.md');
   const deletedWbs = await deleteDocumentsByName(dealId, 'AI Detailed WBS.xlsx');
+  const deletedComplianceMatrix = await deleteDocumentsByName(dealId, 'AI Compliance Matrix.xlsx');
+  const deletedSubmissionManifest = await deleteDocumentsByName(dealId, 'AI Submission Readiness Manifest.md');
   const deletedValidation = await deleteDocumentsByName(dealId, 'Validation Report.md');
   const visuals = await query(
     `SELECT * FROM documents
@@ -767,7 +985,7 @@ async function deleteAssessmentReport(dealId) {
        AND artifact_type IN ('architecture-diagram', 'timeline-diagram')`,
     [dealId]
   );
-  return [...deletedProposalDocs, ...deletedLegacyReport, ...deletedWbs, ...deletedValidation, ...visuals.rows];
+  return [...deletedProposalDocs, ...deletedLegacyReport, ...deletedWbs, ...deletedComplianceMatrix, ...deletedSubmissionManifest, ...deletedValidation, ...visuals.rows];
 }
 
 async function saveDetailedWbs(dealId, sessionId, estimatorOutput) {
@@ -789,40 +1007,59 @@ async function saveDetailedWbs(dealId, sessionId, estimatorOutput) {
   return result.rows[0].id;
 }
 
-async function saveArchitectureDiagramImages(dealId, sessionId, images) {
+function buildSubmissionManifest(requirements = [], proposalMarkdown = '') {
+  const proposalText = String(proposalMarkdown || '').toLowerCase();
+  return {
+    generatedAt: new Date().toISOString(),
+    releaseStatus: 'manual-completion-required',
+    instructions: 'This manifest is an internal release-control document. Do not submit it as a substitute for client forms, signatures, seals, quotations, or design demos.',
+    requirements: (requirements || []).map(requirement => {
+      const text = String(requirement.text || requirement.normalized_text || '').trim();
+      const tokens = text.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(token => token.length >= 4);
+      const matches = tokens.filter(token => proposalText.includes(token));
+      const covered = tokens.length > 0 && matches.length / tokens.length >= 0.6;
+      return {
+        id: requirement.id,
+        sourceDocumentId: requirement.source_document_id || null,
+        sourceLocator: requirement.source_locator || null,
+        obligationLevel: requirement.obligation_level || null,
+        responseType: requirement.response_type || null,
+        priority: requirement.priority || null,
+        status: covered ? 'draft-response-present' : 'missing-from-draft',
+        requirement: text,
+        completionOwner: requirement.response_type === 'attachment' || requirement.response_type === 'form'
+          ? 'Bid manager / legal owner'
+          : 'Proposal owner',
+        evidenceRequired: requirement.response_type === 'attachment' || requirement.response_type === 'form',
+      };
+    }),
+  };
+}
+
+async function saveSubmissionManifest(dealId, sessionId, requirements, proposalMarkdown) {
   const dealDir = path.join(UPLOAD_DIR, String(dealId));
-  if (!fs.existsSync(dealDir)) {
-    fs.mkdirSync(dealDir, { recursive: true });
-  }
-
-  const previous = await query(`SELECT * FROM documents WHERE deal_id = $1 AND ai_session_id = $2 AND artifact_type = 'architecture-diagram'`, [dealId, sessionId]);
-  for (const doc of previous.rows) {
-    const filePath = doc.filename && path.join(dealDir, doc.filename);
-    if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
-  }
-  await query(`DELETE FROM documents WHERE deal_id = $1 AND ai_session_id = $2 AND artifact_type = 'architecture-diagram'`, [dealId, sessionId]);
-
-  const saved = [];
-  for (const [index, image] of images.entries()) {
-    const filename = `architecture-${index + 1}-${Date.now()}.png`;
-    fs.writeFileSync(path.join(dealDir, filename), image.png);
-    const name = `${image.title}.png`;
-    const size = formatStoredFileSize(image.png.length);
-    const result = await query(
-      `INSERT INTO documents (deal_id, name, size, filename, source, uploaded_at, artifact_type, ai_session_id)
-       VALUES ($1,$2,$3,$4,'ai',$5,'architecture-diagram',$6) RETURNING id`,
-      [dealId, name, size, filename, new Date().toISOString().slice(0, 10), sessionId]
-    );
-    saved.push({
-      id: result.rows[0].id,
-      name,
-      filename,
-      size,
-      title: image.title,
-      description: image.description || '',
-    });
-  }
-  return saved;
+  if (!fs.existsSync(dealDir)) fs.mkdirSync(dealDir, { recursive: true });
+  const manifest = buildSubmissionManifest(requirements, proposalMarkdown);
+  const markdown = [
+    '# Submission Readiness Manifest',
+    '',
+    `- Release status: **${manifest.releaseStatus}**`,
+    `- Generated: ${manifest.generatedAt}`,
+    '',
+    manifest.instructions,
+    '',
+    '| ID | Level | Type | Status | Requirement | Source | Owner |',
+    '|---:|---|---|---|---|---|---|',
+    ...manifest.requirements.map(item => `| ${item.id || ''} | ${item.obligationLevel || ''} | ${item.responseType || ''} | ${item.status} | ${String(item.requirement).replace(/\|/g, '\\|')} | ${item.sourceLocator || ''} | ${item.completionOwner} |`),
+  ].join('\n');
+  const filename = `ai-submission-manifest-${Date.now()}.md`;
+  fs.writeFileSync(path.join(dealDir, filename), markdown, 'utf8');
+  const result = await query(
+    `INSERT INTO documents (deal_id, name, size, filename, source, uploaded_at, artifact_type, ai_session_id)
+     VALUES ($1, $2, $3, $4, 'ai', $5, 'submission-manifest', $6) RETURNING id`,
+    [dealId, 'AI Submission Readiness Manifest.md', formatStoredFileSize(Buffer.byteLength(markdown, 'utf8')), filename, new Date().toISOString().slice(0, 10), sessionId]
+  );
+  return result.rows[0].id;
 }
 
 async function saveTimelineDiagram(dealId, sessionId, image) {
@@ -900,11 +1137,14 @@ async function saveFinalProposal(dealId, sessionId, dealName, markdown, diagramD
         outputPath: filePath,
         title: part.title || (dealName ? `Proposal: ${dealName}` : 'Proposal'),
         templatePath,
-        diagrams: shouldAttachDiagrams ? diagramDocs.map(doc => ({
-          title: doc.title || doc.name || 'Diagram',
-          description: doc.description || '',
-          path: path.join(dealDir, doc.filename),
-        })) : [],
+        diagrams: shouldAttachDiagrams
+          ? diagramDocs.map(doc => ({
+            title: doc.title || doc.name || 'Diagram',
+            description: doc.description || '',
+            ...(doc.filename ? { path: path.join(dealDir, doc.filename) } : {}),
+            ...(doc.png ? { png: doc.png } : {}),
+          }))
+          : [],
         timelineDiagrams: shouldAttachDiagrams ? timelineDiagramDocs.map(doc => ({
           title: doc.title || doc.name || 'Diagram',
           description: doc.description || '',
@@ -991,44 +1231,77 @@ async function finalizeAssessmentArtifacts({ dealId, sessionId, dealName, propos
   const existingDiagramStep = workflowStepMap.get('generate-architecture-diagrams');
   const existingTimelineStep = workflowStepMap.get('generate-timeline-diagram');
   const existingWbsStep = workflowStepMap.get('save-wbs-workbook');
+  const existingComplianceStep = workflowStepMap.get('save-compliance-matrix');
+  const existingSubmissionManifestStep = workflowStepMap.get('save-submission-manifest');
   const existingFinalStep = workflowStepMap.get('save-final-report');
 
   let finalReportDocumentId = null;
   let timelineDocumentId = null;
   let wbsDocumentId = null;
+  let complianceMatrixDocumentId = null;
+  let submissionManifestDocumentId = null;
+  const artifactPlan = outputs?.artifact_plan?.artifacts
+    ? outputs.artifact_plan
+    : buildArtifactPlan({
+      proposalMarkdown,
+      proposalStructure: outputs?.proposal_structure || outputs?.proposal_model?.structure || null,
+      estimationPackage: outputs?.estimator || outputs?.estimation_package || '',
+      contextSummary: contextBundle,
+      requirementInventory: (await loadPhase5QualityInputs({ sessionId, dealId })).requirements,
+    });
+  validateArtifactRendererSelection(artifactPlan);
+  await query(
+    `UPDATE ai_sessions
+     SET artifact_plan = $1,
+         estimation_policy_snapshot = $2
+     WHERE id = $3`,
+    [
+      JSON.stringify(artifactPlan),
+      readEstimationPolicySnapshot(outputs) ? JSON.stringify(readEstimationPolicySnapshot(outputs)) : null,
+      sessionId,
+    ]
+  );
+  const artifactReason = artifactKey => artifactPlan?.artifacts?.find(item => item.key === artifactKey)?.reason || null;
 
   try {
     throwIfAborted(signal);
     let diagramDocs = [];
-    if (existingDiagramStep?.status === 'completed') {
-      const existingDiagrams = await query(
-        `SELECT * FROM documents
-         WHERE deal_id = $1 AND ai_session_id = $2 AND artifact_type = 'architecture-diagram'
-         ORDER BY id ASC`,
-        [dealId, sessionId]
-      );
-      diagramDocs = existingDiagrams.rows.map(doc => ({
-        id: doc.id,
-        name: doc.name,
-        filename: doc.filename,
-        size: doc.size,
-        title: doc.name.replace(/\.png$/i, ''),
-        description: '',
-      }));
+    if (!isArtifactSelected(artifactPlan, 'architecture-diagram')) {
+      if (existingDiagramStep?.status !== 'completed') {
+        await markWorkflowStepCompleted(sessionId, dealId, 'generate-architecture-diagrams', null, {
+          skipped: true,
+          artifactPlanReason: artifactReason('architecture-diagram'),
+        });
+      }
     } else {
       await markWorkflowStepRunning(sessionId, dealId, 'generate-architecture-diagrams');
-      const diagramImages = await generateArchitectureDiagramImages(proposalMarkdown, signal);
-      throwIfAborted(signal);
-      diagramDocs = await saveArchitectureDiagramImages(dealId, sessionId, diagramImages);
-      await markWorkflowStepCompleted(sessionId, dealId, 'generate-architecture-diagrams', JSON.stringify(diagramDocs.map(doc => doc.name)), {
+      const generated = await executeDiagramGenerationForMarkdown({
+        dealId,
+        sessionId,
+        proposalMarkdown,
+        signal,
+        requestedDiagramTypes: ['architecture'],
+        persistArchitectureDocuments: false,
+      });
+      diagramDocs = generated.architectureDocs;
+
+      await markWorkflowStepCompleted(sessionId, dealId, 'generate-architecture-diagrams', JSON.stringify(diagramDocs.map(doc => doc.title)), {
         count: diagramDocs.length,
-        model: 'gpt-image-2',
+        renderer: 'architecture-diagram-service',
+        persistence: 'embedded-only',
       });
     }
 
     throwIfAborted(signal);
     let timelineDoc = null;
-    if (existingTimelineStep?.status === 'completed') {
+    if (!isArtifactSelected(artifactPlan, 'timeline-diagram')) {
+      if (existingTimelineStep?.status !== 'completed') {
+        await markWorkflowStepCompleted(sessionId, dealId, 'generate-timeline-diagram', null, {
+          skipped: true,
+          artifactPlanReason: artifactReason('timeline-diagram'),
+        });
+      }
+    } else if (existingTimelineStep?.status === 'completed') {
       const existingTimeline = await query(
         `SELECT * FROM documents
          WHERE deal_id = $1 AND ai_session_id = $2 AND artifact_type = 'timeline-diagram'
@@ -1049,21 +1322,34 @@ async function finalizeAssessmentArtifacts({ dealId, sessionId, dealName, propos
       }
     } else {
       await markWorkflowStepRunning(sessionId, dealId, 'generate-timeline-diagram');
-      const timelineDiagram = await buildTimelineDiagramFromMarkdown(proposalMarkdown);
-      throwIfAborted(signal);
-      timelineDoc = await saveTimelineDiagram(dealId, sessionId, timelineDiagram);
-      timelineDocumentId = timelineDoc?.id || null;
+      const generated = await executeDiagramGenerationForMarkdown({
+        dealId,
+        sessionId,
+        proposalMarkdown,
+        signal,
+        requestedDiagramTypes: ['timeline'],
+        persistArchitectureDocuments: false,
+      });
+      timelineDoc = generated.timelineDoc;
+      timelineDocumentId = generated.timelineDocumentId;
       await markWorkflowStepCompleted(sessionId, dealId, 'generate-timeline-diagram', timelineDocumentId ? String(timelineDocumentId) : null, {
         generated: Boolean(timelineDoc),
-        format: timelineDiagram?.format || null,
+        format: generated.timelineDiagram?.format || null,
         renderer: timelineDoc ? 'mermaid' : null,
-        mermaid: timelineDiagram?.mermaid || null,
+        mermaid: generated.timelineDiagram?.mermaid || null,
         skipped: !timelineDoc,
       });
     }
 
     throwIfAborted(signal);
-    if (existingWbsStep?.status === 'completed' && existingWbsStep.artifact) {
+    if (!isArtifactSelected(artifactPlan, 'detailed-wbs-xlsx')) {
+      if (existingWbsStep?.status !== 'completed') {
+        await markWorkflowStepCompleted(sessionId, dealId, 'save-wbs-workbook', null, {
+          skipped: true,
+          artifactPlanReason: artifactReason('detailed-wbs-xlsx'),
+        });
+      }
+    } else if (existingWbsStep?.status === 'completed' && existingWbsStep.artifact) {
       const parsedWbsId = parseInt(String(existingWbsStep.artifact), 10);
       if (!Number.isNaN(parsedWbsId)) {
         wbsDocumentId = parsedWbsId;
@@ -1072,6 +1358,44 @@ async function finalizeAssessmentArtifacts({ dealId, sessionId, dealName, propos
       await markWorkflowStepRunning(sessionId, dealId, 'save-wbs-workbook');
       wbsDocumentId = await saveDetailedWbs(dealId, sessionId, outputs.estimator);
       await markWorkflowStepCompleted(sessionId, dealId, 'save-wbs-workbook', String(wbsDocumentId));
+    }
+
+    throwIfAborted(signal);
+    await deleteDocumentsByName(dealId, 'AI Compliance Matrix.xlsx');
+    await query(
+      `DELETE FROM documents
+       WHERE deal_id = $1
+         AND ai_session_id = $2
+         AND artifact_type = 'compliance-matrix'`,
+      [dealId, sessionId]
+    );
+
+    if (existingComplianceStep?.status !== 'completed') {
+      await markWorkflowStepCompleted(sessionId, dealId, 'save-compliance-matrix', null, {
+        skipped: true,
+        artifactPlanReason: artifactReason('compliance-matrix-xlsx'),
+        policy: 'physical-artifact-disabled',
+      });
+    }
+
+    throwIfAborted(signal);
+    if (!isArtifactSelected(artifactPlan, 'submission-manifest')) {
+      if (existingSubmissionManifestStep?.status !== 'completed') {
+        await markWorkflowStepCompleted(sessionId, dealId, 'save-submission-manifest', null, {
+          skipped: true,
+          artifactPlanReason: artifactReason('submission-manifest'),
+        });
+      }
+    } else if (existingSubmissionManifestStep?.status === 'completed' && existingSubmissionManifestStep.artifact) {
+      submissionManifestDocumentId = Number(existingSubmissionManifestStep.artifact) || null;
+    } else {
+      await markWorkflowStepRunning(sessionId, dealId, 'save-submission-manifest');
+      const { requirements } = await loadPhase5QualityInputs({ sessionId, dealId });
+      submissionManifestDocumentId = await saveSubmissionManifest(dealId, sessionId, requirements, proposalMarkdown);
+      await markWorkflowStepCompleted(sessionId, dealId, 'save-submission-manifest', String(submissionManifestDocumentId), {
+        requirementCount: requirements.length,
+        renderer: 'submissionManifest',
+      });
     }
 
     throwIfAborted(signal);
@@ -1109,10 +1433,13 @@ async function finalizeAssessmentArtifacts({ dealId, sessionId, dealName, propos
   }
 
   return {
+    artifactPlan,
     draftReport: proposalMarkdown,
     finalReportDocumentId,
     timelineDocumentId,
     wbsDocumentId,
+    complianceMatrixDocumentId,
+    submissionManifestDocumentId,
     proposedUpdates,
   };
 }
@@ -1543,6 +1870,7 @@ router.post('/message', authenticate, requireRole('Superadmin', 'Editor'), async
 
     const runtimeV2Enabled = await isRuntimeV2Enabled();
     if (runtimeV2Enabled) {
+      const runtimeInputs = await loadPhase5QualityInputs({ sessionId: session.id, dealId });
       await markWorkflowStepRunning(session.id, dealId, 'phase3-v2-execution');
       try {
         const execution = await runPhase3PlanExecution({
@@ -1556,6 +1884,8 @@ router.post('/message', authenticate, requireRole('Superadmin', 'Editor'), async
             coordinator_context: withAiNotesForAgents(requireCoordinatorContext(session.coordinator_context || contextBundle), dealData?.deal),
             context_summary: contextBundle,
             source_documents: contextBundle,
+            evidence_items: runtimeInputs.evidenceItems,
+            requirement_inventory: runtimeInputs.requirements,
             deal_ai_notes: aiNotes,
             framework_retrieval_query: contextBundle,
             framework_retrieval_intents: [],
@@ -1599,6 +1929,112 @@ router.post('/message', authenticate, requireRole('Superadmin', 'Editor'), async
               aiNotes,
               signal
             );
+          }
+
+          await markWorkflowStepRunning(session.id, dealId, 'phase5-quality-loop', {
+            runtimeVersion: 'v2',
+          });
+
+          const phase5Data = await loadPhase5QualityInputs({ sessionId: session.id, dealId });
+          const phase5Result = await runPhase5QualityRepairLoop({
+            sessionId: session.id,
+            dealId,
+            initialProposalMarkdown: proposalMarkdown,
+            requirements: phase5Data.requirements,
+            evidenceItems: phase5Data.evidenceItems,
+            maxRepairCycles: Number(execution?.runTrace?.summary?.maxRepairCycles || 2),
+            contextSummary: requireCoordinatorContext(session.coordinator_context || contextBundle),
+            proposalStructure: executionOutputs.proposal_structure || executionOutputs.proposal_model?.structure || null,
+            regenerateProposal: async ({ proposalMarkdown: currentMarkdown, findings, repairTasks }) => {
+              const finalMessages = await getSessionMessages(session.id);
+              const repairInstructions = [
+                '## Quality Repair Tasks',
+                ...repairTasks.map(task => `- [${task.severity}] ${task.instruction}`),
+                '## Findings',
+                ...findings.map(item => `- ${item.issue}`),
+              ].join('\n');
+              return buildFinalProposalMarkdown(
+                dealName,
+                `${withAiNotesForAgents(requireCoordinatorContext(session.coordinator_context || contextBundle), dealData?.deal)}\n\n${repairInstructions}`,
+                finalMessages,
+                {
+                  legal: executionOutputs.legal || executionOutputs.legal_analysis || '',
+                  architect: executionOutputs.architect || executionOutputs.solution_design || '',
+                  estimator: executionOutputs.estimator || executionOutputs.estimation_package || '',
+                  previous_proposal_markdown: currentMarkdown,
+                },
+                aiNotes,
+                signal
+              );
+            },
+          });
+
+          proposalMarkdown = phase5Result.proposalMarkdown || proposalMarkdown;
+          executionOutputs.proposal_model = phase5Result.canonicalProposalModel;
+          executionOutputs.proposal_structure = phase5Result.canonicalProposalModel?.structure || executionOutputs.proposal_structure;
+          executionOutputs.claims = phase5Result.claims;
+          executionOutputs.claim_evidence_links = phase5Result.claimEvidenceLinks;
+          executionOutputs.findings = phase5Result.findings;
+          executionOutputs.repair_tasks = phase5Result.repairTasks;
+
+          const releaseReadiness = evaluateReleaseReadiness(phase5Result.findings);
+          executionOutputs.release_readiness = releaseReadiness;
+
+          await query(
+            `UPDATE ai_sessions
+             SET quality_status = $1,
+                 repair_cycle = $2,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE id = $3`,
+            [phase5Result.qualityStatus, phase5Result.repairCycles || 0, session.id]
+          );
+          await markWorkflowStepCompleted(
+            session.id,
+            dealId,
+            'phase5-quality-loop',
+            JSON.stringify({
+              qualityStatus: phase5Result.qualityStatus,
+              findingCount: Array.isArray(phase5Result.findings) ? phase5Result.findings.length : 0,
+              repairCycles: phase5Result.repairCycles || 0,
+            }),
+            {
+              runtimeVersion: 'v2',
+              qualityStatus: phase5Result.qualityStatus,
+              findingCount: Array.isArray(phase5Result.findings) ? phase5Result.findings.length : 0,
+              repairCycles: phase5Result.repairCycles || 0,
+            }
+          );
+
+          if (!releaseReadiness.ready) {
+            const releaseError = new Error(
+              `AI package is not release-ready: ${releaseReadiness.blockingFindings.slice(0, 8).map(finding => finding.issue).join(' | ')}`
+            );
+            releaseError.status = 409;
+            releaseError.expose = true;
+            releaseError.code = 'AI_PACKAGE_NOT_RELEASE_READY';
+            await addMessage(session.id, 'coordinator', 'AI package blocked before artifact save: mandatory submission or quality findings remain unresolved. Review the quality findings and complete the submission manifest.');
+            throw releaseError;
+          }
+
+          const validationAudit = await runFinalValidatorAudit({
+            sessionId: session.id,
+            dealId,
+            dealName,
+            deal: dealData?.deal,
+            clientContext: contextBundle,
+            proposalMarkdown,
+            outputs: executionOutputs,
+            aiNotes,
+            signal,
+          });
+          executionOutputs.validation_audit_markdown = validationAudit.reportMarkdown;
+          executionOutputs.validation_audit_document_id = validationAudit.documentId;
+          if (validationAudit.verdict === 'fail' || !validationAudit.verdict) {
+            const auditError = new Error('The independent tender audit did not approve this package for artifact release. Review the saved Validation Report and resolve its findings.');
+            auditError.status = 409;
+            auditError.expose = true;
+            auditError.code = 'AI_VALIDATION_AUDIT_FAILED';
+            throw auditError;
           }
 
           const finalWorkflowSteps = await getWorkflowSteps(session.id);
@@ -1701,8 +2137,9 @@ router.post('/message', authenticate, requireRole('Superadmin', 'Editor'), async
 
     let newAgentOutputs = null;
     let finalReportDocumentId = null;
-    let timelineDocumentId = null;
-    let wbsDocumentId = null;
+  let timelineDocumentId = null;
+  let wbsDocumentId = null;
+  let complianceMatrixDocumentId = null;
     let proposedUpdates = null;
     const persistAgentOutput = async (slug, output) => {
       await saveAgentOutput(session.id, slug, output);
@@ -1952,13 +2389,122 @@ router.get('/requirements', authenticate, requireRole('Superadmin', 'Editor'), a
 
     const requirements = await listRequirementInventory({ dealId, sessionId });
     const summary = buildRequirementInventorySummary(requirements);
+    const sessionResult = sessionId
+      ? await query('SELECT extracted_context FROM ai_sessions WHERE id = $1 AND deal_id = $2', [sessionId, dealId])
+      : { rows: [] };
+    const qualification = buildBidQualificationSnapshot({
+      requirementInventory: requirements,
+      contextSummary: sessionResult.rows[0]?.extracted_context || '',
+    });
+    const competitiveness = evaluateCompetitivenessReadiness({ requirementInventory: requirements });
     res.json({
       dealId: req.params.id,
       sessionId,
       count: requirements.length,
       summary,
+      strategy: { qualification, competitiveness },
       requirements,
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/capabilities', authenticate, requireRole('Superadmin'), async (req, res, next) => {
+  try {
+    await ensureDefaultCapabilities();
+    const result = await query(
+      `SELECT id, capability_key, version, name, description, input_schema, output_schema,
+              permitted_tools, default_model, concurrency_class, retry_policy,
+              requires_human_approval, enabled, metadata, updated_at
+       FROM ai_capabilities
+       ORDER BY capability_key ASC, version DESC`
+    );
+    res.json({ capabilities: result.rows });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.put('/capabilities/:id', authenticate, requireRole('Superadmin'), async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'Invalid capability id' });
+    if (typeof req.body?.enabled !== 'boolean') return res.status(400).json({ error: 'enabled must be a boolean' });
+    const result = await query(
+      `UPDATE ai_capabilities
+       SET enabled = $1, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $2
+       RETURNING id, capability_key, version, enabled, updated_at`,
+      [req.body.enabled, id]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Capability not found' });
+    res.json({ capability: result.rows[0] });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/telemetry', authenticate, requireRole('Superadmin', 'Editor'), async (req, res, next) => {
+  try {
+    const dealId = parseDealId(req.params.id);
+    if (!dealId) return res.status(400).json({ error: 'Invalid deal id' });
+    const sessionResult = await query(
+      `SELECT id, status, runtime_version, planner_model, planner_prompt_version,
+              workflow_plan_version, quality_status, repair_cycle, artifact_plan,
+              estimation_policy_snapshot, created_at, updated_at
+       FROM ai_sessions WHERE deal_id = $1 ORDER BY id DESC LIMIT 1`,
+      [dealId]
+    );
+    const session = sessionResult.rows[0] || null;
+    if (!session) return res.json({ session: null, summary: null, tasks: [], findings: [], retrievalSources: [] });
+
+    const [stepsResult, findingsResult] = await Promise.all([
+      query(
+        `SELECT step_key, task_id, capability_key, capability_version, status, attempt,
+                artifact, metrics, error, started_at, completed_at, updated_at
+         FROM ai_workflow_steps WHERE session_id = $1 ORDER BY created_at ASC, id ASC`,
+        [session.id]
+      ),
+      query(
+        `SELECT id, gate_key, severity, requirement_id, issue, required_fix, status,
+                repair_task_id, created_at, updated_at
+         FROM ai_findings WHERE session_id = $1 ORDER BY created_at ASC, id ASC`,
+        [session.id]
+      ).catch(err => err.code === '42P01' ? { rows: [] } : Promise.reject(err)),
+    ]);
+    const rawTasks = stepsResult.rows;
+    const tasks = rawTasks.map(({ artifact, ...task }) => task);
+    const retrievalSources = rawTasks.flatMap(task => {
+      let output = task.artifact;
+      if (typeof output === 'string') {
+        try { output = JSON.parse(output); } catch { output = null; }
+      }
+      if (!output || typeof output !== 'object') return [];
+      return [
+        output.framework_retrieval_trace ? { source: 'framework', trace: output.framework_retrieval_trace, taskId: task.task_id || task.step_key } : null,
+        output.company_retrieval_trace ? { source: 'company', trace: output.company_retrieval_trace, taskId: task.task_id || task.step_key } : null,
+      ].filter(Boolean);
+    });
+    const dynamicTasks = tasks.filter(task => task.task_id);
+    const durations = dynamicTasks
+      .map(task => Number(task.metrics?.durationMs))
+      .filter(Number.isFinite);
+    const summary = {
+      taskCount: dynamicTasks.length,
+      completedCount: dynamicTasks.filter(task => task.status === 'completed').length,
+      failedCount: dynamicTasks.filter(task => task.status === 'failed').length,
+      cancelledCount: dynamicTasks.filter(task => task.status === 'cancelled').length,
+      runningCount: dynamicTasks.filter(task => task.status === 'running').length,
+      retryCount: dynamicTasks.reduce((sum, task) => sum + Math.max(0, Number(task.attempt || 1) - 1), 0),
+      totalDurationMs: durations.reduce((sum, duration) => sum + duration, 0),
+      qualityStatus: session.quality_status || null,
+      repairCycles: Number(session.repair_cycle || 0),
+      artifactCount: Array.isArray(session.artifact_plan?.artifacts)
+        ? session.artifact_plan.artifacts.filter(artifact => artifact.enabled !== false).length
+        : 0,
+    };
+    res.json({ session, summary, tasks, findings: findingsResult.rows, retrievalSources });
   } catch (err) {
     next(err);
   }
@@ -2093,6 +2639,73 @@ router.post('/chat', authenticate, requireRole('Superadmin', 'Editor'), async (r
 
     await addChatMessage(dealId, 'user', content);
     const history = await getChatMessages(dealId);
+
+    const diagramRequest = detectDiagramRequest(content);
+    if (diagramRequest) {
+      const latestSession = await getLatestSessionForDeal(dealId);
+      const coordinatorChatRouting = await coordinatorChatArtifactStep(
+        content,
+        history.map(message => ({
+          role: message.role === 'agent' ? 'agent' : 'user',
+          content: message.content,
+          agent_slug: message.role === 'agent' ? 'chat-agent' : null,
+        })),
+        [
+          '## Candidate diagram intent',
+          JSON.stringify(diagramRequest),
+          `- hasSession: ${Boolean(latestSession)}`,
+          `- hasSavedCoordinatorContext: ${Boolean(latestSession?.coordinator_context)}`,
+          `- hasExtractedContext: ${Boolean(String(latestSession?.extracted_context || '').trim())}`,
+        ].join('\n'),
+        getAiNotes(data.deal),
+        signal
+      );
+
+      if (coordinatorChatRouting.action === 'generate_diagrams') {
+        const { proposalMarkdown, sessionId } = await buildProposalMarkdownForChatDiagram({
+          dealId,
+          deal: data.deal,
+          signal,
+        });
+        throwIfAborted(signal);
+
+        const diagramSourceMarkdown = buildChatDiagramSourceMarkdown({
+          proposalMarkdown,
+          docContext,
+          dealName: data.deal?.name,
+        });
+
+        if (!diagramSourceMarkdown) {
+          const response = [
+            'I could not generate diagrams yet because there is no extracted proposal or document context available for this deal.',
+            '',
+            'Please upload source documents (or run the main AI flow first), then ask me to generate diagrams again.',
+          ].join('\n');
+          await addChatMessage(dealId, 'agent', response);
+          const updatedHistory = await getChatMessages(dealId);
+          return res.json({ messages: updatedHistory });
+        }
+
+        const generated = await executeDiagramGenerationForMarkdown({
+          dealId,
+          sessionId,
+          proposalMarkdown: diagramSourceMarkdown,
+          signal,
+          requestedDiagramTypes: coordinatorChatRouting.diagramTypes,
+          persistArchitectureDocuments: true,
+        });
+        const architectureDocs = generated.architectureDocs;
+        const timelineDoc = generated.timelineDoc;
+
+        const response = (architectureDocs.length === 0 && !timelineDoc)
+          ? 'I could not generate diagrams from the current proposal content. Please ensure the proposal has architecture or implementation timeline sections, then retry.'
+          : buildDiagramChatResponseMessage({ architectureDocs, timelineDoc });
+
+        await addChatMessage(dealId, 'agent', response);
+        const updatedHistory = await getChatMessages(dealId);
+        return res.json({ messages: updatedHistory });
+      }
+    }
    
     const messages = [
       {
@@ -2164,6 +2777,109 @@ async function persistPhase1EvidenceInventory({ sessionId, dealId, extractedDocs
     });
   }
   return result;
+}
+
+async function loadPhase5QualityInputs({ sessionId, dealId }) {
+  const requirementsResult = await query(
+    `SELECT id, source_document_id, source_locator, text, normalized_text, category, obligation_level, response_type, priority, status
+     FROM ai_requirements
+     WHERE session_id = $1 AND deal_id = $2`,
+    [sessionId, dealId]
+  );
+
+  const evidenceResult = await query(
+    `SELECT id, source_document_id, source_type, locator, content, language, confidence, content_hash, metadata
+     FROM ai_evidence_items
+     WHERE session_id = $1 AND deal_id = $2`,
+    [sessionId, dealId]
+  );
+
+  return {
+    requirements: requirementsResult.rows,
+    evidenceItems: evidenceResult.rows,
+  };
+}
+
+async function runFinalValidatorAudit({
+  sessionId,
+  dealId,
+  dealName,
+  deal,
+  clientContext,
+  proposalMarkdown,
+  outputs,
+  aiNotes,
+  signal,
+}) {
+  const stepKey = 'phase5-final-validator-audit';
+  await markWorkflowStepRunning(sessionId, dealId, stepKey, {
+    runtimeVersion: 'v2',
+  });
+
+  const supplierContext = [
+    '## Proposal Markdown',
+    proposalMarkdown,
+    '## WBS / Estimation Package',
+    String(outputs?.estimator || outputs?.estimation_package || ''),
+    '## Quality Findings',
+    JSON.stringify(outputs?.findings || [], null, 2),
+  ].join('\n\n');
+
+  const messages = [
+    {
+      role: 'user',
+      content: [
+        buildAiNotesBlock(deal),
+        `## Deal Name\n${dealName}`,
+        '## Client-Controlled Documents',
+        '<client_documents>',
+        clientContext,
+        '</client_documents>',
+        '## Supplier-Controlled Proposal Package',
+        '<supplier_documents>',
+        supplierContext,
+        '</supplier_documents>',
+        '## Supplier Document Inventory',
+        '- Proposal draft generated by v2 runtime',
+        outputs?.estimator || outputs?.estimation_package ? '- WBS / estimation package generated by v2 runtime' : '',
+      ].filter(Boolean).join('\n\n'),
+    },
+  ];
+
+  const reportMarkdown = await callAgent('validator', messages, {
+    priorityInstructions: aiNotes,
+    maxTokens: 32768,
+    signal,
+  });
+  const verdict = parseValidationVerdict(reportMarkdown);
+  const documentId = await saveValidationReport(dealId, dealName, reportMarkdown);
+
+  await markWorkflowStepCompleted(
+    sessionId,
+    dealId,
+    stepKey,
+    reportMarkdown,
+    {
+      runtimeVersion: 'v2',
+      documentId,
+      documentName: 'Validation Report.md',
+      verdict,
+    }
+  );
+
+  return {
+    documentId,
+    reportMarkdown,
+    verdict,
+  };
+}
+
+export function parseValidationVerdict(reportMarkdown = '') {
+  const text = String(reportMarkdown || '');
+  const decisive = text.match(/proposal receives\s+(PASS|CONDITIONAL PASS|FAIL)\b/i);
+  if (decisive) return decisive[1].toLowerCase().replace(/\s+/g, '-');
+  const explicit = text.match(/(?:final decision|executive decision|verdict)\s*[:\-]?\s*\*{0,2}(PASS|CONDITIONAL PASS|FAIL)\b/i);
+  return explicit ? explicit[1].toLowerCase().replace(/\s+/g, '-') : null;
 }
 
 async function getGlobalSetting(key) {

@@ -1,0 +1,27 @@
+[
+  {
+    "id": "phase1-001",
+    "evidence": "The supplier must submit a signed proposal by 30 September. The proposal shall include a delivery timeline.",
+    "critical": ["signed proposal", "delivery timeline"]
+  },
+  {
+    "id": "phase1-002",
+    "evidence": "All personal data must be processed in accordance with GDPR. Security compliance evidence should be attached.",
+    "critical": ["personal data", "security compliance evidence"]
+  },
+  {
+    "id": "phase1-003",
+    "evidence": "The bidder is required to provide a commercial proposal in USD and submit the completed pricing template.",
+    "critical": ["commercial proposal", "pricing template"]
+  },
+  {
+    "id": "phase1-004",
+    "evidence": "The implementation must integrate with the existing API and provide an availability SLA of 99.9%.",
+    "critical": ["integrate with the existing API", "availability SLA"]
+  },
+  {
+    "id": "phase1-005",
+    "evidence": "The response shall include three relevant case studies and evidence of prior delivery experience.",
+    "critical": ["three relevant case studies", "prior delivery experience"]
+  }
+]

@@ -13,16 +13,25 @@ function safeJsonParse(value) {
   }
 }
 
-function synthesizeFallbackPlan({ requiredArtifacts = [] } = {}) {
+function synthesizeFallbackPlan({ requiredArtifacts = [], includeRequirementExtraction = true } = {}) {
   return {
     objective: 'Produce a compliant proposal package from extracted tender evidence',
     clarificationRequired: false,
     clarifications: [],
     tasks: [
+      ...(includeRequirementExtraction ? [{
+        id: 'extract-requirements',
+        capability: 'requirements.extract',
+        dependsOn: [],
+        inputs: ['evidence_items'],
+        outputs: ['requirements', 'documentRole', 'missingAppendices', 'requirement_inventory'],
+        acceptanceCriteria: ['Atomic requirements preserve source locators, hashes, obligation levels, and submission gaps'],
+        priority: 'critical',
+      }] : []),
       {
         id: 'analyze-legal',
         capability: 'analysis.legal',
-        dependsOn: [],
+        dependsOn: includeRequirementExtraction ? ['extract-requirements'] : [],
         inputs: ['coordinator_context'],
         outputs: ['legal_analysis'],
         acceptanceCriteria: ['Key legal and procurement constraints captured'],
@@ -31,7 +40,7 @@ function synthesizeFallbackPlan({ requiredArtifacts = [] } = {}) {
       {
         id: 'design-solution',
         capability: 'analysis.solution',
-        dependsOn: [],
+        dependsOn: includeRequirementExtraction ? ['extract-requirements'] : [],
         inputs: ['coordinator_context'],
         outputs: ['solution_design'],
         acceptanceCriteria: ['Core architecture aligns with requirements'],
@@ -49,14 +58,22 @@ function synthesizeFallbackPlan({ requiredArtifacts = [] } = {}) {
       {
         id: 'integrate-proposal',
         capability: 'proposal.integrate',
-        dependsOn: ['analyze-legal', 'design-solution', 'estimate-delivery'],
-        inputs: ['legal_analysis', 'solution_design', 'estimation_package'],
+        dependsOn: ['analyze-legal', 'design-solution', 'estimate-delivery', ...(includeRequirementExtraction ? ['extract-requirements'] : [])],
+        inputs: ['legal_analysis', 'solution_design', 'estimation_package', ...(includeRequirementExtraction ? ['requirement_inventory'] : [])],
         outputs: ['proposal_markdown'],
         acceptanceCriteria: ['Proposal integrates all specialist outputs'],
         priority: 'critical',
       },
     ],
-    qualityGates: ['quality.coverage', 'quality.consistency', 'quality.evidence'],
+    qualityGates: [
+      'quality.coverage',
+      'quality.consistency',
+      'quality.evidence',
+      'quality.estimation',
+      'quality.submission',
+      'quality.framework-company',
+      'quality.style-usability',
+    ],
     artifactIntent: requiredArtifacts.length > 0 ? requiredArtifacts : ['proposal-docx', 'detailed-wbs-xlsx'],
     budgets: { maxTasks: 24, maxRepairCycles: 2, maxParallelTasks: 4 },
   };
@@ -90,7 +107,10 @@ export async function generateWorkflowPlanShadow({
     ? capabilityCatalogueOverride
     : await listEnabledCapabilities(queryFn);
   const fallbackRaw = await getSetting('ai_planner_fallback_plan', queryFn);
-  const synthesizedFallbackPlan = synthesizeFallbackPlan({ requiredArtifacts });
+  const synthesizedFallbackPlan = synthesizeFallbackPlan({
+    requiredArtifacts,
+    includeRequirementExtraction: capabilityCatalogue.some(capability => capability.capabilityKey === 'requirements.extract'),
+  });
   const configuredFallbackPlan = safeJsonParse(fallbackRaw);
 
   let compiledConfiguredFallback;

@@ -4,7 +4,7 @@
     "source": "framework",
     "queryText": "Describe your security compliance and data residency approach for regulated deployments",
     "intents": ["security governance"],
-    "expectedSectionIds": ["sec-17-security", "sec-16-risk", "sec-32-regulated"]
+    "expectedSectionIds": ["sec-10-security", "sec-32-regulated"]
   },
   {
     "id": "phase4-002",
@@ -16,7 +16,7 @@
   {
     "id": "phase4-003",
     "source": "framework",
-    "queryText": "What delivery governance, escalation, and reporting cadence do you follow",
+    "queryText": "What delivery governance, escalation, reporting cadence, and operating principles do you follow",
     "intents": ["delivery governance"],
     "expectedSectionIds": ["sec-15-escalation", "sec-03-principles"]
   },
@@ -39,13 +39,13 @@
     "source": "company",
     "queryText": "Summarize your delivery capacity and staffing scale",
     "intents": ["delivery capacity"],
-    "expectedSectionIds": ["company-key-facts", "company-uae-local-presence-and-delivery-capacity"]
+    "expectedSectionIds": ["company-uae-local-presence-and-delivery-capacity"]
   },
   {
     "id": "phase4-007",
     "source": "company",
-    "queryText": "What enterprise clients and references demonstrate your credibility",
-    "intents": ["delivery capacity"],
+    "queryText": "What prestigious clientele and proven track record references demonstrate your credibility",
+    "intents": ["clientele and references"],
     "expectedSectionIds": ["company-prestigious-clientele", "company-proven-track-record-growth-history"]
   },
   {

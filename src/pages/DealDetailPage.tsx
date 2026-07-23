@@ -3,11 +3,11 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import toast from 'react-hot-toast';
-import { ArrowLeft, Trash2, FileText, Calendar, DollarSign, Tag, AlignLeft, Hash, Building, Sparkles, BrainCircuit, UserCircle, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, Trash2, FileText, Calendar, DollarSign, Tag, AlignLeft, Hash, Building, Sparkles, BrainCircuit, UserCircle, ShieldCheck, Activity, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { useDeals } from '../context/DealsContext';
 import { useAuth } from '../context/AuthContext';
 import { dealsApi, aiApi, agentsApi, platformApi } from '../api';
-import { AIMessage, Document, AIChatMessage, ProposedDealUpdates, PlatformConfigOption, AIWorkflowStep, AISession, AIRequirementInventoryResponse } from '../types';
+import { AIMessage, Document, AIChatMessage, ProposedDealUpdates, PlatformConfigOption, AIWorkflowStep, AISession, AITelemetryResponse } from '../types';
 import Header from '../components/Header';
 import StatusBadge from '../components/StatusBadge';
 import Button from '../components/Button';
@@ -92,9 +92,9 @@ export default function DealDetailPage() {
   const [configOptions, setConfigOptions] = useState<PlatformConfigOption[]>([]);
 
   const [proposedUpdates, setProposedUpdates] = useState<ProposedDealUpdates | null>(null);
-  const [requirementInventory, setRequirementInventory] = useState<AIRequirementInventoryResponse | null>(null);
-  const [requirementsLoading, setRequirementsLoading] = useState(false);
-  const [requirementsError, setRequirementsError] = useState<string | null>(null);
+  const [telemetry, setTelemetry] = useState<AITelemetryResponse | null>(null);
+  const [telemetryLoading, setTelemetryLoading] = useState(false);
+  const [telemetryError, setTelemetryError] = useState<string | null>(null);
 
   const [aiDocConfirm, setAiDocConfirm] = useState<{ show: boolean; names: string[] }>({ show: false, names: [] });
   const aiPollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -201,17 +201,16 @@ export default function DealDetailPage() {
     }
   };
 
-  const loadRequirementInventory = async (sessionIdOverride?: number | null) => {
+  const loadTelemetry = async () => {
     if (!id || !canEdit) return;
-    setRequirementsLoading(true);
-    setRequirementsError(null);
+    setTelemetryLoading(true);
+    setTelemetryError(null);
     try {
-      const data = await aiApi.getRequirements(id, sessionIdOverride ?? aiSessionId ?? undefined);
-      setRequirementInventory(data);
+      setTelemetry(await aiApi.getTelemetry(id));
     } catch (err: any) {
-      setRequirementsError(err?.message || 'Failed to load requirement inventory.');
+      setTelemetryError(err?.message || 'Failed to load runtime telemetry.');
     } finally {
-      setRequirementsLoading(false);
+      setTelemetryLoading(false);
     }
   };
 
@@ -223,8 +222,10 @@ export default function DealDetailPage() {
 
   useEffect(() => {
     if (!id || !canEdit) return;
-    loadRequirementInventory(aiSessionId);
-  }, [id, canEdit, aiSessionId]);
+    loadTelemetry();
+    const interval = window.setInterval(loadTelemetry, aiSessionStatus === 'running' ? 2000 : 10000);
+    return () => window.clearInterval(interval);
+  }, [id, canEdit, aiSessionStatus]);
 
   useEffect(() => () => stopAISessionPolling(), []);
 
@@ -996,70 +997,90 @@ export default function DealDetailPage() {
           />
         </div>
 
-        {/* Requirement inventory (Phase 1) */}
-        {canEdit && (
+        {/* Runtime telemetry and quality findings (Phase 7) */}
+        {canEdit && telemetry?.session && (
           <div style={{
             background: '#fff', border: '1px solid #E2E8F0', borderRadius: 12,
             padding: 20, marginBottom: 16, boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
           }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#64748B' }}>
-                <ShieldCheck size={14} />
+                <Activity size={14} />
                 <span style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  Requirement Inventory
+                  Runtime & quality
                 </span>
               </div>
-              <Button size="sm" variant="secondary" onClick={() => loadRequirementInventory(aiSessionId)} loading={requirementsLoading}>
-                Refresh
-              </Button>
+              <Button size="sm" variant="secondary" onClick={loadTelemetry} loading={telemetryLoading}>Refresh</Button>
             </div>
 
-            {requirementsError ? (
-              <div style={{ fontSize: 12, color: '#991B1B', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 8, padding: 10 }}>
-                {requirementsError}
+            {telemetryError && (
+              <div style={{ fontSize: 12, color: '#991B1B', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 8, padding: 10, marginBottom: 12 }}>
+                {telemetryError}
               </div>
-            ) : requirementsLoading && !requirementInventory ? (
-              <div style={{ fontSize: 12, color: '#64748B' }}>Loading requirement inventory…</div>
-            ) : (
-              <>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: 10, marginBottom: 12 }}>
-                  <InfoCard icon={<Hash size={13} />} label="Requirements" value={String(requirementInventory?.summary.total || 0)} />
-                  <InfoCard icon={<FileText size={13} />} label="Documents Covered" value={String(requirementInventory?.summary.coveredDocuments || 0)} />
-                  <InfoCard icon={<ShieldCheck size={13} />} label="Critical" value={String(requirementInventory?.summary.byPriority?.critical || 0)} />
-                  <InfoCard icon={<Sparkles size={13} />} label="Gaps" value={String(requirementInventory?.summary.missingAppendixGapCount || 0)} />
-                </div>
+            )}
 
-                {requirementInventory && requirementInventory.requirements.length > 0 ? (
-                  <div style={{ border: '1px solid #E2E8F0', borderRadius: 10, overflow: 'hidden' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: '110px 90px 110px 1fr', gap: 10, padding: '8px 10px', background: '#F8FAFC', fontSize: 11, fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                      <div>Priority</div>
-                      <div>Status</div>
-                      <div>Category</div>
-                      <div>Requirement</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(145px, 1fr))', gap: 10, marginBottom: 14 }}>
+              <InfoCard icon={<Activity size={13} />} label="Runtime" value={telemetry.session.runtime_version || 'legacy'} />
+              <InfoCard icon={<CheckCircle2 size={13} />} label="Tasks" value={`${telemetry.summary?.completedCount || 0}/${telemetry.summary?.taskCount || 0}`} />
+              <InfoCard icon={<AlertTriangle size={13} />} label="Quality" value={telemetry.summary?.qualityStatus || 'pending'} />
+              <InfoCard icon={<Sparkles size={13} />} label="Repairs" value={String(telemetry.summary?.repairCycles || 0)} />
+              <InfoCard icon={<FileText size={13} />} label="Artifacts" value={String(telemetry.summary?.artifactCount || 0)} />
+            </div>
+
+            {telemetry.tasks.length > 0 && (
+              <div style={{ border: '1px solid #E2E8F0', borderRadius: 10, overflow: 'hidden', marginBottom: 14 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(180px, 1.5fr) 1fr 90px 80px', gap: 10, padding: '8px 10px', background: '#F8FAFC', fontSize: 11, fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  <div>Task</div><div>Capability</div><div>Status</div><div>Attempts</div>
+                </div>
+                {telemetry.tasks.map(task => {
+                  const statusColor = task.status === 'completed' ? '#15803D' : task.status === 'failed' ? '#B91C1C' : task.status === 'running' ? '#1D4ED8' : '#64748B';
+                  const duration = Number(task.metrics?.durationMs);
+                  return (
+                    <div key={`${task.id || task.step_key}-${task.task_id || ''}`} style={{ display: 'grid', gridTemplateColumns: 'minmax(180px, 1.5fr) 1fr 90px 80px', gap: 10, padding: '10px', borderTop: '1px solid #F1F5F9', alignItems: 'center' }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: 12, color: '#0F172A', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{task.task_id || task.step_key}</div>
+                        {Number.isFinite(duration) && <div style={{ fontSize: 11, color: '#94A3B8', marginTop: 3 }}>{duration} ms</div>}
+                      </div>
+                      <div style={{ fontSize: 12, color: '#475569', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{task.capability_key || 'compatibility step'}</div>
+                      <div style={{ fontSize: 12, color: statusColor, fontWeight: 700 }}>{task.status}</div>
+                      <div style={{ fontSize: 12, color: '#475569' }}>{task.attempt || 1}</div>
                     </div>
-                    {requirementInventory.requirements.slice(0, 8).map(req => (
-                      <div key={req.id} style={{ display: 'grid', gridTemplateColumns: '110px 90px 110px 1fr', gap: 10, padding: '10px', borderTop: '1px solid #F1F5F9' }}>
-                        <div style={{ fontSize: 12, color: '#0F172A', fontWeight: 600 }}>{req.priority}</div>
-                        <div style={{ fontSize: 12, color: req.status === 'gap' ? '#B45309' : '#334155', fontWeight: 600 }}>{req.status}</div>
-                        <div style={{ fontSize: 12, color: '#475569' }}>{req.category}</div>
-                        <div style={{ fontSize: 12, color: '#334155', lineHeight: 1.5 }}>
-                          {req.text}
-                          <div style={{ marginTop: 4, color: '#94A3B8' }}>
-                            {req.source_document_name || 'Unknown source'}{req.source_locator ? ` · ${req.source_locator}` : ''}
-                          </div>
-                        </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {telemetry.findings.length > 0 && (
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: '#475569', marginBottom: 8 }}>Quality findings</div>
+                {telemetry.findings.map(finding => (
+                  <div key={finding.id} style={{ display: 'flex', gap: 8, padding: '9px 10px', background: finding.severity === 'critical' ? '#FEF2F2' : '#FFFBEB', border: `1px solid ${finding.severity === 'critical' ? '#FECACA' : '#FDE68A'}`, borderRadius: 8, marginBottom: 6 }}>
+                    <AlertTriangle size={14} color={finding.severity === 'critical' ? '#B91C1C' : '#B45309'} style={{ flexShrink: 0, marginTop: 1 }} />
+                    <div style={{ fontSize: 12, color: '#334155', lineHeight: 1.45 }}><strong>{finding.gate_key}</strong> · {finding.issue}{finding.required_fix ? ` Fix: ${finding.required_fix}` : ''}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {telemetry.retrievalSources.length > 0 && (
+              <div style={{ marginTop: 14 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: '#475569', marginBottom: 8 }}>Retrieved knowledge provenance</div>
+                {telemetry.retrievalSources.map((item, index) => (
+                  <div key={`${item.source}-${item.taskId}-${index}`} style={{ padding: '10px', border: '1px solid #E2E8F0', borderRadius: 8, marginBottom: 6 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: '#0F172A' }}>
+                      {item.source === 'framework' ? 'Andersen framework' : 'Company profile'} · {item.taskId}
+                    </div>
+                    <div style={{ fontSize: 11, color: '#64748B', marginTop: 4 }}>
+                      {item.trace.sourceVersion || 'version not recorded'} · {item.trace.retrievalMode || 'retrieval'} · {item.trace.query || 'no query recorded'}
+                    </div>
+                    {(item.trace.candidates || []).slice(0, 5).map(candidate => (
+                      <div key={candidate.sectionId} style={{ fontSize: 11, color: '#475569', marginTop: 5 }}>
+                        <strong>{candidate.sectionId}</strong> — {candidate.title} ({Number(candidate.score || 0).toFixed(2)})
                       </div>
                     ))}
-                    {requirementInventory.requirements.length > 8 && (
-                      <div style={{ padding: 10, borderTop: '1px solid #F1F5F9', fontSize: 12, color: '#64748B', background: '#FAFAFA' }}>
-                        Showing first 8 of {requirementInventory.requirements.length} requirements.
-                      </div>
-                    )}
                   </div>
-                ) : (
-                  <div style={{ fontSize: 12, color: '#94A3B8' }}>No extracted requirements yet. Run Process or Validate to generate inventory.</div>
-                )}
-              </>
+                ))}
+              </div>
             )}
           </div>
         )}

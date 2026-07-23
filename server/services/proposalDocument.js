@@ -30,8 +30,15 @@ export function renderProposalDocx({ markdown, outputPath, title, templatePath =
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rfpulse-proposal-'));
   try {
     const copyDiagram = (diagram, index, prefix) => {
-      const imagePath = path.join(tempDir, `${prefix}-${index + 1}${path.extname(diagram.path) || '.png'}`);
-      fs.copyFileSync(diagram.path, imagePath);
+      const extension = diagram.path ? (path.extname(diagram.path) || '.png') : '.png';
+      const imagePath = path.join(tempDir, `${prefix}-${index + 1}${extension}`);
+      if (diagram.path) {
+        fs.copyFileSync(diagram.path, imagePath);
+      } else if (diagram.png && Buffer.isBuffer(diagram.png)) {
+        fs.writeFileSync(imagePath, diagram.png);
+      } else {
+        throw new Error(`Diagram payload for "${diagram.title || prefix}" is missing both path and png content.`);
+      }
       return {
         title: diagram.title,
         description: diagram.description || '',

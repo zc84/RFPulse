@@ -102,6 +102,13 @@ export interface AISession {
   current_agent_plan?: string[] | null;
   extracted_context?: string;
   final_report_document_id?: number | null;
+  runtime_version?: string | null;
+  planner_model?: string | null;
+  planner_prompt_version?: number | null;
+  workflow_plan_version?: number | null;
+  quality_status?: string | null;
+  repair_cycle?: number | null;
+  artifact_plan?: { artifacts?: Array<{ key?: string; enabled?: boolean }> } | null;
   created_at?: string;
   updated_at?: string;
 }
@@ -139,6 +146,69 @@ export interface AISessionResponse {
   messages: AIMessage[];
   agentOutputs?: Record<string, string>;
   workflowSteps?: AIWorkflowStep[];
+}
+
+export interface AICapability {
+  id: number;
+  capability_key: string;
+  version: number;
+  name: string;
+  description: string;
+  input_schema: Record<string, unknown>;
+  output_schema: Record<string, unknown>;
+  permitted_tools: string[];
+  default_model?: string | null;
+  concurrency_class?: string | null;
+  retry_policy?: Record<string, unknown>;
+  requires_human_approval: boolean;
+  enabled: boolean;
+  metadata?: Record<string, unknown>;
+  updated_at?: string;
+}
+
+export interface AITelemetryResponse {
+  session: AISession | null;
+  summary: {
+    taskCount: number;
+    completedCount: number;
+    failedCount: number;
+    cancelledCount: number;
+    runningCount: number;
+    retryCount: number;
+    totalDurationMs: number;
+    qualityStatus: string | null;
+    repairCycles: number;
+    artifactCount: number;
+  } | null;
+  tasks: Array<AIWorkflowStep & {
+    task_id?: string | null;
+    capability_key?: string | null;
+    capability_version?: number | null;
+    attempt?: number;
+    metrics?: Record<string, unknown> | null;
+  }>;
+  findings: Array<{
+    id: number;
+    gate_key: string;
+    severity: string;
+    requirement_id?: number | null;
+    issue: string;
+    required_fix?: string | null;
+    status: string;
+    repair_task_id?: string | null;
+  }>;
+  retrievalSources: Array<{
+    source: 'framework' | 'company';
+    taskId: string;
+    trace: {
+      query?: string;
+      intents?: string[];
+      sourceVersion?: string | null;
+      retrievalMode?: string;
+      candidates?: AIKnowledgeCandidate[];
+      rationale?: Array<{ sectionId: string; rationale: string }>;
+    };
+  }>;
 }
 
 export interface AIStartResponse {
@@ -209,6 +279,29 @@ export interface AIRequirementInventoryResponse {
   sessionId: number | null;
   count: number;
   summary: AIRequirementInventorySummary;
+  strategy: {
+    qualification: {
+      recommendation: 'go' | 'conditional-go' | 'no-go';
+      profile: {
+        profile: 'solution-build' | 'service-team' | 'rfi';
+        label: string;
+        confidence: 'low' | 'medium' | 'high';
+        ambiguous: boolean;
+        rationale: string;
+        mandatoryOverrides: { architecture: boolean; pricing: boolean; wbs: boolean };
+      };
+      counts: Record<string, number>;
+      blockers: string[];
+      conditions: string[];
+    };
+    competitiveness: {
+      applicable: boolean;
+      verdict: string;
+      separateFromCompliance?: boolean;
+      missingInputs?: string[];
+      reasons: string[];
+    };
+  };
   requirements: AIRequirementInventoryItem[];
 }
 
@@ -269,6 +362,22 @@ export interface GlobalAISettings {
   proposal_template_name?: string;
   proposal_template_uploaded_at?: string | null;
   has_proposal_template?: boolean;
+}
+
+export interface AIRuntimeSettings {
+  ai_runtime_v2_enabled: boolean;
+  ai_runtime_v2_shadow_mode: boolean;
+  ai_framework_retrieval_enabled: boolean;
+  ai_estimation_policy: {
+    version?: number;
+    currency?: string;
+    defaultRoleRate?: number;
+    qaOverheadPercent?: number;
+    pmOverheadPercent?: number;
+    taskSizing?: { minHours?: number; maxHours?: number; incrementHours?: number };
+    contingency?: { highRiskMinimumPercent?: number };
+    plausibility?: { maxCapacityMultiplier?: number; minCapacityMultiplier?: number; effortDriftTolerancePercent?: number; minimumDriftHours?: number };
+  };
 }
 
 export interface OpenAIModel {

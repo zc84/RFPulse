@@ -1,16 +1,47 @@
 import { z } from 'zod';
+import { DEFAULT_ESTIMATION_POLICY, normalizeEstimationPolicy } from '../ai-runtime/policies/estimationPolicy.js';
 
-export const DEFAULT_ROLE_RATE = 50;
+export const DEFAULT_ROLE_RATE = DEFAULT_ESTIMATION_POLICY.defaultRoleRate;
 const RESERVED_OVERHEAD_ROLES = new Set(['PM', 'QA']);
 
-export const DEFAULT_QA_OVERHEAD_PERCENT = 30;
-export const DEFAULT_PM_OVERHEAD_PERCENT = 15;
+export const DEFAULT_QA_OVERHEAD_PERCENT = DEFAULT_ESTIMATION_POLICY.qaOverheadPercent;
+export const DEFAULT_PM_OVERHEAD_PERCENT = DEFAULT_ESTIMATION_POLICY.pmOverheadPercent;
 
 export const coordinatorDecisionSchema = z.object({
   status: z.enum(['clarifying', 'routing']),
   questions: z.array(z.string()).nullable(),
   plan: z.array(z.enum(['legal', 'architect', 'estimator'])).nullable(),
   reasoning: z.string().nullable(),
+});
+
+export const coordinatorChatArtifactDecisionSchema = z.object({
+  action: z.enum(['generate_diagrams', 'chat_reply']),
+  diagramTypes: z.array(z.enum(['architecture', 'timeline'])).nullable(),
+  reasoning: z.string().nullable(),
+});
+
+export const requirementsExtractSchema = z.object({
+  documentRole: z.enum([
+    'rfp',
+    'terms_and_conditions',
+    'technical_specification',
+    'pricing_template',
+    'response_template',
+    'reference',
+    'unknown',
+  ]),
+  requirements: z.array(z.object({
+    text: z.string().min(20),
+    category: z.string().min(1),
+    obligationLevel: z.enum(['mandatory', 'should', 'optional', 'informational']),
+    responseType: z.enum(['narrative', 'form', 'attachment', 'commercial', 'evidence']),
+    priority: z.enum(['critical', 'high', 'medium', 'low']),
+    sourceLocator: z.string().min(1),
+    sourceEvidenceHash: z.string().min(1),
+    status: z.enum(['open', 'gap', 'covered']).default('open'),
+    conflictTopic: z.string().nullable().default(null),
+  })).default([]),
+  missingAppendices: z.array(z.string().min(1)).default([]),
 });
 
 export const dealPropertiesSchema = z.object({
@@ -101,14 +132,15 @@ export function isEstimatorAccuracyPolicyError(err) {
 }
 
 export function evaluateEstimatorAccuracyPolicy(result, policyContext = {}) {
+  const estimationPolicy = normalizeEstimationPolicy(policyContext.estimationPolicy);
   const violations = [];
   const weeks = parseDurationToWeeks(result.estimatedDuration);
   const deliveryTeamSize = result.implementationTeam.length;
 
   if (weeks && deliveryTeamSize > 0) {
     const expectedCapacityHours = deliveryTeamSize * weeks * 40;
-    const maxRealisticEffort = expectedCapacityHours * 1.2;
-    const minRealisticEffort = expectedCapacityHours * 0.12;
+    const maxRealisticEffort = expectedCapacityHours * estimationPolicy.plausibility.maxCapacityMultiplier;
+    const minRealisticEffort = expectedCapacityHours * estimationPolicy.plausibility.minCapacityMultiplier;
     if (result.baseEffort > maxRealisticEffort) {
       violations.push({
         code: 'effort_duration_unrealistic',
@@ -139,7 +171,10 @@ export function evaluateEstimatorAccuracyPolicy(result, policyContext = {}) {
 
   const pricedEffort = result.phasePricing.reduce((sum, phase) => sum + phase.effortHours, 0);
   const effortDrift = Math.abs(pricedEffort - result.baseEffort);
-  const driftTolerance = Math.max(8, result.baseEffort * 0.1);
+  const driftTolerance = Math.max(
+    estimationPolicy.plausibility.minimumDriftHours,
+    result.baseEffort * (estimationPolicy.plausibility.effortDriftTolerancePercent / 100)
+  );
   if (effortDrift > driftTolerance) {
     violations.push({
       code: 'phase_pricing_effort_drift',
@@ -159,7 +194,7 @@ export function evaluateEstimatorAccuracyPolicy(result, policyContext = {}) {
   const integrationHigh = String(policyContext.integrationComplexity || '').toLowerCase() === 'high';
   const dependencyCritical = String(policyContext.dependencyCriticality || '').toLowerCase() === 'high';
   const elevatedRiskSignals = highRiskScope || uncertaintyHigh || integrationHigh || dependencyCritical || (result.risks?.length || 0) >= 3;
-  if (elevatedRiskSignals && result.contingencyPercent < 12) {
+  if (elevatedRiskSignals && result.contingencyPercent < estimationPolicy.contingency.highRiskMinimumPercent) {
     violations.push({
       code: 'contingency_too_low_for_risk',
       severity: 'medium',
@@ -239,6 +274,7 @@ export const reportReviewSchema = z.object({
 });
 
 export function validateEstimatorResult(value, options = {}) {
+  const estimationPolicy = normalizeEstimationPolicy(options.estimationPolicy || options.policyContext?.estimationPolicy);
   const raw = structuredClone(value);
   if (!raw.estimateConfidence) {
     raw.estimateConfidence = 'medium';
@@ -283,10 +319,10 @@ export function validateEstimatorResult(value, options = {}) {
   const roundToQuarterHour = value => Math.round(value * 4) / 4;
   const baseEffort = workBreakdown.reduce((sum, task) => sum + task.efforts, 0);
   const explicitQaEffort = 0;
-  const targetQaEffort = roundToQuarterHour(baseEffort * (DEFAULT_QA_OVERHEAD_PERCENT / 100));
+  const targetQaEffort = roundToQuarterHour(baseEffort * (estimationPolicy.qaOverheadPercent / 100));
   const qaOngoingEffort = targetQaEffort;
   const qaEffort = qaOngoingEffort;
-  const pmEffort = roundToQuarterHour((baseEffort + qaEffort) * (DEFAULT_PM_OVERHEAD_PERCENT / 100));
+  const pmEffort = roundToQuarterHour((baseEffort + qaEffort) * (estimationPolicy.pmOverheadPercent / 100));
 
   const deliveryRoleWithOverhead = parsed.implementationTeam.find(role => RESERVED_OVERHEAD_ROLES.has(role));
   if (deliveryRoleWithOverhead) {
@@ -304,7 +340,7 @@ export function validateEstimatorResult(value, options = {}) {
     throw new Error(`Estimator task role "${unknownTaskRole.assigned}" must be listed in implementationTeam.`);
   }
   const activeRoles = [...new Set([...parsed.implementationTeam, 'QA', 'PM'])];
-  const teamComposition = activeRoles.map(team => ({ team, rate: DEFAULT_ROLE_RATE }));
+  const teamComposition = activeRoles.map(team => ({ team, rate: estimationPolicy.defaultRoleRate }));
   const rateByRole = new Map(teamComposition.map(item => [item.team, item.rate]));
   const costRows = [
     ...workBreakdown.map(task => ({
@@ -319,6 +355,7 @@ export function validateEstimatorResult(value, options = {}) {
     : costRows.reduce((sum, row) => sum + row.efforts * row.rate, 0);
   const result = {
     ...parsed,
+    estimationPolicy,
     workBreakdown,
     teamComposition,
     baseEffort,
@@ -330,7 +367,7 @@ export function validateEstimatorResult(value, options = {}) {
     totalCost,
   };
 
-  const violations = evaluateEstimatorAccuracyPolicy(result, options.policyContext || {});
+  const violations = evaluateEstimatorAccuracyPolicy(result, { ...(options.policyContext || {}), estimationPolicy });
   if (violations.length > 0) {
     throw createEstimatorAccuracyPolicyError(violations);
   }
@@ -352,8 +389,8 @@ export function buildEstimatorReportSummary(raw, options = {}) {
     qaEffort: result.qaEffort,
     pmEffort: result.pmEffort,
     totalCost: result.totalCost,
-    qaOverheadPercent: DEFAULT_QA_OVERHEAD_PERCENT,
-    pmOverheadPercent: DEFAULT_PM_OVERHEAD_PERCENT,
+    qaOverheadPercent: options.estimationPolicy?.qaOverheadPercent ?? DEFAULT_QA_OVERHEAD_PERCENT,
+    pmOverheadPercent: options.estimationPolicy?.pmOverheadPercent ?? DEFAULT_PM_OVERHEAD_PERCENT,
     contingencyPercent: result.contingencyPercent,
     estimatedDuration: result.estimatedDuration,
     estimateConfidence: result.estimateConfidence,

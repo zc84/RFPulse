@@ -11,8 +11,9 @@ Rules:
 3. Keep task count within budget.
 4. Include acceptanceCriteria for each task.
 5. Prefer the minimal complete plan over over-planning.
-6. If clarification is required, set clarificationRequired=true and provide focused clarifications.
-7. Return JSON only.`;
+6. For tender/RFP work, requirement extraction and submission compliance are mandatory foundations. Include requirements.extract before proposal structure/authoring whenever evidence_items are available, and keep quality/submission gates in the executable plan or rely on the runtime release gate.
+7. If clarification is required, set clarificationRequired=true and provide focused clarifications.
+8. Return JSON only.`;
 }
 
 export function buildPlannerUserPrompt({ objective, contextSummary, capabilityCatalogue, budgets, requiredArtifacts }) {

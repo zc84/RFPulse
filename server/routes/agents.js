@@ -18,6 +18,7 @@ if (!fs.existsSync(SYSTEM_DIR)) {
 
 const OPENAI_KEY_MASK = '••••••••••••••••••••••••••';
 const TEMPLATE_FILENAME = 'proposal-template.docx';
+const RUNTIME_SETTING_KEYS = ['ai_runtime_v2_enabled', 'ai_runtime_v2_shadow_mode', 'ai_framework_retrieval_enabled', 'ai_estimation_policy'];
 const templateUpload = multer({
   storage: multer.diskStorage({
     destination: (req, file, cb) => cb(null, SYSTEM_DIR),
@@ -82,6 +83,52 @@ router.post('/settings', authenticate, requireRole('Superadmin'), async (req, re
     );
 
     res.json({ openai_api_key: OPENAI_KEY_MASK, has_key: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/runtime-settings', authenticate, requireRole('Superadmin'), async (req, res, next) => {
+  try {
+    const result = await query('SELECT key, value FROM global_settings WHERE key = ANY($1::text[])', [RUNTIME_SETTING_KEYS]);
+    const values = Object.fromEntries(result.rows.map(row => [row.key, row.value]));
+    res.json({
+      ai_runtime_v2_enabled: values.ai_runtime_v2_enabled === 'true',
+      ai_runtime_v2_shadow_mode: values.ai_runtime_v2_shadow_mode !== 'false',
+      ai_framework_retrieval_enabled: values.ai_framework_retrieval_enabled !== 'false',
+      ai_estimation_policy: JSON.parse(values.ai_estimation_policy || '{}'),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.put('/runtime-settings', authenticate, requireRole('Superadmin'), async (req, res, next) => {
+  try {
+    const body = req.body || {};
+    const booleans = ['ai_runtime_v2_enabled', 'ai_runtime_v2_shadow_mode', 'ai_framework_retrieval_enabled'];
+    for (const key of booleans) {
+      if (body[key] !== undefined && typeof body[key] !== 'boolean') {
+        return res.status(400).json({ error: `${key} must be boolean` });
+      }
+    }
+    if (body.ai_estimation_policy !== undefined && (!body.ai_estimation_policy || typeof body.ai_estimation_policy !== 'object' || Array.isArray(body.ai_estimation_policy))) {
+      return res.status(400).json({ error: 'ai_estimation_policy must be an object' });
+    }
+
+    const updates = [];
+    for (const key of booleans) {
+      if (body[key] !== undefined) updates.push([key, String(body[key])]);
+    }
+    if (body.ai_estimation_policy !== undefined) updates.push(['ai_estimation_policy', JSON.stringify(body.ai_estimation_policy)]);
+    for (const [key, value] of updates) {
+      await query(
+        `INSERT INTO global_settings (key, value) VALUES ($1, $2)
+         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = CURRENT_TIMESTAMP`,
+        [key, value],
+      );
+    }
+    res.json({ ok: true });
   } catch (err) {
     next(err);
   }

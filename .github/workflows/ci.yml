@@ -1,0 +1,42 @@
+name: RFPulse CI
+
+on:
+  push:
+    branches: [main, master, 'codex/**']
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: rfpulse
+          POSTGRES_PASSWORD: rfpulse
+          POSTGRES_DB: rfpulse
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd="pg_isready -U rfpulse -d rfpulse"
+          --health-interval=10s --health-timeout=5s --health-retries=5
+    env:
+      DATABASE_URL: postgresql://rfpulse:rfpulse@localhost:5432/rfpulse
+      JWT_SECRET: ci-only-secret
+      NODE_ENV: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run db:setup
+      - run: npm run db:verify
+      - run: npm test
+      - run: npm run benchmark:release-gate
+      - run: npm run build
+      - name: Server syntax check
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r file; do node --check "$file"; done < <(find server -name '*.js' -not -path '*/__pycache__/*' -print)

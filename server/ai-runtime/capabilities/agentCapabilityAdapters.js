@@ -1,10 +1,29 @@
 import {
+  callAgent,
   runAgent,
   runEstimator,
   buildFinalProposalMarkdown,
 } from '../../services/aiOrchestrator.js';
+import { requirementsExtractSchema } from '../../services/aiSchemas.js';
+import {
+  classifyDocumentRole,
+  extractRequirementsFromEvidence,
+} from '../../services/evidenceInventory.js';
 import { retrieveFrameworkSections } from '../knowledge/frameworkRetriever.js';
 import { retrieveCompanyProfileSections } from '../knowledge/companyProfileRetriever.js';
+import { buildArtifactPlan } from '../artifacts/artifactPlanningService.js';
+import {
+  authorProposalSections,
+  buildProposalStructure,
+  buildRepairTasksFromFindings,
+  evaluateConsistencyGate,
+  evaluateCoverageGate,
+  evaluateEvidenceGate,
+  evaluateEstimationReconciliationGate,
+  evaluateFrameworkCompanyAccuracyGate,
+  evaluateStyleUsabilityGate,
+  evaluateSubmissionComplianceGate,
+} from '../quality/phase5QualityService.js';
 
 export const EVIDENCE_CLASSIFICATION = {
   CLIENT_REQUIREMENT: 'client_requirement',
@@ -77,6 +96,63 @@ export function createCapabilityAdapterContext({
 }
 
 export const capabilityAdapterHandlers = {
+  'requirements.extract': async ctx => {
+    const evidenceItems = Array.isArray(ctx.inputRefs?.evidence_items) ? ctx.inputRefs.evidence_items : [];
+    const evidencePack = evidenceItems.map(item => ({
+      locator: item.locator || item.sourceLocator || 'unknown',
+      contentHash: item.contentHash || item.content_hash || 'unknown',
+      content: String(item.content || '').slice(0, 12000),
+      documentName: item.metadata?.documentName || item.sourceDocumentName || null,
+    }));
+    const deterministic = extractRequirementsFromEvidence(evidenceItems);
+    const fallback = {
+      documentRole: classifyDocumentRole({
+        name: evidencePack.map(item => item.documentName).filter(Boolean).join(' '),
+        text: evidencePack.map(item => item.content).join('\n'),
+      }),
+      requirements: deterministic.map(item => ({
+        text: item.text,
+        category: item.category,
+        obligationLevel: item.obligationLevel,
+        responseType: item.responseType,
+        priority: item.priority,
+        sourceLocator: item.sourceLocator,
+        sourceEvidenceHash: item.metadata?.sourceEvidenceHash || 'unknown',
+        status: item.status,
+        conflictTopic: item.conflictGroup,
+      })),
+      missingAppendices: deterministic
+        .filter(item => item.status === 'gap')
+        .map(item => item.text),
+    };
+
+    if (ctx.inputRefs?.structuredExtraction === false || evidencePack.length === 0) {
+      return { ...fallback, extractionMode: 'deterministic-fallback' };
+    }
+
+    try {
+      const raw = await callAgent('coordinator', [{
+        role: 'user',
+        content: [
+          'Extract an atomic, auditable requirement inventory from the evidence below.',
+          'Preserve exact sourceLocator and sourceEvidenceHash values. Do not invent requirements or evidence hashes.',
+          'Classify the document role and explicitly list referenced but missing appendices.',
+          JSON.stringify(evidencePack),
+        ].join('\n\n'),
+      }], {
+        taskPromptKey: 'coordinator.context',
+        schema: requirementsExtractSchema,
+        schemaName: 'requirements_extract',
+        maxTokens: 12000,
+        signal: ctx.signal,
+      });
+      const parsed = requirementsExtractSchema.parse(JSON.parse(raw));
+      return { ...parsed, extractionMode: 'structured-llm', deterministicBaseline: fallback };
+    } catch (error) {
+      if (ctx.signal?.aborted) throw error;
+      return { ...fallback, extractionMode: 'deterministic-fallback', extractionWarning: error.message };
+    }
+  },
   'knowledge.retrieve.framework': async ctx => {
     const queryText = ctx.inputRefs?.framework_retrieval_query || ctx.outputs?.framework_retrieval_query || '';
     const intents = ctx.inputRefs?.framework_retrieval_intents || ctx.outputs?.framework_retrieval_intents || [];
@@ -146,6 +222,52 @@ export const capabilityAdapterHandlers = {
   'analysis.legal': async ctx => runAgent('legal', ctx.context, ctx.conversation, {}, ctx.priorityInstructions, ctx.signal),
   'analysis.solution': async ctx => runAgent('architect', ctx.context, ctx.conversation, {}, ctx.priorityInstructions, ctx.signal),
   'analysis.estimation': async ctx => runEstimator(ctx.context, ctx.conversation, ctx.priorityInstructions, ctx.signal),
+  'proposal.structure': async ctx => buildProposalStructure({
+    requirementInventory: Array.isArray(ctx.inputRefs?.requirement_inventory) ? ctx.inputRefs.requirement_inventory : [],
+    contextSummary: ctx.inputRefs?.context_summary || ctx.context || '',
+    existingMarkdown: ctx.inputRefs?.proposal_markdown || '',
+  }),
+  'proposal.section-author': async ctx => {
+    const proposalStructure = ctx.inputRefs?.proposal_structure || ctx.inputRefs?.proposal_model?.structure || null;
+    const retrievalQuery = [
+      ...(Array.isArray(proposalStructure?.sections) ? proposalStructure.sections : [])
+        .map(section => `${section.title || ''} ${section.rationale || ''}`),
+      ctx.inputRefs?.context_summary || '',
+    ].join('\n');
+    const frameworkSections = Array.isArray(ctx.inputRefs?.framework_sections)
+      ? ctx.inputRefs.framework_sections
+      : (await retrieveFrameworkSections({
+        queryText: retrievalQuery,
+        intents: ['delivery-methodology', 'quality', 'governance'],
+        limit: 5,
+      })).sections;
+    const companySections = Array.isArray(ctx.inputRefs?.company_sections)
+      ? ctx.inputRefs.company_sections
+      : (await retrieveCompanyProfileSections({
+        queryText: retrievalQuery,
+        intents: ['company-profile', 'delivery-capability'],
+        limit: 5,
+      })).sections;
+
+    return authorProposalSections({
+      proposalStructure,
+      requirements: Array.isArray(ctx.inputRefs?.requirements) ? ctx.inputRefs.requirements : [],
+      evidenceItems: Array.isArray(ctx.inputRefs?.evidence_items) ? ctx.inputRefs.evidence_items : [],
+      frameworkSections,
+      companySections,
+      existingMarkdown: ctx.inputRefs?.proposal_markdown || '',
+    });
+  },
+  'artifact.plan': async ctx => ({
+    artifact_plan: buildArtifactPlan({
+      artifactIntent: Array.isArray(ctx.inputRefs?.artifact_intent) ? ctx.inputRefs.artifact_intent : [],
+      proposalMarkdown: ctx.inputRefs?.proposal_markdown || '',
+      proposalStructure: ctx.inputRefs?.proposal_structure || ctx.inputRefs?.proposal_model?.structure || null,
+      estimationPackage: ctx.inputRefs?.estimation_package || ctx.outputs?.estimator || '',
+      contextSummary: ctx.inputRefs?.context_summary || ctx.context || '',
+      requirementInventory: Array.isArray(ctx.inputRefs?.requirements) ? ctx.inputRefs.requirements : [],
+    }),
+  }),
   'proposal.integrate': async ctx => buildFinalProposalMarkdown(
     ctx.dealName,
     ctx.context,
@@ -154,8 +276,32 @@ export const capabilityAdapterHandlers = {
     ctx.priorityInstructions,
     ctx.signal
   ),
-  // Phase 2 introduces quality capabilities as placeholders that can be fully implemented in Phase 5.
-  'quality.coverage': async () => JSON.stringify({ findings: [], status: 'pass' }),
-  'quality.consistency': async () => JSON.stringify({ findings: [], status: 'pass' }),
-  'quality.evidence': async () => JSON.stringify({ findings: [], status: 'pass' }),
+  'quality.coverage': async ctx => evaluateCoverageGate(
+    Array.isArray(ctx.inputRefs?.requirements) ? ctx.inputRefs.requirements : [],
+    ctx.inputRefs?.proposal_model || { markdown: '', sections: [] }
+  ),
+  'quality.consistency': async ctx => evaluateConsistencyGate(
+    ctx.inputRefs?.proposal_model || { markdown: '', sections: [] }
+  ),
+  'quality.evidence': async ctx => evaluateEvidenceGate(
+    Array.isArray(ctx.inputRefs?.claims) ? ctx.inputRefs.claims : [],
+    Array.isArray(ctx.inputRefs?.claim_evidence_links) ? ctx.inputRefs.claim_evidence_links : []
+  ),
+  'quality.estimation': async ctx => evaluateEstimationReconciliationGate(
+    ctx.inputRefs?.proposal_model || { markdown: '', sections: [] }
+  ),
+  'quality.submission': async ctx => evaluateSubmissionComplianceGate(
+    Array.isArray(ctx.inputRefs?.requirements) ? ctx.inputRefs.requirements : [],
+    ctx.inputRefs?.proposal_model || { markdown: '', sections: [] }
+  ),
+  'quality.framework-company': async ctx => evaluateFrameworkCompanyAccuracyGate(
+    Array.isArray(ctx.inputRefs?.claims) ? ctx.inputRefs.claims : [],
+    Array.isArray(ctx.inputRefs?.claim_evidence_links) ? ctx.inputRefs.claim_evidence_links : []
+  ),
+  'quality.style-usability': async ctx => evaluateStyleUsabilityGate(
+    ctx.inputRefs?.proposal_model || { markdown: '', sections: [] }
+  ),
+  'repair.plan': async ctx => ({
+    repair_tasks: buildRepairTasksFromFindings(Array.isArray(ctx.inputRefs?.findings) ? ctx.inputRefs.findings : []),
+  }),
 };

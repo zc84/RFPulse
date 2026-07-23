@@ -1,4 +1,4 @@
-import { User, Agent, GlobalAISettings, OpenAIModel, AIMessage, AIStartResponse, AIMessageResponse, AISessionResponse, AIChatMessage, AIValidateResponse, AIValidateRequest, DealLock, PlatformConfigOption, PromptTemplate, Document, AIRequirementInventoryResponse, AIKnowledgeRetrieveRequest, AIKnowledgeRetrieveResponse } from './types';
+import { User, Agent, GlobalAISettings, AIRuntimeSettings, OpenAIModel, AIMessage, AIStartResponse, AIMessageResponse, AISessionResponse, AIChatMessage, AIValidateResponse, AIValidateRequest, DealLock, PlatformConfigOption, PromptTemplate, Document, AIRequirementInventoryResponse, AIKnowledgeRetrieveRequest, AIKnowledgeRetrieveResponse, AICapability, AITelemetryResponse } from './types';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
@@ -182,6 +182,9 @@ export const agentsApi = {
   update: (slug: string, updates: Partial<Agent>) =>
     apiFetch(`/ai/agents/${slug}`, { method: 'PUT', body: JSON.stringify(updates) }) as Promise<Agent>,
   getSettings: () => apiFetch('/ai/agents/settings') as Promise<GlobalAISettings>,
+  getRuntimeSettings: () => apiFetch('/ai/agents/runtime-settings') as Promise<AIRuntimeSettings>,
+  updateRuntimeSettings: (settings: Partial<AIRuntimeSettings>) =>
+    apiFetch('/ai/agents/runtime-settings', { method: 'PUT', body: JSON.stringify(settings) }) as Promise<{ ok: boolean }>,
   updateSettings: (settings: { openai_api_key: string }) =>
     apiFetch('/ai/agents/settings', { method: 'POST', body: JSON.stringify(settings) }) as Promise<GlobalAISettings>,
   validateKey: () => apiFetch('/ai/agents/validate') as Promise<{ valid: boolean; error: string | null }>,
@@ -257,4 +260,15 @@ export const aiApi = {
       method: 'POST',
       body: JSON.stringify(payload),
     }) as Promise<AIKnowledgeRetrieveResponse>,
+  getTelemetry: (dealId: string) =>
+    apiFetch(`/deals/${dealId}/ai/telemetry`) as Promise<AITelemetryResponse>,
+};
+
+export const capabilityApi = {
+  getAll: () => apiFetch('/deals/0/ai/capabilities') as Promise<{ capabilities: AICapability[] }>,
+  update: (id: number, enabled: boolean) =>
+    apiFetch(`/deals/0/ai/capabilities/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ enabled }),
+    }) as Promise<{ capability: Pick<AICapability, 'id' | 'capability_key' | 'version' | 'enabled'> }>,
 };

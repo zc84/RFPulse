@@ -292,3 +292,55 @@ test('phase2 planner service uses synthesized fallback when configured fallback 
   assert.ok(Array.isArray(result.configuredFallbackErrors));
   assert.ok(result.configuredFallbackErrors.length > 0);
 });
+
+test('phase2 planner synthesized fallback remains valid when requirements.extract is enabled', async () => {
+  const result = await generateWorkflowPlanShadow({
+    objective: 'Fallback synthesis with requirement extraction',
+    contextSummary: 'Synthetic context',
+    queryFn: async () => ({ rows: [{ value: '{"invalid":true}' }] }),
+    capabilityCatalogueOverride: [
+      {
+        capabilityKey: 'requirements.extract',
+        inputSchema: { type: 'object', required: ['evidence_items'] },
+        outputSchema: { type: 'object', required: ['requirements', 'documentRole', 'missingAppendices'] },
+        permittedTools: ['requirements.extract.structured'],
+      },
+      {
+        capabilityKey: 'analysis.legal',
+        inputSchema: { type: 'object', required: ['coordinator_context'] },
+        outputSchema: { type: 'object', required: ['legal_analysis'] },
+        permittedTools: ['agent.call.legal'],
+      },
+      {
+        capabilityKey: 'analysis.solution',
+        inputSchema: { type: 'object', required: ['coordinator_context'] },
+        outputSchema: { type: 'object', required: ['solution_design'] },
+        permittedTools: ['agent.call.architect'],
+      },
+      {
+        capabilityKey: 'analysis.estimation',
+        inputSchema: { type: 'object', required: ['solution_design', 'legal_analysis'] },
+        outputSchema: { type: 'object', required: ['estimation_package'] },
+        permittedTools: ['agent.call.estimator'],
+      },
+      {
+        capabilityKey: 'proposal.integrate',
+        inputSchema: { type: 'object', required: ['legal_analysis', 'solution_design', 'estimation_package'] },
+        outputSchema: { type: 'object', required: ['proposal_markdown'] },
+        permittedTools: ['agent.call.coordinator.final-report'],
+      },
+    ],
+    agentCaller: async () => {
+      throw new Error('force fallback path');
+    },
+  });
+
+  assert.equal(result.validation.valid, true);
+  assert.equal(result.usedFallback, true);
+  const extractTask = result.plan.tasks.find(task => task.id === 'extract-requirements');
+  assert.ok(extractTask);
+  assert.ok(extractTask.outputs.includes('requirements'));
+  assert.ok(extractTask.outputs.includes('documentRole'));
+  assert.ok(extractTask.outputs.includes('missingAppendices'));
+  assert.ok(extractTask.outputs.includes('requirement_inventory'));
+});

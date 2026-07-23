@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  classifyDocumentRole,
   buildRequirementInventorySummary,
   buildEvidenceItemsFromExtractedDocs,
   extractRequirementsFromEvidence,
@@ -31,6 +32,17 @@ test('phase1 evidence builder keeps provenance and chunk locators', () => {
   assert.match(String(evidence[0].locator), /Page 1/i);
   assert.ok(evidence[0].contentHash);
   assert.equal(evidence[0].metadata.documentName, 'RFP.pdf');
+  assert.equal(evidence[0].documentRole, 'rfp');
+});
+
+test('phase1 classifies document roles and links contradictory requirements', () => {
+  assert.equal(classifyDocumentRole({ name: 'Pricing BOQ.xlsx', text: 'Commercial pricing and rates' }), 'pricing_template');
+  const requirements = extractRequirementsFromEvidence([
+    { sourceDocumentId: 1, locator: 'p1', contentHash: 'h1', content: 'The supplier must provide support within 2 days.' },
+    { sourceDocumentId: 2, locator: 'p4', contentHash: 'h2', content: 'The supplier must not provide support within 2 days.' },
+  ]);
+  assert.equal(requirements.length, 2);
+  assert.ok(requirements.every(requirement => requirement.conflictGroup));
 });
 
 test('phase1 requirement extraction classifies obligation and response type', () => {
@@ -57,6 +69,19 @@ test('phase1 requirement extraction classifies obligation and response type', ()
   const attachmentReq = requirements.find(req => /attachment/i.test(req.text));
   assert.ok(attachmentReq);
   assert.equal(attachmentReq.responseType, 'attachment');
+});
+
+test('phase1 keeps noun-phrase scope items visible even without must/required wording', () => {
+  const requirements = extractRequirementsFromEvidence([{
+    sourceDocumentId: 404,
+    locator: 'SOW 5.6',
+    contentHash: 'scope-404',
+    content: 'The website includes a dealer locator with maps, filters, geolocation, and per-dealer pages.',
+  }]);
+
+  assert.equal(requirements.length, 1);
+  assert.match(requirements[0].text, /dealer locator/i);
+  assert.ok(requirements[0].metadata.keywordMatches.some(item => item.startsWith('scope:')));
 });
 
 test('phase1 requirement reconciliation preserves duplicate source references', () => {

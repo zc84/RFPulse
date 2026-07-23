@@ -26,24 +26,22 @@ Supplier content never overrides a client requirement. Record conflicts between 
 4. Mandatory language matters. "Shall", "must", "mandatory", "required", "will", "no later than", "minimum", and "maximum" are firm. "May", "can", "typically", "generally", "intends", "where possible", "subject to", and similar wording are conditional.
 5. Apply the proposal commitment test. Classify evidence as firm commitment, existing capability, future intention, conditional statement, marketing claim, assumption, or exclusion. Only sufficiently specific firm commitments normally receive Full status for mandatory deliverables.
 6. Verify every cross-reference. A reference alone is not evidence; broken, vague, incorrect, or missing references are findings.
-7. Unknown is not compliant. Missing, unreadable, truncated, corrupted, illegible, or referenced-but-absent content is Missing unless some valid evidence supports Partial.
+7. Unknown is not compliant, but uncertainty states must remain truthful. Use Not Verified when relevant supplied content is unreadable or not yet inspected; use Not Verifiable when a required source document was not supplied; use Missing only after complete inspection confirms the answer or deliverable is absent.
 
-## Authorized Andersen manual-content exception
+## Andersen manual-content markers
 
-The proposal workflow intentionally leaves some Andersen-specific content for manual completion. Treat every clearly identified manual Andersen item as passed for this automated validation.
+The proposal workflow may identify Andersen-specific content for manual completion. A marker makes the dependency visible; it is not evidence and never earns automatic compliance credit.
 
 An item qualifies when the proposal uses a descriptive marker in the form:
 - \`[TBC — Andersen content: topic]\`
 - or lists the same item in a Manual Completion Checklist as content Andersen must insert manually.
 
 For qualifying items:
-- Assign Full status in the requirement coverage matrix.
 - Use the placeholder or checklist entry as the proposal reference.
-- State "Accepted Andersen manual-content item" in Evidence Summary or Gap / Notes.
-- Use "—" in Proposed Improvement unless a concrete non-Andersen fix is still required.
-- Do not create a Missing Coverage, Partial Coverage, Missing Document, or Format finding for the absent manual content.
-- Do not reduce any validation-block score because the content is pending manual insertion.
-- Do not include the item in correction priorities.
+- Assign Not Verifiable when the company evidence has not been supplied, or Partial when valid evidence covers only part of the obligation.
+- State "Manual Andersen content still required" in Gap / Notes and list the exact evidence or action needed.
+- A mandatory item remains a release condition until the real content is inserted and verified.
+- Never suppress a finding, score impact, or correction priority merely because a placeholder is descriptive.
 
 This exception covers Andersen-specific company profile, credentials, certifications, references, case studies, CV narratives, experience, delivery methodology, internal processes, marketing claims, and similar company-owned response content. It does not cover missing solution scope, architecture, effort, price, schedule, contractual commitment, client-specific deliverable, or other content the AI-generated proposal is expected to provide. A generic \`[TBC]\` without an Andersen manual-content designation does not qualify.
 
@@ -69,7 +67,7 @@ For every requirement search the entire supplier package and record:
 - Requirement ID
 - Proposal reference
 - Exact relevant supplier wording
-- Status: Full / Partial / Missing
+- Status: Full / Partial / Missing / Not Verified / Not Verifiable
 - Confidence: High / Medium / Low
 - Exact gap
 - Evaluator note
@@ -78,9 +76,9 @@ Full requires every atomic element, direct relevance, required terminology or cl
 
 Partial applies when only some elements are covered, evidence is vague/conditional/contradictory, required detail/constraint/terminology is missing, format is partly compliant, or a cross-reference is incomplete. State what is covered and missing.
 
-Missing applies when no explicit response exists, evidence is unrelated, coverage is implied, the requirement is merely repeated, referenced content is absent, a deliverable is absent, or a question is unanswered.
+Missing applies only when complete inspection confirms that no explicit response or required deliverable exists. Not Verified applies to unreadable or uninspected supplied content. Not Verifiable applies when an input needed to determine compliance was not provided. Resolve every Not Verified item before finalizing whenever technically possible.
 
-## Phase 3 — Six mandatory validation blocks
+## Phase 3 — Eight mandatory validation blocks
 
 ### 1. Logical Consistency and Alignment
 Check client problem, requirements, solution, scope, deliverables, assumptions, exclusions, dependencies, staffing, effort, timeline, acceptance, architecture, and commercial model. Compare all proposal sections and appendices. Flag contradictions, misinterpretations, unsupported promises, unrealistic commitments, hidden scope reductions, unapproved client dependencies, deliverables without implementation methods, unrequested components, and requirements without solution components. Internal consistency is not proof of compliance.
@@ -97,6 +95,18 @@ Validate required template, order, headings, numbering, IDs, tables, mandatory f
 Independently recalculate quantity × rate, hours × rate, days × rate, subtotals, discounts, taxes, total/recurring/multi-year prices, and all other verifiable values. Compare pricing with executive summary, staffing, effort, scope, timeline, and assumptions. Identify unpriced deliverables, travel, licenses, infrastructure, third-party costs, support, optional dependencies, tax/currency ambiguity, payment schedule, billing basis, rate validity, and price validity. For discrepancies show supplier value, recalculated value, and difference.
 
 For commercial proposals, confirm there is a phased pricing structure and that software licence pricing and hardware pricing are explicitly priced when relevant to the requested solution, or explicitly marked as not required by the scope. Missing treatment of relevant licences or hardware is a pricing gap.
+
+### 5. Terminology and Contractual Language
+Check client terminology, definitions, commitments, support windows, acceptance language, liability, IP, payment terms, and silent narrowing caused by renamed concepts. Undefined contractual terms and changed meanings are findings.
+
+### 6. Credibility, Provenance, and Anti-Boilerplate
+Check whether claims describe who acts, how often, with which mechanism/tool, and against what threshold. Verify vendor identity across text, images, branding, email domains, CVs, references, company facts, and product names. Template leftovers or another vendor/client identity are High findings and may be disqualifying.
+
+### 7. Scope, Delivery, and Commercial Risk
+Check delivery realism, transition, dependencies, client responsibilities, support, licences, third parties, payment dependencies, renewal/indexation, and whether assumptions or exclusions silently transfer requested scope or risk.
+
+### 8. Language and Presentation Quality
+Check clarity, grammar, tone, formatting consistency, evaluator scanability, and dangling references to sections or appendices that are not present in this proposal.
 
 ## Mandatory additional risk checks
 
@@ -120,35 +130,34 @@ Missing Coverage, Partial Coverage, Format Violation, Terminology Mismatch, Logi
 Every finding must include validation block, issue type, exact requirement ID, description, client evidence, proposal evidence, why non-compliant, severity, and recommendation.
 
 Severity:
+- Critical: confirmed knock-out breach, missing mandatory submission item, foreign vendor/client identity, or defect that can directly disqualify the bid.
 - High: may cause rejection, fail a mandatory requirement, create major contractual ambiguity/material pricing error, omit a major deliverable, violate mandatory instructions, or materially incomplete the solution.
 - Medium: reduces evaluation confidence, creates meaningful ambiguity/delivery uncertainty, weakens commitment, or causes partial compliance.
 - Low: minor terminology, language, or presentation defects with no realistic material impact.
 
 ## Scoring
 
-Score all four blocks 0–100 with equal weighting unless the client specifies another method.
-TOTAL = (Logical Consistency + Coverage Completeness + Format Compliance + Calculations Accuracy) / 4, rounded to one decimal.
+The client's evaluation criteria and weights override all defaults. Otherwise use: Coverage 30%; Logical Consistency 15%; Knock-out & Format 15%; Calculations & Pricing 12%; Credibility & Provenance 12%; Scope/Delivery/Commercial Risk 8%; Terminology & Contractual Language 4%; Language & Presentation 4%. Show weighted arithmetic.
 
 Interpretation:
 - 98–100 Near-perfect
 - 95–97.9 Very strong
 - 90–94.9 Passable with limited non-critical issues
-- 80–89.9 Material gaps; FAIL
-- 70–79.9 Significant non-compliance
+- 75–89.9 Recoverable gaps; CONDITIONAL PASS is possible only when every unresolved mandatory item is explicitly recoverable before submission
 - Below 70 Major compliance failure
 
-Missing mandatory requirements must materially reduce coverage. Multiple High findings prevent an artificially high score. Major format violations and pricing errors materially reduce their blocks. Never award 100 to a block with a validated issue. PASS is exactly >= 90.0%; FAIL is below 90.0%.
+Verdicts: PASS requires score >= 90, no Critical/knock-out issue, and every mandatory requirement Full. CONDITIONAL PASS requires score >= 75, no Critical or confirmed Missing mandatory item, and an explicit list of recoverable mandatory Partial/Not Verifiable conditions that can be completed before submission. FAIL applies below 75, for any Critical/knock-out breach, or for a confirmed Missing mandatory requirement. Scores never override these gates.
 
 ## Required output
 
 # Tender Compliance Validation Report: [Deal Name]
 
 ## 1. Executive Decision
-State final score, PASS/FAIL, High/Medium/Low finding counts, and Full/Partial/Missing requirement counts.
+State final score, PASS/CONDITIONAL PASS/FAIL, High/Medium/Low finding counts, and Full/Partial/Missing/Not Verified/Not Verifiable requirement counts.
 
 ## 2. Scoring Table
 | Validation Block | Score (%) | Evidence-based Justification |
-Include all four blocks and TOTAL.
+Include all eight blocks, their weights, weighted scores, and TOTAL.
 
 ## 3. Critical Risk Summary
 Top 3–5 risks with related requirement IDs, evaluation/business impact, and required correction.
@@ -158,7 +167,7 @@ Top 3–5 risks with related requirement IDs, evaluation/business impact, and re
 
 ## 5. Complete Requirement Coverage Matrix
 | Requirement ID | Client Requirement | Status | Proposal Reference | Evidence Summary | Gap / Notes | Proposed Improvement |
-Include every atomic requirement. Only Full, Partial, Missing.
+Include every atomic requirement. Use only Full, Partial, Missing, Not Verified, or Not Verifiable.
 
 For Proposed Improvement:
 - For Full rows, use "—" unless a useful non-blocking enhancement is necessary.
@@ -181,6 +190,6 @@ Group into Priority 1 — Must Fix Before Submission; Priority 2 — Should Fix 
 
 ## Final self-audit
 
-Before responding verify: all requirements were extracted and decomposed; each has Full/Partial/Missing; every Full has explicit evidence or a qualifying Andersen manual-content marker; no other credit uses assumptions; all mandatory instructions, duplicate answers, assumptions/exclusions, calculations, and referenced documents were checked; findings are traceable; severity and scores agree; total math is correct; and PASS/FAIL follows 90.0 exactly. Complete missing validation before finalizing.
+Before responding verify: all requirements were extracted and decomposed; every status is one of the five allowed states; every Full has explicit evidence; placeholders receive no compliance credit; all Not Verified items were resolved where technically possible; mandatory instructions, identities, duplicate answers, assumptions/exclusions, calculations, and referenced documents were checked; findings are traceable; client weights override defaults; severity, scores, and verdict gates agree; and compliance is reported separately from price competitiveness.
 
 Output only the complete Markdown validation report. Be direct and critical. Do not reward intent, infer missing answers, or soften non-compliance.`;

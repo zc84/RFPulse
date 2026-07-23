@@ -20,6 +20,28 @@ const REQUIREMENT_KEYWORDS = [
   'proof',
 ];
 
+// Tender scope is frequently expressed as a noun phrase or table row rather than
+// a sentence containing "must" or "required". Keep a high-recall baseline so the
+// Coordinator can decide whether the item is mandatory instead of silently losing it.
+const SCOPE_SIGNAL_KEYWORDS = [
+  'dealer', 'locator', '360', 'viewer', 'interior', 'exterior', 'country selector',
+  'redirect', 'fleet', 'owners', 'after-sales', 'warranty', 'manuals', 'news hub',
+  'press', 'media kit', 'forms', 'test drive', 'booking', 'brochure', 'seo',
+  'structured data', 'hreflang', 'llms.txt', 'content entry', 'migration', 'dam',
+  'translation', 'arabic', 'rtl', 'comparison', 'search', 'analytics', 'pwa',
+  'design option', 'demo page', 'power of attorney', 'quotation', 'seal', 'stamp',
+];
+
+export const DOCUMENT_ROLES = {
+  RFP: 'rfp',
+  TERMS_AND_CONDITIONS: 'terms_and_conditions',
+  TECHNICAL_SPECIFICATION: 'technical_specification',
+  PRICING_TEMPLATE: 'pricing_template',
+  RESPONSE_TEMPLATE: 'response_template',
+  REFERENCE: 'reference',
+  UNKNOWN: 'unknown',
+};
+
 function hashContent(content) {
   return createHash('sha256').update(String(content || ''), 'utf8').digest('hex');
 }
@@ -106,11 +128,67 @@ function extractKeywordMatches(text) {
   return REQUIREMENT_KEYWORDS.filter(keyword => value.includes(keyword));
 }
 
+function extractScopeSignals(text) {
+  const value = String(text || '').toLowerCase();
+  return SCOPE_SIGNAL_KEYWORDS.filter(keyword => value.includes(keyword));
+}
+
 function detectMissingAppendixGap(text) {
   const value = String(text || '').toLowerCase();
   const mentionsReferencedAttachment = /\b(appendix|annex|attachment|schedule|exhibit)\b/.test(value);
   if (!mentionsReferencedAttachment) return false;
   return /\b(missing|not attached|not provided|to be provided|not included|not enclosed|absent)\b/.test(value);
+}
+
+export function classifyDocumentRole({ name = '', text = '' } = {}) {
+  const value = `${name}\n${String(text || '').slice(0, 6000)}`.toLowerCase();
+  if (/\b(pric(e|ing)|commercial|boq|bill of quantities|rate card|стоим|ценов)/.test(value)) {
+    return DOCUMENT_ROLES.PRICING_TEMPLATE;
+  }
+  if (/\b(response template|proposal template|questionnaire|submission form|form of tender|шаблон|анкета)/.test(value)) {
+    return DOCUMENT_ROLES.RESPONSE_TEMPLATE;
+  }
+  if (/\b(terms and conditions|contract|legal|liability|insurance|gdpr|confidentiality|условия договора)/.test(value)) {
+    return DOCUMENT_ROLES.TERMS_AND_CONDITIONS;
+  }
+  if (/\b(technical specification|statement of work|architecture|integration|api|functional requirement|техническ)/.test(value)) {
+    return DOCUMENT_ROLES.TECHNICAL_SPECIFICATION;
+  }
+  if (/\b(rfp|request for proposal|invitation to tender|tender|procurement|request for quotation|конкурс|тендер)/.test(value)) {
+    return DOCUMENT_ROLES.RFP;
+  }
+  if (/\b(case stud(y|ies)|reference|company profile|portfolio|пример проекта)/.test(value)) {
+    return DOCUMENT_ROLES.REFERENCE;
+  }
+  return DOCUMENT_ROLES.UNKNOWN;
+}
+
+function conflictTopic(text) {
+  return String(text || '').toLowerCase()
+    .replace(/\b(not|no|without|не|нет)\b/g, '')
+    .replace(/\b\d+(?:[.,]\d+)?\s*(?:%|days?|weeks?|months?|hours?|лет|дней|недель)\b/g, '<number>')
+    .replace(/[^a-zа-яё<]+/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .split(' ').slice(0, 12).join(' ');
+}
+
+function addConflictGroups(requirements) {
+  const groups = new Map();
+  for (const requirement of requirements) {
+    const topic = conflictTopic(requirement.text);
+    if (!topic) continue;
+    if (!groups.has(topic)) groups.set(topic, []);
+    groups.get(topic).push(requirement);
+  }
+  let groupNumber = 0;
+  for (const members of groups.values()) {
+    const signatures = new Set(members.map(member => `${member.obligationLevel}:${/\b(not|no|without|не|нет)\b/i.test(member.text) ? 'negative' : 'positive'}:${member.text.replace(/\d+(?:[.,]\d+)?/g, '<number>')}`));
+    if (members.length < 2 || signatures.size < 2) continue;
+    const conflictGroup = `requirements-conflict-${++groupNumber}`;
+    for (const member of members) member.conflictGroup = conflictGroup;
+  }
+  return requirements;
 }
 
 export function buildEvidenceItemsFromExtractedDocs(extractedDocs) {
@@ -128,7 +206,9 @@ export function buildEvidenceItemsFromExtractedDocs(extractedDocs) {
         language: inferLanguage(chunk.content),
         confidence: 0.98,
         contentHash: hashContent(`${doc.id}:${chunk.locator}:${chunk.content}`),
+        documentRole: classifyDocumentRole({ name: doc.name, text: doc.text }),
         metadata: {
+          documentRole: classifyDocumentRole({ name: doc.name, text: doc.text }),
           documentName: doc.name || null,
           chunkIndex: index + 1,
           chunkCount: totalChunks,
@@ -147,7 +227,8 @@ export function extractRequirementsFromEvidence(evidenceItems) {
     const candidates = splitRequirementCandidates(evidence.content);
     for (const candidate of candidates) {
       const keywordMatches = extractKeywordMatches(candidate);
-      if (keywordMatches.length === 0) continue;
+      const scopeSignals = extractScopeSignals(candidate);
+      if (keywordMatches.length === 0 && scopeSignals.length === 0) continue;
 
       const normalized = normalizeRequirementText(candidate);
       if (!normalized) continue;
@@ -169,7 +250,7 @@ export function extractRequirementsFromEvidence(evidenceItems) {
           conflictGroup: null,
           metadata: {
             sourceEvidenceHash: evidence.contentHash,
-            keywordMatches,
+            keywordMatches: [...keywordMatches, ...scopeSignals.map(signal => `scope:${signal}`)],
             gapType: isMissingAppendixGap ? 'missing-appendix-reference' : null,
             sourceRefs: [{
               sourceDocumentId: evidence.sourceDocumentId,
@@ -207,7 +288,7 @@ export function extractRequirementsFromEvidence(evidenceItems) {
     }
   }
 
-  return [...byNormalized.values()];
+  return addConflictGroups([...byNormalized.values()]);
 }
 
 export function buildRequirementInventorySummary(requirements) {
@@ -264,8 +345,8 @@ export async function persistRunEvidenceAndRequirements({ sessionId, dealId, ext
     for (const item of evidenceItems) {
       await queryFn(
         `INSERT INTO ai_evidence_items
-           (session_id, deal_id, source_document_id, source_type, locator, content, language, confidence, content_hash, metadata)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+           (session_id, deal_id, source_document_id, source_type, locator, content, language, confidence, content_hash, document_role, metadata)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
          ON CONFLICT (session_id, source_document_id, content_hash) DO NOTHING`,
         [
           sessionId,
@@ -277,6 +358,7 @@ export async function persistRunEvidenceAndRequirements({ sessionId, dealId, ext
           item.language,
           item.confidence,
           item.contentHash,
+          item.documentRole,
           JSON.stringify(item.metadata || {}),
         ]
       );

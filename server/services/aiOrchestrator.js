@@ -6,6 +6,7 @@ import { query } from '../db.js';
 import { DEFAULT_PROMPT_TEMPLATES, getDefaultAgents } from './aiPrompts.js';
 import {
   buildEstimatorReportSummary,
+  coordinatorChatArtifactDecisionSchema,
   coordinatorDecisionSchema,
   dealPropertiesSchema,
   estimatorResultSchema,
@@ -13,6 +14,7 @@ import {
   parseEstimatorOutput,
   validateEstimatorResult,
 } from './aiSchemas.js';
+import { loadEstimationPolicy } from '../ai-runtime/policies/estimationPolicy.js';
 
 const DEFAULT_AGENT_SLUGS = ['coordinator', 'legal', 'architect', 'estimator', 'frontend-dev'];
 const REQUIRED_SPECIALIST_SLUGS = ['legal', 'architect', 'estimator'];
@@ -347,6 +349,14 @@ function clipText(text, maxChars = Infinity, tail = false) {
   return `${value.slice(0, maxChars)}\n...[trimmed after ${maxChars} chars]`;
 }
 
+function clipTextBalanced(text, maxChars = Infinity) {
+  const value = String(text || '');
+  if (!Number.isFinite(maxChars) || maxChars <= 0 || value.length <= maxChars) return value;
+  const headChars = Math.ceil(maxChars * 0.62);
+  const tailChars = Math.max(0, maxChars - headChars);
+  return `${value.slice(0, headChars)}\n...[middle omitted to preserve both opening instructions and closing risks/assumptions]...\n${value.slice(-tailChars)}`;
+}
+
 function formatAgentOutputs(agentOutputs, maxChars = Infinity) {
   if (!agentOutputs || Object.keys(agentOutputs).length === 0) return '';
   const parts = ['## Agent outputs so far'];
@@ -667,7 +677,7 @@ export async function coordinatorStep(
       raw: null,
     };
   }
-  const coordinatorContext = clipText(existingCoordinatorContext || compactCoordinatorSourceContext(contextBundle), 12000, true);
+  const coordinatorContext = clipTextBalanced(existingCoordinatorContext || compactCoordinatorSourceContext(contextBundle), 12000);
 
   const messages = [
     {
@@ -735,6 +745,92 @@ export async function coordinatorStep(
     throw err;
   } finally {
     clearTimeout(timeout);
+  }
+}
+
+function inferDiagramTypesFromIntent(chatIntent = '') {
+  const text = String(chatIntent || '').toLowerCase();
+  const wantsArchitecture = /\b(architecture|system\s+design|solution\s+design|component|integration|data\s+flow|flowchart)\b/.test(text);
+  const wantsTimeline = /\b(timeline|gantt|roadmap|schedule|milestone)\b/.test(text);
+  if (wantsArchitecture && wantsTimeline) return ['architecture', 'timeline'];
+  if (wantsTimeline) return ['timeline'];
+  return ['architecture'];
+}
+
+function normalizeChatArtifactDecision(validated, chatIntent = '') {
+  if (!validated || typeof validated !== 'object') {
+    return {
+      action: 'chat_reply',
+      diagramTypes: null,
+      reasoning: 'Coordinator returned an empty chat artifact decision. Falling back to standard chat reply.',
+    };
+  }
+
+  if (validated.action !== 'generate_diagrams') {
+    return {
+      ...validated,
+      action: 'chat_reply',
+      diagramTypes: null,
+    };
+  }
+
+  const allowed = new Set(['architecture', 'timeline']);
+  const normalizedTypes = Array.isArray(validated.diagramTypes)
+    ? validated.diagramTypes.filter(type => allowed.has(type))
+    : [];
+
+  return {
+    ...validated,
+    action: 'generate_diagrams',
+    diagramTypes: normalizedTypes.length > 0 ? [...new Set(normalizedTypes)] : inferDiagramTypesFromIntent(chatIntent),
+  };
+}
+
+export async function coordinatorChatArtifactStep(
+  chatIntent,
+  conversation,
+  routingContext,
+  priorityInstructions = '',
+  signal = null
+) {
+  throwIfAborted(signal);
+
+  const conversationText = formatConversation(conversation, 4000);
+  const contextText = clipTextBalanced(String(routingContext || ''), 12000);
+  const messages = [{
+    role: 'user',
+    content: [
+      '## Chat intent',
+      String(chatIntent || '').trim() || 'N/A',
+      contextText ? '## Session and artifact context' : '',
+      contextText || '',
+      '## Conversation so far',
+      conversationText || 'No conversation yet.',
+    ].filter(Boolean).join('\n\n'),
+  }];
+
+  try {
+    const raw = await callAgent('coordinator', messages, {
+      taskPromptKey: 'coordinator.chat-artifact-routing',
+      priorityInstructions,
+      schema: coordinatorChatArtifactDecisionSchema,
+      schemaName: 'coordinator_chat_artifact_routing',
+      maxTokens: 2048,
+      signal,
+    });
+    const validated = parseAgentJson(raw, 'Coordinator (chat artifact routing)', coordinatorChatArtifactDecisionSchema);
+    return {
+      ...normalizeChatArtifactDecision(validated, chatIntent),
+      raw,
+    };
+  } catch (err) {
+    if (isCancellationError(err)) throw err;
+    return {
+      action: 'chat_reply',
+      diagramTypes: null,
+      reasoning: `Coordinator chat artifact routing failed: ${err.message || 'unknown error'}`,
+      raw: null,
+    };
   }
 }
 
@@ -850,7 +946,8 @@ export async function applyEstimatorOnePassCorrection(initialValue, options = {}
 }
 
 export async function runEstimator(context, conversation, priorityInstructions = '', signal = null) {
-  const policyContext = extractEstimatorPolicyContext(context);
+  const estimationPolicy = await loadEstimationPolicy();
+  const policyContext = { ...extractEstimatorPolicyContext(context), estimationPolicy };
   const messages = [
     {
       role: 'user',
@@ -914,13 +1011,13 @@ function appendArchitectureDiagramPrompt(report) {
     'Use the proposal above as the source of truth and generate client-ready PNG diagrams for the solution architecture.',
     'Use the exact tech stack named in the proposal. Do not substitute a generic stack, an authority-approved provider, or a different implementation just because it has a nicer icon set.',
     'Treat WBS content, implementation plans, timelines, schedules, roadmaps, pricing, and effort tables as out of scope for these architecture images.',
-    'Produce 1 to 5 diagrams as appropriate: an overview, a component or context view, a workflow or sequence view, an integration or data-flow view, and a deployment or trust-boundary view when relevant.',
+    'Produce a concise set of architecture visuals suitable for direct embedding in the final report (typically one primary diagram, optionally one supporting view when strictly necessary).',
     'Each diagram should contain only elements grounded in the report: actors, channels, services, data stores, external systems, environments, and security boundaries.',
     'Use small, tech-stack-native icons where relevant for services, platforms, databases, cloud components, and infrastructure layers.',
     'If a technology does not have a native icon, use a neutral label or simple glyph instead of an unrelated icon.',
     'Keep labels concise, typography legible, spacing balanced, and the overall style professional and presentation-ready.',
     'Do not embed a Gantt chart, delivery plan, WBS table, calendar strip, dates row, or pricing table into the architecture diagrams.',
-    'Export each diagram as a separate PNG file.',
+    'Output PNG image content intended for report embedding (not as standalone client artifact files).',
   ].join('\n\n');
 
   return `${report.trim()}\n\n${prompt}`;
@@ -1008,20 +1105,15 @@ export async function generateArchitectureDiagramImages(report, signal = null) {
   const variants = [
     {
       key: 'overview',
-      title: 'Architecture Overview',
-      description: 'High-level solution view showing core platform layers, trust boundaries, and primary data and interaction paths.',
-    },
-    {
-      key: 'detail',
-      title: 'Architecture Detail',
-      description: 'Detailed component and integration view showing how major services collaborate to deliver required capabilities.',
+      title: 'Architecture Diagram',
+      description: 'Solution architecture view showing core platform layers, trust boundaries, and primary data and interaction paths.',
     },
   ];
 
   for (const variant of variants) {
     throwIfAborted(signal);
     const response = await client.images.generate({
-      model: 'gpt-image-2',
+      model: process.env.AI_IMAGE_MODEL || 'gpt-image-2',
       prompt: buildArchitectureDiagramImagePrompt(reportBody, variant.key),
       size: '1536x1024',
       quality: 'high',
@@ -1073,9 +1165,9 @@ export function buildReportFromOutputs(dealName, coordinatorContext, agentOutput
 }
 
 export async function buildFinalProposalMarkdown(dealName, coordinatorContext, conversation, agentOutputs, priorityInstructions = '', signal = null) {
-  const safeCoordinatorContext = clipText(coordinatorContext, 5000, true);
+  const safeCoordinatorContext = clipTextBalanced(coordinatorContext, 9000);
   const safePriorityInstructions = clipText(priorityInstructions, 3000, true);
-  const safeOutputsSummary = formatAgentOutputs(agentOutputs, 7000);
+  const safeOutputsSummary = formatAgentOutputs(agentOutputs, 10000);
   const safeConversation = formatConversation(conversation, 3000);
   const apexGanttGuidance = await loadApexGanttGuidance();
   const messages = [{

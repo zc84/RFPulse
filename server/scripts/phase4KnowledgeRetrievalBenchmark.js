@@ -82,12 +82,12 @@ async function createInMemoryKnowledgeQuery() {
   };
 }
 
-function precisionAtK(resultIds = [], expectedIds = [], k = 5) {
+function recallAtK(resultIds = [], expectedIds = [], k = 5) {
   const top = resultIds.slice(0, k);
   if (top.length === 0) return 0;
   const expected = new Set(expectedIds);
   const relevant = top.filter(id => expected.has(id)).length;
-  return relevant / top.length;
+  return expected.size === 0 ? 0 : relevant / expected.size;
 }
 
 async function runScenario(scenario) {
@@ -129,16 +129,16 @@ async function runScenario(scenario) {
   }
 
   const retrievedIds = (retrieval.sections || []).map(section => section.sectionId);
-  const pAt5 = precisionAtK(retrievedIds, scenario.expectedSectionIds || [], 5);
+  const recallAt5 = recallAtK(retrievedIds, scenario.expectedSectionIds || [], 5);
 
   return {
     id: scenario.id,
     source,
-    precisionAt5: Number(pAt5.toFixed(3)),
+    recallAt5: Number(recallAt5.toFixed(3)),
     expectedSectionIds: scenario.expectedSectionIds || [],
     retrievedTop5: retrievedIds.slice(0, 5),
     fallbackUsed,
-    pass: pAt5 >= 0.85,
+    pass: recallAt5 >= 0.85,
   };
 }
 
@@ -150,17 +150,17 @@ async function run() {
     rows.push(await runScenario(scenario));
   }
 
-  const avgPrecision = rows.length
-    ? rows.reduce((sum, item) => sum + item.precisionAt5, 0) / rows.length
+  const avgRecall = rows.length
+    ? rows.reduce((sum, item) => sum + item.recallAt5, 0) / rows.length
     : 0;
 
   const report = {
     generatedAt: new Date().toISOString(),
     summary: {
       totalScenarios: rows.length,
-      averagePrecisionAt5: Number(avgPrecision.toFixed(3)),
+      averageRecallAt5: Number(avgRecall.toFixed(3)),
       threshold: 0.85,
-      pass: avgPrecision >= 0.85,
+      pass: avgRecall >= 0.85,
     },
     scenarios: rows,
   };

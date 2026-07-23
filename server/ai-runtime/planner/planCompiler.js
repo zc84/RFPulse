@@ -43,6 +43,8 @@ export function compileWorkflowPlan(rawPlan, { capabilityCatalogue = [], budgets
       ? budgets.externallyAvailableInputs.map(item => String(item || '').trim()).filter(Boolean)
       : [
         'coordinator_context',
+        'evidence_items',
+        'requirement_inventory',
         'source_documents',
         'deal_ai_notes',
         'context_summary',

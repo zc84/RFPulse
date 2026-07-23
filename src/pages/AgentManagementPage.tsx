@@ -2,8 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { ArrowLeft, Bot, Edit2, KeyRound, HelpCircle, Save, Loader2, RefreshCw, Upload, Trash2, FileText } from 'lucide-react';
-import { Agent, AIKnowledgeRetrieveResponse, GlobalAISettings, OpenAIModel, PromptTemplate } from '../types';
-import { agentsApi, aiApi } from '../api';
+import { Agent, AICapability, AIKnowledgeRetrieveResponse, AIRuntimeSettings, GlobalAISettings, OpenAIModel, PromptTemplate } from '../types';
+import { agentsApi, aiApi, capabilityApi } from '../api';
 import Header from '../components/Header';
 import Button from '../components/Button';
 import Modal from '../components/Modal';
@@ -76,6 +76,11 @@ export default function AgentManagementPage({ embedded = false }: { embedded?: b
   const [knowledgeRelatedLimit, setKnowledgeRelatedLimit] = useState(2);
   const [knowledgeLoading, setKnowledgeLoading] = useState(false);
   const [knowledgeResult, setKnowledgeResult] = useState<AIKnowledgeRetrieveResponse | null>(null);
+  const [capabilities, setCapabilities] = useState<AICapability[]>([]);
+  const [capabilitiesLoading, setCapabilitiesLoading] = useState(false);
+  const [capabilitySaving, setCapabilitySaving] = useState<number | null>(null);
+  const [runtimeSettings, setRuntimeSettings] = useState<AIRuntimeSettings | null>(null);
+  const [runtimeSaving, setRuntimeSaving] = useState(false);
 
   const handleKnowledgeRetrieve = async () => {
     if (!knowledgeDealId.trim()) {
@@ -111,10 +116,15 @@ export default function AgentManagementPage({ embedded = false }: { embedded?: b
 
   const load = async () => {
     setLoading(true);
+    setCapabilitiesLoading(true);
     try {
-      const [agentsData, settingsData, promptsData] = await Promise.all([agentsApi.getAll(), agentsApi.getSettings(), agentsApi.getPrompts()]);
+      const [agentsData, settingsData, promptsData, capabilityData, runtimeData] = await Promise.all([
+        agentsApi.getAll(), agentsApi.getSettings(), agentsApi.getPrompts(), capabilityApi.getAll(), agentsApi.getRuntimeSettings(),
+      ]);
       setAgents(agentsData);
+      setCapabilities(capabilityData.capabilities);
       setPromptTemplates(promptsData);
+      setRuntimeSettings(runtimeData);
       setSettings(settingsData);
       setApiKey('');
       if (settingsData.has_key) {
@@ -127,6 +137,48 @@ export default function AgentManagementPage({ embedded = false }: { embedded?: b
       toast.error('Failed to load agents.');
     } finally {
       setLoading(false);
+      setCapabilitiesLoading(false);
+    }
+  };
+
+  const updateRuntime = async (patch: Partial<AIRuntimeSettings>) => {
+    if (!runtimeSettings) return;
+    const next = { ...runtimeSettings, ...patch };
+    setRuntimeSaving(true);
+    try {
+      await agentsApi.updateRuntimeSettings(patch);
+      setRuntimeSettings(next);
+      toast.success('Runtime settings saved.');
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to save runtime settings.');
+    } finally {
+      setRuntimeSaving(false);
+    }
+  };
+
+  const updatePolicyNumber = (path: 'defaultRoleRate' | 'qaOverheadPercent' | 'pmOverheadPercent' | 'taskMinHours' | 'taskMaxHours' | 'highRiskMinimumPercent', value: number) => {
+    if (!runtimeSettings || !Number.isFinite(value)) return;
+    const policy = runtimeSettings.ai_estimation_policy || {};
+    const nextPolicy = path === 'taskMinHours' || path === 'taskMaxHours'
+      ? { ...policy, taskSizing: { ...(policy.taskSizing || {}), [path === 'taskMinHours' ? 'minHours' : 'maxHours']: value } }
+      : path === 'highRiskMinimumPercent'
+        ? { ...policy, contingency: { ...(policy.contingency || {}), highRiskMinimumPercent: value } }
+        : { ...policy, [path]: value };
+    setRuntimeSettings({ ...runtimeSettings, ai_estimation_policy: nextPolicy });
+  };
+
+  const savePolicy = () => runtimeSettings && updateRuntime({ ai_estimation_policy: runtimeSettings.ai_estimation_policy });
+
+  const handleCapabilityToggle = async (capability: AICapability) => {
+    setCapabilitySaving(capability.id);
+    try {
+      const response = await capabilityApi.update(capability.id, !capability.enabled);
+      setCapabilities(current => current.map(item => item.id === capability.id ? { ...item, enabled: response.capability.enabled } : item));
+      toast.success(`${capability.name} ${response.capability.enabled ? 'enabled' : 'disabled'}.`);
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to update capability.');
+    } finally {
+      setCapabilitySaving(null);
     }
   };
 
@@ -307,6 +359,91 @@ export default function AgentManagementPage({ embedded = false }: { embedded?: b
               Refresh Models
             </Button>
           </div>
+        </div>
+
+        <div style={{
+          background: '#fff', border: '1px solid #E2E8F0', borderRadius: 12,
+          padding: '20px', marginBottom: 20, boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+            <Bot size={16} color="#7C3AED" />
+            <h2 style={{ fontSize: 14, fontWeight: 600, color: '#0F172A' }}>Runtime capabilities</h2>
+          </div>
+          <p style={{ fontSize: 12, color: '#64748B', marginBottom: 12 }}>
+            Enabled capabilities are available to the AI planner. Changes apply to new runs and are recorded in the run plan.
+          </p>
+          {capabilitiesLoading ? <p style={{ color: '#64748B', fontSize: 13 }}>Loading capabilities…</p> : (
+            <div style={{ display: 'grid', gap: 8 }}>
+              {capabilities.map(capability => (
+                <div key={capability.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '10px 0', borderTop: '1px solid #F1F5F9' }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: '#0F172A' }}>{capability.name}</div>
+                    <div style={{ fontSize: 11, color: '#94A3B8', marginTop: 2 }}>{capability.capability_key} · v{capability.version} · {capability.concurrency_class || 'default'}</div>
+                    <div style={{ fontSize: 12, color: '#64748B', marginTop: 4 }}>{capability.description}</div>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant={capability.enabled ? 'secondary' : 'ghost'}
+                    loading={capabilitySaving === capability.id}
+                    onClick={() => handleCapabilityToggle(capability)}
+                  >
+                    {capability.enabled ? 'Enabled' : 'Disabled'}
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Planner and estimation policy */}
+        <div style={{
+          background: '#fff', border: '1px solid #E2E8F0', borderRadius: 12,
+          padding: '20px', marginBottom: 20, boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 6 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Bot size={16} color="#059669" />
+              <h2 style={{ fontSize: 14, fontWeight: 600, color: '#0F172A' }}>Planner & estimation policy</h2>
+            </div>
+            <Button size="sm" variant="secondary" onClick={savePolicy} loading={runtimeSaving} disabled={!runtimeSettings}>Save policy</Button>
+          </div>
+          <p style={{ fontSize: 12, color: '#64748B', marginBottom: 14 }}>
+            Control runtime rollout and versioned estimation values. Changes apply to new runs; each run keeps its own policy snapshot.
+          </p>
+          {runtimeSettings ? (
+            <>
+              <div style={{ display: 'grid', gap: 10, marginBottom: 16 }}>
+                {[
+                  ['ai_runtime_v2_enabled', 'Enable v2 runtime', 'Use the dynamic planner and DAG executor for new runs.'],
+                  ['ai_runtime_v2_shadow_mode', 'Shadow mode', 'Generate and store v2 plans while legacy execution remains user-visible.'],
+                  ['ai_framework_retrieval_enabled', 'Framework retrieval', 'Allow planner capabilities to retrieve approved framework knowledge.'],
+                ].map(([key, label, help]) => {
+                  const settingKey = key as keyof Pick<AIRuntimeSettings, 'ai_runtime_v2_enabled' | 'ai_runtime_v2_shadow_mode' | 'ai_framework_retrieval_enabled'>;
+                  return (
+                    <label key={key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '10px 0', borderTop: '1px solid #F1F5F9', cursor: 'pointer' }}>
+                      <span><span style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#0F172A' }}>{label}</span><span style={{ display: 'block', fontSize: 11, color: '#64748B', marginTop: 3 }}>{help}</span></span>
+                      <input type="checkbox" checked={runtimeSettings[settingKey]} disabled={runtimeSaving} onChange={event => updateRuntime({ [settingKey]: event.target.checked })} />
+                    </label>
+                  );
+                })}
+              </div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: '#475569', marginBottom: 8 }}>Estimation policy v{runtimeSettings.ai_estimation_policy.version || 1}</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
+                {[
+                  ['defaultRoleRate', 'Default rate', runtimeSettings.ai_estimation_policy.defaultRoleRate],
+                  ['qaOverheadPercent', 'QA overhead %', runtimeSettings.ai_estimation_policy.qaOverheadPercent],
+                  ['pmOverheadPercent', 'PM overhead %', runtimeSettings.ai_estimation_policy.pmOverheadPercent],
+                  ['taskMinHours', 'Min task hours', runtimeSettings.ai_estimation_policy.taskSizing?.minHours],
+                  ['taskMaxHours', 'Max task hours', runtimeSettings.ai_estimation_policy.taskSizing?.maxHours],
+                  ['highRiskMinimumPercent', 'High-risk contingency %', runtimeSettings.ai_estimation_policy.contingency?.highRiskMinimumPercent],
+                ].map(([key, label, value]) => (
+                  <FormField key={key as string} label={label as string}>
+                    <Input type="number" value={value ?? ''} onChange={event => updatePolicyNumber(key as any, Number(event.target.value))} />
+                  </FormField>
+                ))}
+              </div>
+            </>
+          ) : <p style={{ color: '#64748B', fontSize: 13 }}>Loading runtime settings…</p>}
         </div>
 
         <div style={{

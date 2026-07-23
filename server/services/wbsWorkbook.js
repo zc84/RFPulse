@@ -8,6 +8,9 @@ import {
 
 export function buildWbsWorkbook(estimatorOutput) {
   const estimate = parseEstimatorOutput(estimatorOutput);
+  const policy = estimate.estimationPolicy || {};
+  const qaOverheadPercent = Number(policy.qaOverheadPercent ?? DEFAULT_QA_OVERHEAD_PERCENT);
+  const pmOverheadPercent = Number(policy.pmOverheadPercent ?? DEFAULT_PM_OVERHEAD_PERCENT);
   const workbook = XLSX.utils.book_new();
   const tasks = estimate.workBreakdown;
   const roleRateMap = new Map((estimate.teamComposition || []).map(item => [item.team, item.rate]));
@@ -40,10 +43,10 @@ export function buildWbsWorkbook(estimatorOutput) {
     const roleRate = roleRateMap.get(task.assigned);
     sheet[`G${row}`] = { f: cost(row), t: 'n', v: roleRate == null ? null : task.efforts * roleRate, z: '#,##0.00' };
   });
-  sheet[`D${qaRow}`] = { f: `ROUND(SUM(D${first}:D${last})*${DEFAULT_QA_OVERHEAD_PERCENT / 100}*4,0)/4`, t: 'n', v: estimate.qaEffort, z: '#,##0.00' };
+  sheet[`D${qaRow}`] = { f: `ROUND(SUM(D${first}:D${last})*${qaOverheadPercent / 100}*4,0)/4`, t: 'n', v: estimate.qaEffort, z: '#,##0.00' };
   const qaRate = roleRateMap.get('QA');
   sheet[`G${qaRow}`] = { f: cost(qaRow), t: 'n', v: qaRate == null ? null : estimate.qaEffort * qaRate, z: '#,##0.00' };
-  sheet[`D${pmRow}`] = { f: `ROUND(SUM(D${first}:D${qaRow})*${DEFAULT_PM_OVERHEAD_PERCENT / 100}*4,0)/4`, t: 'n', v: estimate.pmEffort, z: '#,##0.00' };
+  sheet[`D${pmRow}`] = { f: `ROUND(SUM(D${first}:D${qaRow})*${pmOverheadPercent / 100}*4,0)/4`, t: 'n', v: estimate.pmEffort, z: '#,##0.00' };
   const pmRate = roleRateMap.get('PM');
   sheet[`G${pmRow}`] = { f: cost(pmRow), t: 'n', v: pmRate == null ? null : estimate.pmEffort * pmRate, z: '#,##0.00' };
   sheet[`D${totalRow}`] = { f: `SUM(D${first}:D${pmRow})`, t: 'n', v: estimate.totalEffort, z: '#,##0.00' };
