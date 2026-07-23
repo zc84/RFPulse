@@ -11,7 +11,7 @@ SET value = jsonb_set(
       {"id":"estimate-delivery","capability":"analysis.estimation","dependsOn":["analyze-legal","design-solution"],"inputs":["solution_design","legal_analysis"],"outputs":["estimation_package"],"acceptanceCriteria":["Effort and pricing align with scoped solution"],"priority":"high"},
       {"id":"integrate-proposal","capability":"proposal.integrate","dependsOn":["analyze-legal","design-solution","estimate-delivery","extract-requirements"],"inputs":["legal_analysis","solution_design","estimation_package","requirement_inventory"],"outputs":["proposal_markdown"],"acceptanceCriteria":["Final proposal integrates specialist outputs and the requirement inventory"],"priority":"critical"}
     ]'::jsonb
-  )::text
+  )::jsonb
 )
 WHERE key = 'ai_planner_fallback_plan'
   AND value IS NOT NULL
