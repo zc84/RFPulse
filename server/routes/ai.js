@@ -7,7 +7,6 @@ import { writeWbsWorkbook } from '../services/wbsWorkbook.js';
 import { buildTimelineDiagramFromMarkdown } from '../services/timelineDiagram.js';
 import {
   coordinatorStep,
-  coordinatorChatArtifactStep,
   buildFinalProposalMarkdown,
   generateArchitectureDiagramImages,
   runAgentPlan,
@@ -530,6 +529,17 @@ export function buildChatDiagramSourceMarkdown({ proposalMarkdown = null, docCon
     '',
     context,
   ].join('\n');
+}
+
+function hasReadableChatDocumentContext(docContext = '') {
+  const context = String(docContext || '').trim();
+  if (!context) return false;
+
+  // buildChatContext includes section headers even when every file failed
+  // extraction. Do not treat those headers as usable evidence for diagrams.
+  return context
+    .split(/\n(?=--- .+ ---\n)/g)
+    .some(section => section.includes('--- ') && !/\[Could not extract:/i.test(section) && section.replace(/--- .+ ---/g, '').trim().length > 80);
 }
 
 async function buildChatContext(dealId, documents) {
@@ -2642,26 +2652,17 @@ router.post('/chat', authenticate, requireRole('Superadmin', 'Editor'), async (r
 
     const diagramRequest = detectDiagramRequest(content);
     if (diagramRequest) {
-      const latestSession = await getLatestSessionForDeal(dealId);
-      const coordinatorChatRouting = await coordinatorChatArtifactStep(
-        content,
-        history.map(message => ({
-          role: message.role === 'agent' ? 'agent' : 'user',
-          content: message.content,
-          agent_slug: message.role === 'agent' ? 'chat-agent' : null,
-        })),
-        [
-          '## Candidate diagram intent',
-          JSON.stringify(diagramRequest),
-          `- hasSession: ${Boolean(latestSession)}`,
-          `- hasSavedCoordinatorContext: ${Boolean(latestSession?.coordinator_context)}`,
-          `- hasExtractedContext: ${Boolean(String(latestSession?.extracted_context || '').trim())}`,
-        ].join('\n'),
-        getAiNotes(data.deal),
-        signal
-      );
+      const hasReadableDocuments = hasReadableChatDocumentContext(docContext);
+      // detectDiagramRequest has already established explicit diagram intent.
+      // Do not spend another model round trip asking a coordinator whether an
+      // explicit diagram request is really a diagram request.
+      const requestedDiagramTypes = [
+        diagramRequest.architecture ? 'architecture' : null,
+        diagramRequest.timeline ? 'timeline' : null,
+      ].filter(Boolean);
+      const shouldGenerateDiagrams = hasReadableDocuments || requestedDiagramTypes.length > 0;
 
-      if (coordinatorChatRouting.action === 'generate_diagrams') {
+      if (shouldGenerateDiagrams) {
         const { proposalMarkdown, sessionId } = await buildProposalMarkdownForChatDiagram({
           dealId,
           deal: data.deal,
@@ -2675,7 +2676,7 @@ router.post('/chat', authenticate, requireRole('Superadmin', 'Editor'), async (r
           dealName: data.deal?.name,
         });
 
-        if (!diagramSourceMarkdown) {
+        if (!diagramSourceMarkdown || !hasReadableDocuments && !proposalMarkdown) {
           const response = [
             'I could not generate diagrams yet because there is no extracted proposal or document context available for this deal.',
             '',
@@ -2691,7 +2692,7 @@ router.post('/chat', authenticate, requireRole('Superadmin', 'Editor'), async (r
           sessionId,
           proposalMarkdown: diagramSourceMarkdown,
           signal,
-          requestedDiagramTypes: coordinatorChatRouting.diagramTypes,
+          requestedDiagramTypes,
           persistArchitectureDocuments: true,
         });
         const architectureDocs = generated.architectureDocs;

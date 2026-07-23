@@ -25,6 +25,10 @@ function formatDate(d: string) {
   return new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' });
 }
 
+function isDiagramRequest(content: string) {
+  return /\b(diagram|diagrams|flowchart|visual|mermaid|gantt|timeline)\b/i.test(content);
+}
+
 function InfoCard({ icon, label, value }: { icon: React.ReactNode; label: string; value: React.ReactNode }) {
   return (
     <div style={{
@@ -627,7 +631,11 @@ export default function DealDetailPage() {
   };
 
   const handleSendAIWorkspaceMessage = async (content: string) => {
-    if (hasAiDocs) {
+    // Diagram requests need the uploaded user RFPs directly. Route them to
+    // chat even before Process has created AI documents; otherwise this panel
+    // sends them into the long full-workflow path, whose coordinator may ask
+    // for source material again.
+    if (hasAiDocs || isDiagramRequest(content)) {
       await handleSendChatMessage(content);
       return;
     }
