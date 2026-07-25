@@ -1,11 +1,9 @@
-import { renderMermaidToPng } from './mermaidRenderer.js';
+import { generateOpenAIImageArtifact } from './aiOrchestrator.js';
 
 const TIMELINE_SECTION_PATTERN = /^\s*#{1,6}\s+.*\b(timeline|implementation plan|delivery plan|roadmap|project schedule|schedule)\b.*$/i;
 const HEADING_PATTERN = /^(#{1,6})\s+(.*)$/;
 const PHASE_LINE_PATTERN = /\bphase\s+([ivx]+|\d+)\b/i;
 const DURATION_PATTERN = /(\d+(?:\.\d+)?)\s*(day|days|week|weeks|month|months)\b/gi;
-const MERMAID_INIT = "%%{init: {'theme':'base','themeVariables':{'primaryColor':'#FFDB00','primaryBorderColor':'#EAB308','primaryTextColor':'#0F172A','lineColor':'#64748B','fontFamily':'Inter, Arial, sans-serif','sectionBkgColor':'#F8FAFC','altSectionBkgColor':'#FFFFFF','gridColor':'#CBD5E1','taskTextColor':'#0F172A','taskBorderColor':'#EAB308','taskBkgColor':'#FFDB00','todayLineColor':'#1D4ED8'}}}%%";
-const TIMELINE_START_DATE = '2026-01-05';
 
 function cleanInline(text = '') {
   return String(text)
@@ -14,14 +12,6 @@ function cleanInline(text = '') {
     .replace(/[`*_>#~]/g, '')
     .replace(/\s+/g, ' ')
     .trim();
-}
-
-function slugify(value = '') {
-  return String(value)
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 40) || 'phase';
 }
 
 function extractDurationMatches(line) {
@@ -97,56 +87,42 @@ export function extractTimelinePhasesFromMarkdown(markdown) {
   return null;
 }
 
-export function buildTimelineMermaidScript({ title = 'Delivery Timeline', phases = [] }) {
-  const normalizedPhases = phases
-    .map((phase, index) => ({
-      id: `${slugify(phase.name)}-${index + 1}`,
-      name: cleanInline(phase.name || 'Phase'),
-      durationLabel: cleanInline(phase.durationLabel || ''),
-      weeks: Math.max(1, Math.ceil(Number(phase.weeks) || 1)),
-    }))
-    .filter(phase => phase.name);
-
-  if (normalizedPhases.length < 2) {
-    throw new Error('At least two timeline phases are required to build a Mermaid timeline.');
-  }
-
-  const lines = [
-    MERMAID_INIT,
-    'gantt',
-    `  title ${cleanInline(title) || 'Delivery Timeline'}`,
-    '  dateFormat YYYY-MM-DD',
-    '  axisFormat %b %d',
-    '  tickInterval 1week',
-    '  excludes weekends',
-    '  section Delivery Plan',
-  ];
-
-  normalizedPhases.forEach((phase, index) => {
-    const taskLabel = cleanInline(`${phase.name} (${phase.durationLabel})`);
-    if (index === 0) {
-      lines.push(`  ${taskLabel} :${phase.id}, ${TIMELINE_START_DATE}, ${phase.weeks}w`);
-    } else {
-      lines.push(`  ${taskLabel} :${phase.id}, after ${normalizedPhases[index - 1].id}, ${phase.weeks}w`);
-    }
+export function buildTimelineDiagramImagePrompt({ title = 'Delivery Timeline', phases = [] }) {
+  const normalizedTitle = cleanInline(title) || 'Delivery Timeline';
+  const phaseLines = phases.map((phase, index) => {
+    const label = cleanInline(phase.name || `Phase ${index + 1}`);
+    const duration = cleanInline(phase.durationLabel || `${phase.weeks || 1} weeks`);
+    return `${index + 1}. ${label} - ${duration}`;
   });
 
-  return lines.join('\n');
+  return [
+    'You are generating a polished project timeline as a single PNG image.',
+    'Use the proposal details below as the source of truth.',
+    'Render a clean, readable delivery timeline with sequential phases and approximate durations.',
+    'Use a landscape layout, clear bars or milestones, concise labels, and a professional presentation style.',
+    'Do not render Mermaid code, Gantt syntax, tables, or calendar strips.',
+    'Do not add unrelated architecture elements, icons, or decorative poster styling.',
+    `Title: ${normalizedTitle}`,
+    'Phases:',
+    ...phaseLines,
+  ].join('\n');
 }
 
-export async function buildTimelineDiagramFromMarkdown(markdown) {
+export async function buildTimelineDiagramFromMarkdown(markdown, signal = null, client = null) {
   const extracted = extractTimelinePhasesFromMarkdown(markdown);
   if (!extracted) return null;
 
-  const mermaid = buildTimelineMermaidScript(extracted);
-  const { png, svg } = await renderMermaidToPng(mermaid);
+  const prompt = buildTimelineDiagramImagePrompt(extracted);
+  const image = await generateOpenAIImageArtifact({
+    client,
+    prompt,
+    title: extracted.title || 'Delivery Timeline',
+    description: 'Delivery timeline rendered with OpenAI Images API from proposal timeline content.',
+    signal,
+  });
 
   return {
-    title: extracted.title || 'Delivery Timeline',
-    description: 'Separate delivery timeline image rendered from a Mermaid script.',
-    format: 'png',
-    mermaid,
-    svg,
-    png,
+    ...image,
+    prompt,
   };
 }

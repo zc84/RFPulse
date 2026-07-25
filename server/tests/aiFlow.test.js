@@ -9,15 +9,15 @@ import {
   isEstimatorAccuracyPolicyError,
   validateEstimatorResult,
 } from '../services/aiSchemas.js';
-import { renderArchitectureDiagram } from '../services/architectureDiagram.js';
-import { renderMermaidBlocksInMarkdown } from '../services/mermaidBlocks.js';
-import { buildTimelineDiagramFromMarkdown, buildTimelineMermaidScript, extractTimelinePhasesFromMarkdown } from '../services/timelineDiagram.js';
+import { renderDiagramBlocksInMarkdown } from '../services/diagramBlocks.js';
+import { buildTimelineDiagramFromMarkdown, buildTimelineDiagramImagePrompt, extractTimelinePhasesFromMarkdown } from '../services/timelineDiagram.js';
 import { writeWbsWorkbook } from '../services/wbsWorkbook.js';
 import { DEFAULT_PROMPT_TEMPLATES, getDefaultAgent } from '../services/aiPrompts.js';
 import {
   buildReportFromOutputs,
   buildSpecialistMessages,
   buildArchitectureDiagramPromptInput,
+  generateArchitectureDiagramImages,
   applyEstimatorOnePassCorrection,
   extractEstimatorPolicyContext,
   requireCoordinatorContext,
@@ -26,6 +26,25 @@ import {
 } from '../services/aiOrchestrator.js';
 import { buildChatDiagramSourceMarkdown, buildDiagramChatResponseMessage, detectDiagramRequest, parseValidationVerdict } from '../routes/ai.js';
 import { splitProposalMarkdown } from '../services/proposalDocument.js';
+
+const SAMPLE_PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO1L5J0AAAAASUVORK5CYII=',
+  'base64'
+);
+
+function fakeImageClient(calls = []) {
+  return {
+    images: {
+      async generate(options) {
+        calls.push(options);
+        return {
+          data: [{ b64_json: SAMPLE_PNG.toString('base64'), revised_prompt: 'revised prompt' }],
+          output_format: 'png',
+        };
+      },
+    },
+  };
+}
 
 function validEstimate() {
   return {
@@ -252,26 +271,26 @@ test('WBS workbook contains grouped columns, formulas, and separate rate card', 
   ]);
 });
 
-test('architecture renderer emits safe, styled SVG with groups', async () => {
-  const svg = await renderArchitectureDiagram({
-    id: 'overview',
-    type: 'overview',
-    title: 'Solution Overview',
-    description: 'High-level components.',
-    direction: 'RIGHT',
-    groups: [{ id: 'cloud', label: 'Cloud Boundary', parentId: null, kind: 'cloud' }],
-    nodes: [
-      { id: 'user', label: 'User', purpose: 'Uses the service', technology: 'Browser', icon: 'user', groupId: null, kind: 'actor' },
-      { id: 'api', label: 'API', purpose: 'Serves requests', technology: 'Node.js', icon: 'api', groupId: 'cloud', kind: 'service' },
-    ],
-    edges: [{ source: 'user', target: 'api', label: 'HTTPS', interaction: 'sync' }],
-  });
-  assert.match(svg, /Solution Overview/);
-  assert.match(svg, /Cloud Boundary/);
-  assert.doesNotMatch(svg, /<script|foreignObject|(?:href|src)=["']https?:/i);
+test('architecture image generation uses OpenAI Images API prompts', async () => {
+  const calls = [];
+  const client = fakeImageClient(calls);
+  const images = await generateArchitectureDiagramImages(`
+# Proposal
+
+## Architecture
+User -> API -> DB
+`, null, client);
+
+  assert.equal(images.length, 1);
+  assert.ok(Buffer.isBuffer(images[0].png));
+  assert.ok(images[0].png.length > 0);
+  assert.match(calls[0].prompt, /solution architecture/i);
+  assert.match(calls[0].prompt, /Architecture Diagram/i);
 });
 
-test('timeline renderer emits Mermaid source and a separate PNG image', async () => {
+test('timeline image generation extracts phases and uses OpenAI Images API', async () => {
+  const calls = [];
+  const client = fakeImageClient(calls);
   const markdown = `# Proposal
 
 ## Implementation Plan
@@ -281,22 +300,21 @@ test('timeline renderer emits Mermaid source and a separate PNG image', async ()
   const extracted = extractTimelinePhasesFromMarkdown(markdown);
   assert.ok(extracted);
   assert.equal(extracted.phases.length, 2);
-  const mermaid = buildTimelineMermaidScript(extracted);
-  assert.match(mermaid, /^%%\{init:/);
-  assert.match(mermaid, /\ngantt\n/);
-  assert.match(mermaid, /Phase I \(2 weeks\)/);
-  assert.match(mermaid, /after phase-i-1, 5w/);
-  const diagram = await buildTimelineDiagramFromMarkdown(markdown);
+  const prompt = buildTimelineDiagramImagePrompt(extracted);
+  assert.match(prompt, /Delivery Timeline/i);
+  assert.match(prompt, /Phase I/);
+  const diagram = await buildTimelineDiagramFromMarkdown(markdown, null, client);
   assert.ok(diagram);
   assert.equal(diagram.format, 'png');
-  assert.equal(diagram.mermaid, mermaid);
   assert.ok(Buffer.isBuffer(diagram.png));
-  assert.ok(diagram.png.length > 1000);
-  assert.match(diagram.svg, /<svg/i);
-  assert.doesNotMatch(diagram.svg, /<script|foreignObject|(?:href|src)=["']https?:/i);
+  assert.ok(diagram.png.length > 0);
+  assert.match(calls[0].prompt, /polished project timeline/i);
+  assert.match(calls[0].prompt, /Phase II/);
 });
 
-test('embedded Mermaid fences are replaced with inline rendered images', async () => {
+test('embedded diagram fences are replaced with inline rendered images', async () => {
+  const calls = [];
+  const client = fakeImageClient(calls);
   const markdown = `# Proposal
 
 \`\`\`mermaid
@@ -307,12 +325,13 @@ flowchart LR
 ## Architecture Overview
 Body.
 `;
-  const rendered = await renderMermaidBlocksInMarkdown(markdown);
-  assert.match(rendered.markdown, /@@RFPULSE-MERMAID@@mermaid-1/);
+  const rendered = await renderDiagramBlocksInMarkdown(markdown, null, client);
+  assert.match(rendered.markdown, /@@RFPULSE-DIAGRAM@@diagram-1/);
   assert.equal(rendered.diagrams.length, 1);
-  assert.equal(rendered.diagrams[0].title, 'WBS Diagram 1');
+  assert.equal(rendered.diagrams[0].title, 'Workflow Diagram 1');
   assert.ok(Buffer.isBuffer(rendered.diagrams[0].png));
-  assert.ok(rendered.diagrams[0].png.length > 1000);
+  assert.ok(rendered.diagrams[0].png.length > 0);
+  assert.match(calls[0].prompt, /diagram specification/i);
 });
 
 test('strict validator prompt is current and coordinator review prompt is removed', () => {

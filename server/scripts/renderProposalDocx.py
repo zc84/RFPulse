@@ -37,7 +37,7 @@ PHASE_LINE_PATTERN = re.compile(r'\bphase\s+([ivx]+|\d+)\b', re.IGNORECASE)
 DURATION_PATTERN = re.compile(r'(\d+(?:\.\d+)?)\s*(day|days|week|weeks|month|months)\b', re.IGNORECASE)
 HR_PATTERN = re.compile(r'^\s*(-{3,}|\*{3,}|_{3,})\s*$')
 GANTT_SENTINEL = '@@RFPULSE-GANTT@@'
-MERMAID_SENTINEL = '@@RFPULSE-MERMAID@@'
+DIAGRAM_SENTINEL = '@@RFPULSE-DIAGRAM@@'
 
 INLINE_TOKEN = re.compile(
   r'(?P<code>`[^`]+`)'
@@ -469,14 +469,14 @@ def add_horizontal_rule(doc):
   set_paragraph_bottom_border(para, BORDER, size=6, space=1)
 
 
-def add_markdown(doc, markdown, inline_mermaid_diagrams=None):
+def add_markdown(doc, markdown, inline_diagram_images=None):
   lines = markdown.splitlines()
   paragraph_buffer = []
   table_style_name = preferred_table_style_name(doc)
   active_num_id = None
-  mermaid_lookup = {
+  diagram_lookup = {
     item.get('placeholder'): item
-    for item in (inline_mermaid_diagrams or [])
+    for item in (inline_diagram_images or [])
     if item.get('placeholder')
   }
 
@@ -510,10 +510,10 @@ def add_markdown(doc, markdown, inline_mermaid_diagrams=None):
       i += 1
       continue
 
-    if stripped.startswith(MERMAID_SENTINEL):
+    if stripped.startswith(DIAGRAM_SENTINEL):
       flush_paragraph()
       active_num_id = None
-      diagram = mermaid_lookup.get(stripped)
+      diagram = diagram_lookup.get(stripped)
       if diagram:
         add_single_diagram(doc, diagram)
       i += 1
@@ -972,7 +972,7 @@ def add_footer_with_page_numbers(doc, title):
       set_run_font(run, size=8.5, color=SLATE)
 
 
-def build_content(doc, title, markdown, diagrams, timeline_diagrams, inline_mermaid_diagrams, include_cover=False, include_toc=False, meta=None):
+def build_content(doc, title, markdown, diagrams, timeline_diagrams, inline_diagram_images, include_cover=False, include_toc=False, meta=None):
   if not timeline_diagrams:
     markdown = inject_timeline_gantt(markdown)
 
@@ -990,24 +990,24 @@ def build_content(doc, title, markdown, diagrams, timeline_diagrams, inline_merm
 
   if diagrams:
     before, remaining = split_markdown_for_diagrams(remaining)
-    add_markdown(doc, before, inline_mermaid_diagrams)
+    add_markdown(doc, before, inline_diagram_images)
     add_diagrams(doc, diagrams)
     remaining = trim_architecture_narrative_heading(remaining)
 
   if timeline_diagrams:
     before, after = split_markdown_for_timeline(remaining)
-    add_markdown(doc, before, inline_mermaid_diagrams)
+    add_markdown(doc, before, inline_diagram_images)
     add_diagrams(doc, timeline_diagrams)
-    add_markdown(doc, after, inline_mermaid_diagrams)
+    add_markdown(doc, after, inline_diagram_images)
   else:
-    add_markdown(doc, remaining, inline_mermaid_diagrams)
+    add_markdown(doc, remaining, inline_diagram_images)
 
 
-def create_content_document(title, markdown, diagrams, timeline_diagrams, inline_mermaid_diagrams, meta=None):
+def create_content_document(title, markdown, diagrams, timeline_diagrams, inline_diagram_images, meta=None):
   doc = Document()
   doc._body.clear_content()
   configure_styles(doc)
-  build_content(doc, title, markdown, diagrams, timeline_diagrams, inline_mermaid_diagrams, include_cover=True, include_toc=True, meta=meta)
+  build_content(doc, title, markdown, diagrams, timeline_diagrams, inline_diagram_images, include_cover=True, include_toc=True, meta=meta)
   add_footer_with_page_numbers(doc, title)
   normalize_table_styles(doc)
   return doc
@@ -1040,7 +1040,7 @@ def apply_template_placeholders(doc, replacements):
           replace_in_paragraph(paragraph)
 
 
-def render_into_template(template_path, title, markdown, diagrams, timeline_diagrams, inline_mermaid_diagrams, meta=None):
+def render_into_template(template_path, title, markdown, diagrams, timeline_diagrams, inline_diagram_images, meta=None):
   doc = Document(template_path)
   # Keep the template's original section layout intact (cover margins/positioning,
   # custom spacings, anchored objects). Content is built directly inside the template
@@ -1063,7 +1063,7 @@ def render_into_template(template_path, title, markdown, diagrams, timeline_diag
   body = doc.element.body
   existing_ids = {id(child) for child in body}
 
-  build_content(doc, title, markdown, diagrams, timeline_diagrams, inline_mermaid_diagrams, include_cover=False, include_toc=False, meta=meta)
+  build_content(doc, title, markdown, diagrams, timeline_diagrams, inline_diagram_images, include_cover=False, include_toc=False, meta=meta)
 
   new_children = [child for child in body if id(child) not in existing_ids]
 
@@ -1100,7 +1100,7 @@ def main():
   template_path = payload.get('templatePath')
   diagrams = payload.get('diagrams') or []
   timeline_diagrams = payload.get('timelineDiagrams') or []
-  inline_mermaid_diagrams = payload.get('inlineMermaidDiagrams') or []
+  inline_diagram_images = payload.get('inlineDiagramImages') or []
   meta = {
     'clientName': payload.get('clientName') or '',
     'dealName': payload.get('dealName') or '',
@@ -1108,9 +1108,9 @@ def main():
   }
 
   if template_path and Path(template_path).exists():
-    doc = render_into_template(template_path, title, markdown, diagrams, timeline_diagrams, inline_mermaid_diagrams, meta=meta)
+    doc = render_into_template(template_path, title, markdown, diagrams, timeline_diagrams, inline_diagram_images, meta=meta)
   else:
-    doc = create_content_document(title, markdown, diagrams, timeline_diagrams, inline_mermaid_diagrams, meta=meta)
+    doc = create_content_document(title, markdown, diagrams, timeline_diagrams, inline_diagram_images, meta=meta)
 
   Path(output_path).parent.mkdir(parents=True, exist_ok=True)
   doc.save(output_path)

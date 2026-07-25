@@ -1,7 +1,5 @@
 import OpenAI from 'openai';
 import { zodResponseFormat } from 'openai/helpers/zod';
-import { readFile } from 'fs/promises';
-import { skillFile as apexGanttSkillFile, referencePath as apexGanttReferencePath } from 'apexgantt-skill';
 import { query } from '../db.js';
 import { DEFAULT_PROMPT_TEMPLATES, getDefaultAgents } from './aiPrompts.js';
 import {
@@ -18,7 +16,6 @@ import { loadEstimationPolicy } from '../ai-runtime/policies/estimationPolicy.js
 
 const DEFAULT_AGENT_SLUGS = ['coordinator', 'legal', 'architect', 'estimator', 'frontend-dev'];
 const REQUIRED_SPECIALIST_SLUGS = ['legal', 'architect', 'estimator'];
-let apexGanttGuidanceCache = null;
 const MARKDOWN_HEADING_PATTERN = /^(#{1,6})\s+(.*)$/;
 const ARCHITECTURE_SECTION_PATTERNS = [
   /^\s*#{1,6}\s+.*\b(proposed architecture|solution architecture|technical solution|proposed solution|solution overview|architecture)\b.*$/i,
@@ -180,6 +177,42 @@ export async function getOpenAIClient() {
   return new OpenAI({ apiKey });
 }
 
+export async function generateOpenAIImageArtifact({
+  client = null,
+  prompt,
+  title,
+  description,
+  signal = null,
+  model = process.env.AI_IMAGE_MODEL || 'gpt-image-2',
+  size = '1536x1024',
+  quality = 'high',
+  background = 'opaque',
+  n = 1,
+}) {
+  throwIfAborted(signal);
+  const imageClient = client || await getOpenAIClient();
+  const response = await imageClient.images.generate({
+    model,
+    prompt,
+    size,
+    quality,
+    output_format: 'png',
+    background,
+    n,
+  }, signal ? { signal } : undefined);
+  const image = response.data?.[0];
+  if (!image?.b64_json) {
+    throw createAiError(`Image generation for "${title || 'diagram'}" returned no PNG output. Please try again.`);
+  }
+  return {
+    title,
+    description: description || '',
+    format: response.output_format || 'png',
+    png: Buffer.from(image.b64_json, 'base64'),
+    revisedPrompt: image.revised_prompt || null,
+  };
+}
+
 export async function validateOpenAIKey() {
   const apiKey = await getOpenAIKey();
   if (!apiKey) return { valid: false, error: 'OpenAI API key not configured' };
@@ -313,29 +346,6 @@ export async function loadPromptTemplates(agentSlug, taskPromptKey = null) {
     throw new Error(`Prompt template "${taskPromptKey}" does not belong to agent ${agentSlug}`);
   }
   return keys.map(key => byKey.get(key));
-}
-
-async function loadApexGanttGuidance() {
-  if (apexGanttGuidanceCache) return apexGanttGuidanceCache;
-  try {
-    const [skill, dataFormat, dependencies] = await Promise.all([
-      readFile(apexGanttSkillFile, 'utf8'),
-      readFile(apexGanttReferencePath('data-format.md'), 'utf8'),
-      readFile(apexGanttReferencePath('dependencies.md'), 'utf8'),
-    ]);
-    apexGanttGuidanceCache = clipText([
-      '# ApexGantt skill (installed project reference)',
-      skill,
-      '# ApexGantt task data reference',
-      dataFormat,
-      '# ApexGantt dependency reference',
-      dependencies,
-    ].join('\n\n'), 9000, true);
-  } catch (err) {
-    console.warn('ApexGantt skill guidance could not be loaded. Continuing without it.', err?.message || err);
-    apexGanttGuidanceCache = '';
-  }
-  return apexGanttGuidanceCache;
 }
 
 function clipText(text, maxChars = Infinity, tail = false) {
@@ -1097,9 +1107,7 @@ function stripArchitectureDiagramPrompt(report) {
   return idx >= 0 ? report.slice(0, idx).trim() : report.trim();
 }
 
-export async function generateArchitectureDiagramImages(report, signal = null) {
-  throwIfAborted(signal);
-  const client = await getOpenAIClient();
+export async function generateArchitectureDiagramImages(report, signal = null, clientOverride = null) {
   const reportBody = clipText(extractArchitectureDiagramSource(report), 12000, true);
   const images = [];
   const variants = [
@@ -1110,28 +1118,15 @@ export async function generateArchitectureDiagramImages(report, signal = null) {
     },
   ];
 
+  const client = clientOverride || await getOpenAIClient();
   for (const variant of variants) {
-    throwIfAborted(signal);
-    const response = await client.images.generate({
-      model: process.env.AI_IMAGE_MODEL || 'gpt-image-2',
+    images.push(await generateOpenAIImageArtifact({
+      client,
       prompt: buildArchitectureDiagramImagePrompt(reportBody, variant.key),
-      size: '1536x1024',
-      quality: 'high',
-      output_format: 'png',
-      background: 'opaque',
-      n: 1,
-    }, signal ? { signal } : undefined);
-    const image = response.data?.[0];
-    if (!image?.b64_json) {
-      throw createAiError(`Image generation for "${variant.title}" returned no PNG output. Please try again.`);
-    }
-    images.push({
       title: variant.title,
       description: variant.description,
-      format: response.output_format || 'png',
-      png: Buffer.from(image.b64_json, 'base64'),
-      revisedPrompt: image.revised_prompt || null,
-    });
+      signal,
+    }));
   }
 
   return images;
@@ -1169,7 +1164,6 @@ export async function buildFinalProposalMarkdown(dealName, coordinatorContext, c
   const safePriorityInstructions = clipText(priorityInstructions, 3000, true);
   const safeOutputsSummary = formatAgentOutputs(agentOutputs, 10000);
   const safeConversation = formatConversation(conversation, 3000);
-  const apexGanttGuidance = await loadApexGanttGuidance();
   const messages = [{
     role: 'user',
     content: [
@@ -1182,7 +1176,6 @@ export async function buildFinalProposalMarkdown(dealName, coordinatorContext, c
       agentOutputs.estimator ? `## Estimator summary\n${clipText(buildEstimatorReportSummary(agentOutputs.estimator), 2000, true)}` : '',
       '## Conversation so far',
       safeConversation || 'No conversation yet.',
-      apexGanttGuidance ? `## Timeline charting reference (ApexGantt skill)\n${apexGanttGuidance}` : '',
     ].filter(Boolean).join('\n\n'),
   }];
 

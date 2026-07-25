@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { query } from '../db.js';
 import { authenticate, requireRole } from '../middleware/auth.js';
 import { buildDealContextBundle, summarizeContextBundle } from '../services/documentExtractor.js';
-import { renderMermaidBlocksInMarkdown } from '../services/mermaidBlocks.js';
+import { renderDiagramBlocksInMarkdown } from '../services/diagramBlocks.js';
 import { writeWbsWorkbook } from '../services/wbsWorkbook.js';
 import { buildTimelineDiagramFromMarkdown } from '../services/timelineDiagram.js';
 import {
@@ -478,7 +478,7 @@ async function executeDiagramGenerationForMarkdown({
   }
 
   if (selectedDiagramTypes.includes('timeline')) {
-    timelineDiagram = await buildTimelineDiagramFromMarkdown(proposalMarkdown);
+    timelineDiagram = await buildTimelineDiagramFromMarkdown(proposalMarkdown, signal);
     throwIfAborted(signal);
     timelineDoc = await saveTimelineDiagram(dealId, sessionId, timelineDiagram);
   }
@@ -1141,9 +1141,9 @@ async function saveFinalProposal(dealId, sessionId, dealName, markdown, diagramD
         : `proposal-${index + 1}-${Date.now()}.docx`;
       const filePath = path.join(dealDir, filename);
       const shouldAttachDiagrams = parts.length === 1 ? true : index === 0 || part.diagrams === true;
-      const mermaidContent = await renderMermaidBlocksInMarkdown(part.markdown);
+      const diagramContent = await renderDiagramBlocksInMarkdown(part.markdown, signal);
       renderProposalDocx({
-        markdown: mermaidContent.markdown,
+        markdown: diagramContent.markdown,
         outputPath: filePath,
         title: part.title || (dealName ? `Proposal: ${dealName}` : 'Proposal'),
         templatePath,
@@ -1160,7 +1160,7 @@ async function saveFinalProposal(dealId, sessionId, dealName, markdown, diagramD
           description: doc.description || '',
           path: path.join(dealDir, doc.filename),
         })) : [],
-        inlineMermaidDiagrams: mermaidContent.diagrams,
+        inlineDiagramImages: diagramContent.diagrams,
       });
 
       const sizeBytes = fs.statSync(filePath).size;
@@ -1345,8 +1345,8 @@ async function finalizeAssessmentArtifacts({ dealId, sessionId, dealName, propos
       await markWorkflowStepCompleted(sessionId, dealId, 'generate-timeline-diagram', timelineDocumentId ? String(timelineDocumentId) : null, {
         generated: Boolean(timelineDoc),
         format: generated.timelineDiagram?.format || null,
-        renderer: timelineDoc ? 'mermaid' : null,
-        mermaid: generated.timelineDiagram?.mermaid || null,
+        renderer: timelineDoc ? 'openai-images' : null,
+        prompt: generated.timelineDiagram?.prompt || null,
         skipped: !timelineDoc,
       });
     }

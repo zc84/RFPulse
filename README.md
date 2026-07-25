@@ -58,27 +58,14 @@ A Superadmin can configure each agent, shared prompt policies, and named task pr
 
 ## Agent Flow
 
-```mermaid
-flowchart TD
-    A[Deal with uploaded documents] --> B[Document Extractor]
-    B --> C[Context Bundle]
-    C --> D[Coordinator Context Step]
-    D --> E[Legal Agent]
-    D --> F[Architect Agent]
-    E --> G[Coordinator Estimation Brief]
-    F --> G
-    D --> G
-    G --> H[Estimator Agent]
-    D --> I[Copywriter Agent]
-    E --> I
-    F --> I
-    H --> I
-    I --> J[Draft Assessment + WBS + PNG Diagrams]
-    J --> K[User clicks Validate]
-    K --> L[Strict Tender Compliance Audit]
-```
+1. Deal documents are extracted into a context bundle.
+2. The Coordinator builds role-specific briefs for Legal and Architect.
+3. The Estimator runs after Legal and Architect complete.
+4. The Copywriter assembles the draft assessment.
+5. Diagram images are generated as PNGs through the OpenAI Images API and embedded into the final report.
+6. Validate runs the strict tender compliance audit.
 
-The Coordinator creates separate role-specific evidence briefs for Legal and Architect. After both complete, it creates an estimation brief for the Estimator. The final assessment report now ends with a professional PNG diagram prompt section that asks for client-ready architecture diagrams using the exact tech stack named in the report, with tech-stack-native icons where relevant. The workflow then generates two PNG diagrams with `gpt-image-2` before saving the final report. The Copywriter then drafts the assessment before Coordinator review.
+The Coordinator creates separate role-specific evidence briefs for Legal and Architect. After both complete, it creates an estimation brief for the Estimator. The final assessment report now ends with a professional PNG diagram prompt section that asks for client-ready architecture diagrams using the exact tech stack named in the report, with tech-stack-native icons where relevant. The workflow then generates PNG diagrams through the OpenAI Images API before saving the final report. The Copywriter then drafts the assessment before Coordinator review.
 
 Execute AI performs no automatic compliance review. Once both the draft assessment and WBS exist, Validate becomes available and runs a strict atomic-requirement audit across client documents and the generated supplier package. It produces a separate Validation Report with PASS/FAIL, six-block scoring, findings, and the complete coverage matrix.
 
