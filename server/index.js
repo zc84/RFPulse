@@ -12,6 +12,7 @@ import usersRoutes from './routes/users.js';
 import agentsRoutes from './routes/agents.js';
 import aiRoutes from './routes/ai.js';
 import platformRoutes from './routes/platform.js';
+import diagramsRoutes from './routes/diagrams.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DIST_DIR = path.join(__dirname, '..', 'dist');
@@ -68,6 +69,7 @@ app.use('/api/users', usersRoutes);
 app.use('/api/ai/agents', agentsRoutes);
 app.use('/api/platform', platformRoutes);
 app.use('/api/deals/:id/ai', aiRoutes);
+app.use('/v1/diagrams', diagramsRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok' });
@@ -83,6 +85,9 @@ if (fs.existsSync(DIST_DIR)) {
 
 app.use((err, req, res, next) => {
   console.error(err);
+  if (err?.type === 'entity.parse.failed') {
+    return res.status(400).json({ error: 'bad_request', detail: 'Malformed JSON request body' });
+  }
   const status = Number(err.status || err.statusCode) || 500;
   const safeStatus = status >= 400 && status < 600 ? status : 500;
   let message = err.expose || safeStatus < 500
