@@ -1,0 +1,2821 @@
+{
+  "tender": "/Users/dondimon/git/RFPulse/test/2_SOWA_OWE_CP_Tender FinalMar9.docx",
+  "endpoint": "http://127.0.0.1:3100",
+  "generatedAt": "2026-07-26T13:44:25.652Z",
+  "artifacts": [
+    {
+      "type": "architecture-overview",
+      "file": "architecture-overview.png",
+      "width": 1536,
+      "height": 1024,
+      "renderer": "openai-architecture-overview-v1",
+      "status": "complete",
+      "bytes": 1216938
+    },
+    {
+      "type": "architecture-details",
+      "file": "architecture-details.png",
+      "width": 1800,
+      "height": 1000,
+      "renderer": "deterministic-architecture-details-v1",
+      "status": "complete",
+      "bytes": 106603
+    },
+    {
+      "type": "cloud-architecture",
+      "file": "cloud-architecture.png",
+      "width": 1800,
+      "height": 1000,
+      "renderer": "deterministic-cloud-architecture-v1",
+      "status": "complete",
+      "bytes": 135703
+    },
+    {
+      "type": "architecture-c4",
+      "file": "architecture-c4.png",
+      "width": 1800,
+      "height": 1000,
+      "renderer": "deterministic-architecture-c4-v1",
+      "status": "complete",
+      "bytes": 124074
+    },
+    {
+      "type": "gantt",
+      "file": "gantt.png",
+      "width": 1800,
+      "height": 720,
+      "renderer": "deterministic-gantt-v1",
+      "status": "complete",
+      "bytes": 105947
+    }
+  ],
+  "plans": [
+    {
+      "plan_token": "yNjvmvzfmAsNIeJCzgbM9afdqWQgcleBdCsaRAGs24g",
+      "version": "1",
+      "prompt_version": "endpoint-visual-planner-v1",
+      "source_digest": "92ce8314cdf5a921f552cc05a228669becbfe654825337a8b6d2a53546b85cd1",
+      "renderable": true,
+      "expires_at": "2026-07-26T13:55:54.854Z",
+      "summary": "Proposal for Offshore Wind Career Pathway Online Platform with goals to explain modular solution, cloud deployment and security, C4 container responsibilities, and delivery milestones for executive and technical audiences.",
+      "artifact_plan": {
+        "version": "1",
+        "proposalProfile": {
+          "proposalType": "public-sector-digital-platform",
+          "audiences": [
+            "executive",
+            "technical"
+          ],
+          "themes": [
+            "modular solution",
+            "cloud deployment",
+            "security boundaries",
+            "C4 container responsibilities",
+            "delivery phases",
+            "milestones",
+            "accessibility",
+            "privacy by design",
+            "secure API integration",
+            "scalability",
+            "aftercare"
+          ],
+          "goals": [
+            "Explain the proposed modular solution",
+            "Show the cloud deployment and security boundaries",
+            "Document the C4 container responsibilities",
+            "Communicate the requested delivery phases and milestones"
+          ],
+          "availableFactClasses": [
+            "architecture",
+            "cloudArchitecture",
+            "c4",
+            "timeline"
+          ],
+          "inferredFields": [
+            "boundaries",
+            "components",
+            "relationships",
+            "resources",
+            "elements",
+            "level",
+            "dependencies",
+            "group",
+            "milestone",
+            "start",
+            "end"
+          ]
+        },
+        "candidates": [
+          {
+            "type": "architecture-overview",
+            "decision": "selected",
+            "purpose": "Provide a conceptual executive view of the modular solution architecture, showing key layers, components, and their relationships to address modularity, accessibility, privacy, and scalability.",
+            "relevance": 0.95,
+            "evidenceCoverage": 0.9,
+            "audienceFit": [
+              "executive",
+              "technical"
+            ],
+            "reasonCodes": [
+              "COVERS_MODULAR_SOLUTION",
+              "COVERS_ACCESSIBILITY_AND_PRIVACY",
+              "COVERS_SCALABILITY",
+              "COVERS_COMPONENT_OVERVIEW",
+              "MATCHES_ENABLED_TYPE",
+              "MAX_VISUALS_LIMIT",
+              "EXPLICITLY_REQUESTED"
+            ]
+          },
+          {
+            "type": "architecture-details",
+            "decision": "omitted",
+            "purpose": "Detailed components and interfaces view not selected due to max visuals limit and overlap with architecture-overview.",
+            "relevance": 0.8,
+            "evidenceCoverage": 0.7,
+            "audienceFit": [
+              "technical"
+            ],
+            "reasonCodes": [
+              "MAX_VISUALS_LIMIT",
+              "REDUNDANT_WITH_OVERVIEW",
+              "NOT_REQUESTED"
+            ]
+          },
+          {
+            "type": "cloud-architecture",
+            "decision": "omitted",
+            "purpose": "Exact cloud resources and boundaries view omitted due to explicit selection policy limiting to architecture-overview only.",
+            "relevance": 0.9,
+            "evidenceCoverage": 0.85,
+            "audienceFit": [
+              "technical"
+            ],
+            "reasonCodes": [
+              "EXPLICIT_SELECTION_POLICY",
+              "MAX_VISUALS_LIMIT",
+              "NOT_REQUESTED"
+            ]
+          },
+          {
+            "type": "architecture-c4",
+            "decision": "omitted",
+            "purpose": "C4 container responsibilities view omitted due to explicit selection policy limiting to architecture-overview only.",
+            "relevance": 0.9,
+            "evidenceCoverage": 0.85,
+            "audienceFit": [
+              "technical"
+            ],
+            "reasonCodes": [
+              "EXPLICIT_SELECTION_POLICY",
+              "MAX_VISUALS_LIMIT",
+              "NOT_REQUESTED"
+            ]
+          },
+          {
+            "type": "gantt",
+            "decision": "omitted",
+            "purpose": "Delivery phases and milestones timeline omitted due to explicit selection policy limiting to architecture-overview only.",
+            "relevance": 0.85,
+            "evidenceCoverage": 0.8,
+            "audienceFit": [
+              "executive",
+              "technical"
+            ],
+            "reasonCodes": [
+              "EXPLICIT_SELECTION_POLICY",
+              "MAX_VISUALS_LIMIT",
+              "NOT_REQUESTED"
+            ]
+          }
+        ],
+        "requestSummary": "Proposal for Offshore Wind Career Pathway Online Platform with goals to explain modular solution, cloud deployment and security, C4 container responsibilities, and delivery milestones for executive and technical audiences.",
+        "artifacts": [
+          {
+            "id": "visual-1-architecture-overview",
+            "title": "Modular Offshore Wind Career Pathway Platform Architecture Overview",
+            "purpose": "Provide an executive conceptual view of the proposed solution architecture.",
+            "audience": "mixed",
+            "required": true,
+            "dependsOn": [],
+            "presentation": {
+              "emphasis": [],
+              "direction": "LR",
+              "density": "balanced"
+            },
+            "type": "architecture-overview",
+            "fidelityClass": "conceptual",
+            "content": {
+              "groups": [
+                {
+                  "label": "Experience layer",
+                  "componentLabels": [
+                    "OWE careers web application"
+                  ]
+                },
+                {
+                  "label": "Application and content layer",
+                  "componentLabels": [
+                    "Editorial CMS",
+                    "Platform API",
+                    "Course and career search"
+                  ]
+                },
+                {
+                  "label": "Data and integration layer",
+                  "componentLabels": [
+                    "Integration adapters",
+                    "Platform database",
+                    "Analytics and monitoring"
+                  ]
+                }
+              ],
+              "relationships": [
+                {
+                  "sourceLabel": "OWE careers web application",
+                  "targetLabel": "Platform API",
+                  "label": "Uses platform services"
+                },
+                {
+                  "sourceLabel": "Editorial CMS",
+                  "targetLabel": "Platform API",
+                  "label": "Publishes content"
+                },
+                {
+                  "sourceLabel": "Platform API",
+                  "targetLabel": "Course and career search",
+                  "label": "Searches courses and roles"
+                },
+                {
+                  "sourceLabel": "Platform API",
+                  "targetLabel": "Platform database",
+                  "label": "Reads and writes platform data"
+                },
+                {
+                  "sourceLabel": "Platform API",
+                  "targetLabel": "Integration adapters",
+                  "label": "Synchronizes external data"
+                },
+                {
+                  "sourceLabel": "OWE careers web application",
+                  "targetLabel": "Analytics and monitoring",
+                  "label": "Sends consented usage events"
+                }
+              ],
+              "audienceEmphasis": [
+                "Accessibility",
+                "Privacy by design",
+                "Secure API integration",
+                "Scalability",
+                "Two months of aftercare"
+              ]
+            }
+          }
+        ],
+        "warnings": []
+      }
+    },
+    {
+      "plan_token": "ScEz2LPlfl2VW1UXPa0WJ3QxRIYUyI56OVAIMdPwSi0",
+      "version": "1",
+      "prompt_version": "endpoint-visual-planner-v1",
+      "source_digest": "92ce8314cdf5a921f552cc05a228669becbfe654825337a8b6d2a53546b85cd1",
+      "renderable": true,
+      "expires_at": "2026-07-26T13:58:08.109Z",
+      "summary": "Proposal for Offshore Wind Career Pathway Online Platform with goals to explain modular solution, cloud deployment and security, C4 container responsibilities, and delivery milestones for executive and technical audiences.",
+      "artifact_plan": {
+        "version": "1",
+        "proposalProfile": {
+          "proposalType": "public-sector-digital-platform",
+          "audiences": [
+            "executive",
+            "technical"
+          ],
+          "themes": [
+            "modular solution",
+            "cloud deployment",
+            "security boundaries",
+            "C4 container responsibilities",
+            "delivery phases",
+            "milestones",
+            "accessibility",
+            "privacy by design",
+            "secure API integration",
+            "scalability",
+            "aftercare"
+          ],
+          "goals": [
+            "Explain the proposed modular solution",
+            "Show the cloud deployment and security boundaries",
+            "Document the C4 container responsibilities",
+            "Communicate the requested delivery phases and milestones"
+          ],
+          "availableFactClasses": [
+            "architecture",
+            "c4",
+            "cloudArchitecture",
+            "timeline"
+          ],
+          "inferredFields": [
+            "boundaries",
+            "components",
+            "relationships",
+            "resources",
+            "elements",
+            "level",
+            "dependencies",
+            "start",
+            "end",
+            "group",
+            "milestone"
+          ]
+        },
+        "candidates": [
+          {
+            "type": "architecture-overview",
+            "decision": "omitted",
+            "relevance": 0,
+            "evidenceCoverage": 0,
+            "audienceFit": [],
+            "reasonCodes": [
+              "NOT_RECOMMENDED_BY_PLANNER",
+              "NOT_REQUESTED"
+            ]
+          },
+          {
+            "type": "architecture-details",
+            "decision": "selected",
+            "purpose": "Explain the modular solution components, boundaries, and relationships",
+            "relevance": 0.95,
+            "evidenceCoverage": 0.9,
+            "audienceFit": [
+              "executive",
+              "technical"
+            ],
+            "reasonCodes": [
+              "S1",
+              "G1",
+              "A1",
+              "EXPLICITLY_REQUESTED"
+            ]
+          },
+          {
+            "type": "cloud-architecture",
+            "decision": "selected",
+            "purpose": "Show the cloud deployment, security boundaries, resources, and connections",
+            "relevance": 0.95,
+            "evidenceCoverage": 0.9,
+            "audienceFit": [
+              "executive",
+              "technical"
+            ],
+            "reasonCodes": [
+              "S2",
+              "G2",
+              "A2",
+              "EXPLICITLY_REQUESTED"
+            ]
+          },
+          {
+            "type": "architecture-c4",
+            "decision": "omitted",
+            "purpose": "Document C4 container responsibilities",
+            "relevance": 0.9,
+            "evidenceCoverage": 0.8,
+            "audienceFit": [
+              "technical"
+            ],
+            "reasonCodes": [
+              "P1",
+              "R1",
+              "NOT_REQUESTED"
+            ]
+          },
+          {
+            "type": "gantt",
+            "decision": "omitted",
+            "purpose": "Communicate delivery phases and milestones",
+            "relevance": 0.85,
+            "evidenceCoverage": 0.7,
+            "audienceFit": [
+              "executive",
+              "technical"
+            ],
+            "reasonCodes": [
+              "P2",
+              "R2",
+              "NOT_REQUESTED"
+            ]
+          }
+        ],
+        "requestSummary": "Proposal for Offshore Wind Career Pathway Online Platform with goals to explain modular solution, cloud deployment and security, C4 container responsibilities, and delivery milestones for executive and technical audiences.",
+        "artifacts": [
+          {
+            "id": "visual-1-architecture-details",
+            "title": "Explain the modular solution components, boundaries, and relationships",
+            "purpose": "Explain the modular solution components, boundaries, and relationships",
+            "audience": "executive",
+            "required": true,
+            "dependsOn": [],
+            "presentation": {
+              "emphasis": [],
+              "direction": "LR",
+              "density": "balanced"
+            },
+            "type": "architecture-details",
+            "fidelityClass": "structural_exact",
+            "content": {
+              "components": [
+                {
+                  "id": "web",
+                  "label": "OWE careers web application",
+                  "technology": "React / Next.js",
+                  "boundaryId": "experience",
+                  "evidence": [
+                    {
+                      "factId": "fact_9b77fe422d6c5af8ed72e44c",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/architecture/components/0/boundaryId",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "55d299e1dcb6afa9fb98e21e61345bbd7794d1888143b607d824bec41241a0d4"
+                    },
+                    {
+                      "factId": "fact_ce63afcb15c5ba344b87e885",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/architecture/components/0/id",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "bde1489624c3f4f8041d716bfb56754a5bbf2c99054424bc25eddc8a9139ad1a"
+                    },
+                    {
+                      "factId": "fact_55d6e4e9bc4c8c9744d902db",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/architecture/components/0/label",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "754af2d5a0dc00fdff95c6963f49df39183a3d4237f6d564170b838ebf362aab"
+                    },
+                    {
+                      "factId": "fact_18bf8349d844f682b071daa8",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/architecture/components/0/technology",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "22efd5c4dd224429b3a3d878c3b066afc9fab5e2956b6994460897fc3ce05342"
+                    }
+                  ]
+                },
+                {
+                  "id": "cms",
+                  "label": "Editorial CMS",
+                  "technology": "Headless CMS",
+                  "boundaryId": "application",
+                  "evidence": [
+                    {
+                      "factId": "fact_f84334f4a4353feb0539e620",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/architecture/components/1/boundaryId",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "07bfaea5744adaf1fcbe59bbd917ab2c4cdbcba37f12613cf43ed69b2bff6487"
+                    },
+                    {
+                      "factId": "fact_179d7b9715ef7ef6127eaf99",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/architecture/components/1/id",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "c2b3e8fc3584c175a52e289d0a83b257eedd1b72469a1f4c739deaed3bade62a"
+                    },
+                    {
+                      "factId": "fact_4f981ea3bdaaa771be9c3237",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/architecture/components/1/label",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "c8c18923b8234de456651e1adb712c878c934420222fc7d658b9ec0448a79c0b"
+                    },
+                    {
+                      "factId": "fact_22c0b23339288fba8397c91a",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/architecture/components/1/technology",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "5ccd780f487d1430f9ced2fc848999838c11d5845ae4b781903319994ba0a96e"
+                    }
+                  ]
+                },
+                {
+                  "id": "api",
+                  "label": "Platform API",
+                  "technology": "Node.js",
+                  "boundaryId": "application",
+                  "evidence": [
+                    {
+                      "factId": "fact_2902a69900463e56ca74a869",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/architecture/components/2/boundaryId",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "07bfaea5744adaf1fcbe59bbd917ab2c4cdbcba37f12613cf43ed69b2bff6487"
+                    },
+                    {
+                      "factId": "fact_cccc3e6108f3b88701bfa9a4",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/architecture/components/2/id",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "63e3a42fcd0c2bc3820823b61f131b485a5d862055faad68bd11e4d7ee5ad107"
+                    },
+                    {
+                      "factId": "fact_ef733e5fa98bef660f96eef4",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/architecture/components/2/label",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "fa79c15b9fbce73af3b751d76ed686213dabaa72fd85d26b5c0c6614ccb289cf"
+                    },
+                    {
+                      "factId": "fact_229c911d3b29af41a368afe5",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/architecture/components/2/technology",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "6759411a99c005601071034c9d1b38a0eef0a08dcee943f9093b1f50f7e7b6a4"
+                    }
+                  ]
+                },
+                {
+                  "id": "search",
+                  "label": "Course and career search",
+                  "technology": "OpenSearch",
+                  "boundaryId": "application",
+                  "evidence": [
+                    {
+                      "factId": "fact_53608cd51958345cf0fab08f",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/architecture/components/3/boundaryId",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "07bfaea5744adaf1fcbe59bbd917ab2c4cdbcba37f12613cf43ed69b2bff6487"
+                    },
+                    {
+                      "factId": "fact_1ee3d311c8ef933c234a3412",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/architecture/components/3/id",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "6ad21f9d2ea182f9fe66f7791944c3bfa4eb4281c1609ca95e82a89c65e6a413"
+                    },
+                    {
+                      "factId": "fact_38c8942af8750a32c22a5fef",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/architecture/components/3/label",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "3a60b13eeec236923d1aa55e2feba54eb483fddffd2891d987a0a8b468e0e094"
+                    },
+                    {
+                      "factId": "fact_23a1e912b782f5e1d13c1f4f",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/architecture/components/3/technology",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "6429b09e81e9deb3702cef6d4ef90b238dc225901f6031277b6954f277724bb5"
+                    }
+                  ]
+                },
+                {
+                  "id": "integration",
+                  "label": "Integration adapters",
+                  "technology": "REST APIs",
+                  "boundaryId": "data-integration",
+                  "evidence": [
+                    {
+                      "factId": "fact_389506e2ed8354ddf852cd3a",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/architecture/components/4/boundaryId",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "20b91c46b93c417f871808d8ead843295c9ad79db78cc3e25afb3b5111520cb8"
+                    },
+                    {
+                      "factId": "fact_62bacfd20008440a9d8208cd",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/architecture/components/4/id",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "f2860eb54ca77635af70dd0361ee5450c2a482fc6341d958450d8d7f9054d0de"
+                    },
+                    {
+                      "factId": "fact_52edd69a5fbb514051bbd9c2",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/architecture/components/4/label",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "d0d267f62da1e0a5cd42dd983d451fa57b8ebefd930027b3cdeb5877c763e06e"
+                    },
+                    {
+                      "factId": "fact_83ee8d5c63fa3a918ab788e5",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/architecture/components/4/technology",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "900f35c95c6b5b17cb845ba7ddf1a3c4cfebe66cbaba586ab2770947602debdd"
+                    }
+                  ]
+                },
+                {
+                  "id": "database",
+                  "label": "Platform database",
+                  "technology": "PostgreSQL",
+                  "boundaryId": "data-integration",
+                  "evidence": [
+                    {
+                      "factId": "fact_8cf26134b678210ef19bc693",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/architecture/components/5/boundaryId",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "20b91c46b93c417f871808d8ead843295c9ad79db78cc3e25afb3b5111520cb8"
+                    },
+                    {
+                      "factId": "fact_34d301630135cde31be1688e",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/architecture/components/5/id",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "21c67c24326dd4f52ca8ab4ee2e5f676c5a136e76ed8b34f3d8bfb65f651c3cf"
+                    },
+                    {
+                      "factId": "fact_d7e1b10fb603c30fdc347487",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/architecture/components/5/label",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "a1f06e8e254c7e3076667c9a5c446ac994f07e790d37d5200eefa93f13c3289e"
+                    },
+                    {
+                      "factId": "fact_0d5b1fca10c8863038afa3f0",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/architecture/components/5/technology",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "c24b839d02d3fdb82fde5c3b58c5cf9dda6c84bd368a49128f44547d45340105"
+                    }
+                  ]
+                },
+                {
+                  "id": "analytics",
+                  "label": "Analytics and monitoring",
+                  "technology": "GA4 / Cloud monitoring",
+                  "boundaryId": "data-integration",
+                  "evidence": [
+                    {
+                      "factId": "fact_7df5696e505017822d1c39b6",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/architecture/components/6/boundaryId",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "20b91c46b93c417f871808d8ead843295c9ad79db78cc3e25afb3b5111520cb8"
+                    },
+                    {
+                      "factId": "fact_297413c832c3b056ed57af3e",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/architecture/components/6/id",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "5936291ebb72f2d945a92ae11332d9b67104c408ae03be738aacbdce69e41a1a"
+                    },
+                    {
+                      "factId": "fact_81816e79a8124633cd2a59c9",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/architecture/components/6/label",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "82467de55191c47b4276552aa8718a40f49da225746972afe4ebff2c78496435"
+                    },
+                    {
+                      "factId": "fact_52278806606d9659f0c402f1",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/architecture/components/6/technology",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "113a5bef88d2ed4f766c5eb57bde7dad0666f6563394aabf6ec52b2d7e110e39"
+                    }
+                  ]
+                }
+              ],
+              "relationships": [
+                {
+                  "from": "web",
+                  "to": "api",
+                  "label": "Uses platform services",
+                  "protocol": "HTTPS/JSON",
+                  "evidence": [
+                    {
+                      "factId": "fact_240d40477c912778ec9d34cf",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/architecture/relationships/0/from",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "bde1489624c3f4f8041d716bfb56754a5bbf2c99054424bc25eddc8a9139ad1a"
+                    },
+                    {
+                      "factId": "fact_20af79ed24f11509f4693ee4",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/architecture/relationships/0/label",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "98e612d9abf502949bde2ffbebeb9fa1fde95790c64919dc87237582300caaae"
+                    },
+                    {
+                      "factId": "fact_3b9f1fbc7323a47e5fea9d13",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/architecture/relationships/0/protocol",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "633136a5c5e7d1891ad262d758409389824445eb65c7703546d3c8e0272d8f12"
+                    },
+                    {
+                      "factId": "fact_c6ae5e0347d2e47611eac1cd",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/architecture/relationships/0/to",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "63e3a42fcd0c2bc3820823b61f131b485a5d862055faad68bd11e4d7ee5ad107"
+                    }
+                  ]
+                },
+                {
+                  "from": "cms",
+                  "to": "api",
+                  "label": "Publishes content",
+                  "protocol": "HTTPS/JSON",
+                  "evidence": [
+                    {
+                      "factId": "fact_3c22d4bcbec399da1ad03ac5",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/architecture/relationships/1/from",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "c2b3e8fc3584c175a52e289d0a83b257eedd1b72469a1f4c739deaed3bade62a"
+                    },
+                    {
+                      "factId": "fact_07d0eecb4c8b527a005c9c82",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/architecture/relationships/1/label",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "d27eeeb1e614e69632731bce2e1c14310b96f378f485858dcc3422abb7069bef"
+                    },
+                    {
+                      "factId": "fact_000f1b53092d2c687478cdaa",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/architecture/relationships/1/protocol",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "633136a5c5e7d1891ad262d758409389824445eb65c7703546d3c8e0272d8f12"
+                    },
+                    {
+                      "factId": "fact_34952f4864bf067743a2813b",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/architecture/relationships/1/to",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "63e3a42fcd0c2bc3820823b61f131b485a5d862055faad68bd11e4d7ee5ad107"
+                    }
+                  ]
+                },
+                {
+                  "from": "api",
+                  "to": "search",
+                  "label": "Searches courses and roles",
+                  "protocol": "HTTPS",
+                  "evidence": [
+                    {
+                      "factId": "fact_1e040f4a2293b485b15d7d3b",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/architecture/relationships/2/from",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "63e3a42fcd0c2bc3820823b61f131b485a5d862055faad68bd11e4d7ee5ad107"
+                    },
+                    {
+                      "factId": "fact_fba38244b390550119ad8cb1",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/architecture/relationships/2/label",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "8d60ed300bc3b33b63be2abbd47c9a1756a2afa9c76315940dcf122dc3372c73"
+                    },
+                    {
+                      "factId": "fact_76a86270cf77af995a03edec",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/architecture/relationships/2/protocol",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "1c281f15ce337955b9b0fda72e665739887caa6287d9da3c0d9e4332cf4a5f8a"
+                    },
+                    {
+                      "factId": "fact_d420d649cc93f74d8ade8162",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/architecture/relationships/2/to",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "6ad21f9d2ea182f9fe66f7791944c3bfa4eb4281c1609ca95e82a89c65e6a413"
+                    }
+                  ]
+                },
+                {
+                  "from": "api",
+                  "to": "database",
+                  "label": "Reads and writes platform data",
+                  "protocol": "SQL/TLS",
+                  "evidence": [
+                    {
+                      "factId": "fact_f0bd680a920d82c4a68eda21",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/architecture/relationships/3/from",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "63e3a42fcd0c2bc3820823b61f131b485a5d862055faad68bd11e4d7ee5ad107"
+                    },
+                    {
+                      "factId": "fact_253d4a6ce83e52a2210948d4",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/architecture/relationships/3/label",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "66ef06e4175890c7aa13fcdd4ec2a515bc35fa6b985e405f1788abf214b2bc1e"
+                    },
+                    {
+                      "factId": "fact_6524688d0bd5f4e5cdc96f8d",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/architecture/relationships/3/protocol",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "f306696de8ef3cc97ba949586175b1ac93ff2a091e41dffaeebd2c9a7aed4c52"
+                    },
+                    {
+                      "factId": "fact_4939b3252624c5a21e385bd5",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/architecture/relationships/3/to",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "21c67c24326dd4f52ca8ab4ee2e5f676c5a136e76ed8b34f3d8bfb65f651c3cf"
+                    }
+                  ]
+                },
+                {
+                  "from": "api",
+                  "to": "integration",
+                  "label": "Synchronizes external data",
+                  "protocol": "REST/OAuth2",
+                  "evidence": [
+                    {
+                      "factId": "fact_ca5c20c3e62f98e114188d17",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/architecture/relationships/4/from",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "63e3a42fcd0c2bc3820823b61f131b485a5d862055faad68bd11e4d7ee5ad107"
+                    },
+                    {
+                      "factId": "fact_9a4c73fff4eb3ef5b69a02a2",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/architecture/relationships/4/label",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "40a3a3931395289795ff73c48ca4872ff391fffbc8e704806b7581af0784d871"
+                    },
+                    {
+                      "factId": "fact_62b95aa35cb76d4759f448c1",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/architecture/relationships/4/protocol",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "5fd372cd9590eb856a382dc53ccf06bf7255ba766f1b5be80cd5f95074b42bb5"
+                    },
+                    {
+                      "factId": "fact_55e75592e70314f2640692b7",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/architecture/relationships/4/to",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "f2860eb54ca77635af70dd0361ee5450c2a482fc6341d958450d8d7f9054d0de"
+                    }
+                  ]
+                },
+                {
+                  "from": "web",
+                  "to": "analytics",
+                  "label": "Sends consented usage events",
+                  "protocol": "HTTPS",
+                  "evidence": [
+                    {
+                      "factId": "fact_982b87580f1af73a84445c9e",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/architecture/relationships/5/from",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "bde1489624c3f4f8041d716bfb56754a5bbf2c99054424bc25eddc8a9139ad1a"
+                    },
+                    {
+                      "factId": "fact_c2cca4c6127de379d2ee7814",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/architecture/relationships/5/label",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "4ebbd7c2ee44a3efdfec6b2cf973cc3df093f78e844f5bc5bde6c114f1676e20"
+                    },
+                    {
+                      "factId": "fact_50ff94f5f9a3d05ca8c2e627",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/architecture/relationships/5/protocol",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "1c281f15ce337955b9b0fda72e665739887caa6287d9da3c0d9e4332cf4a5f8a"
+                    },
+                    {
+                      "factId": "fact_de1339ee2e46a26187c5dde8",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/architecture/relationships/5/to",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "5936291ebb72f2d945a92ae11332d9b67104c408ae03be738aacbdce69e41a1a"
+                    }
+                  ]
+                }
+              ],
+              "boundaries": [
+                {
+                  "id": "experience",
+                  "label": "Experience layer",
+                  "evidence": [
+                    {
+                      "factId": "fact_aafb1e63d7e5986212cae3e1",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/architecture/boundaries/0/id",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "55d299e1dcb6afa9fb98e21e61345bbd7794d1888143b607d824bec41241a0d4"
+                    },
+                    {
+                      "factId": "fact_4bfcefd66de5dd483d72a6e8",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/architecture/boundaries/0/label",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "1b1b222bd35a29ace160fa3048d4de83dd8bc151b7c1366244f9117f6fff7489"
+                    }
+                  ]
+                },
+                {
+                  "id": "application",
+                  "label": "Application and content layer",
+                  "evidence": [
+                    {
+                      "factId": "fact_0814b21ff5feeb70adc843b3",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/architecture/boundaries/1/id",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "07bfaea5744adaf1fcbe59bbd917ab2c4cdbcba37f12613cf43ed69b2bff6487"
+                    },
+                    {
+                      "factId": "fact_a1cef1f77bc2cbf1aa787b3f",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/architecture/boundaries/1/label",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "9464ae9a09ce1b114fec1c04b340408f8044aa4303a8dfbd36280798b4f5f8a4"
+                    }
+                  ]
+                },
+                {
+                  "id": "data-integration",
+                  "label": "Data and integration layer",
+                  "evidence": [
+                    {
+                      "factId": "fact_ad1364481f33370ba25bd6be",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/architecture/boundaries/2/id",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "20b91c46b93c417f871808d8ead843295c9ad79db78cc3e25afb3b5111520cb8"
+                    },
+                    {
+                      "factId": "fact_b1122d1eb254f48dffac285c",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/architecture/boundaries/2/label",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "b9324bb8a76f14fa95094d48f6129d354db02dee6c70a7f667db6ca2d624c1b7"
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "id": "visual-2-cloud-architecture",
+            "title": "Show the cloud deployment, security boundaries, resources, and connections",
+            "purpose": "Show the cloud deployment, security boundaries, resources, and connections",
+            "audience": "executive",
+            "required": true,
+            "dependsOn": [],
+            "presentation": {
+              "emphasis": [],
+              "direction": "LR",
+              "density": "balanced"
+            },
+            "type": "cloud-architecture",
+            "fidelityClass": "structural_exact",
+            "content": {
+              "provider": "aws",
+              "resources": [
+                {
+                  "id": "cloudfront",
+                  "label": "Content delivery",
+                  "service": "Amazon CloudFront",
+                  "boundaryId": "edge",
+                  "evidence": [
+                    {
+                      "factId": "fact_afd952932c74213c3c337983",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/cloudArchitecture/resources/0/boundaryId",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "c4a335446487eb2e5a6ab2023a178426caba7edb10fb7b3af644787a38668b31"
+                    },
+                    {
+                      "factId": "fact_6abafec27b9489fabe95a67a",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/cloudArchitecture/resources/0/id",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "1d8a77bed98665c31d6fc38f02ef689328b8b07d6c698d1b44daadba78065c70"
+                    },
+                    {
+                      "factId": "fact_1933449381ea6339bb903229",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/cloudArchitecture/resources/0/label",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "b60aea1cc0745f8c0f0936f402a4081dd2d616aea2935396aa9a6ce62828155d"
+                    },
+                    {
+                      "factId": "fact_26df4a75eb3d972410caabee",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/cloudArchitecture/resources/0/service",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "f855ee538557f4fbc1271a49318dfee7113c22fd71bba43991fb6376409d4b0a"
+                    }
+                  ]
+                },
+                {
+                  "id": "waf",
+                  "label": "Web application firewall",
+                  "service": "AWS WAF",
+                  "boundaryId": "edge",
+                  "evidence": [
+                    {
+                      "factId": "fact_023360acdfd7985272ba35d7",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/cloudArchitecture/resources/1/boundaryId",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "c4a335446487eb2e5a6ab2023a178426caba7edb10fb7b3af644787a38668b31"
+                    },
+                    {
+                      "factId": "fact_d997136f2ead5ab986c3d6a2",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/cloudArchitecture/resources/1/id",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "72952b0d2ea1d336bd866688cec74511196c5e1ea2c7143965a1c8caa17896b8"
+                    },
+                    {
+                      "factId": "fact_60a3393c7e10c44c28fa26ec",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/cloudArchitecture/resources/1/label",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "4fa5718ef870bb3275a967b4bdb61468a0fb1591c1a5bd83110db169293dc47f"
+                    },
+                    {
+                      "factId": "fact_abbf00fd7ec0f54df5912efd",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/cloudArchitecture/resources/1/service",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "bb43d4f968af7b62ce70a44ac3c4757b33cf6efdc14c4d615d6e40de08cbd793"
+                    }
+                  ]
+                },
+                {
+                  "id": "alb",
+                  "label": "Application load balancer",
+                  "service": "Elastic Load Balancing",
+                  "boundaryId": "public",
+                  "evidence": [
+                    {
+                      "factId": "fact_3ee691e6abb128968be13bed",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/cloudArchitecture/resources/2/boundaryId",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "b78532572a08261cbc0c918d293a0d4fb83b1a83e9dacef857e52efbd4b5c78b"
+                    },
+                    {
+                      "factId": "fact_0c21027f4a6c5b385ac32ef1",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/cloudArchitecture/resources/2/id",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "d3fb23bcc392ad1a9a2988f9e7d99b684ab2a72b7fda6531f6cb3a9bc03576a2"
+                    },
+                    {
+                      "factId": "fact_5afd99a0b5b68003c72366fb",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/cloudArchitecture/resources/2/label",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "e52b6864696d13ba84d8ef41e4cd15d6cc12845a8abc64658640312b60a767d6"
+                    },
+                    {
+                      "factId": "fact_0e955134eedc67f214b44d57",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/cloudArchitecture/resources/2/service",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "f80c49f98e73c92f69222eaaf7f644cfb73184c6ca89d09e11d53f3fa3ad16e3"
+                    }
+                  ]
+                },
+                {
+                  "id": "ecs-web",
+                  "label": "Web and API services",
+                  "service": "Amazon ECS Fargate",
+                  "boundaryId": "private",
+                  "evidence": [
+                    {
+                      "factId": "fact_bec211a4dbb8a1876d79b2c4",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/cloudArchitecture/resources/3/boundaryId",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "24ed65044b6346a4e6fa04ef1f480bc8ff128f36eeafa6ab5d1ab3804997d28f"
+                    },
+                    {
+                      "factId": "fact_e1ad9d8488a32856c71cc23a",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/cloudArchitecture/resources/3/id",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "7d938be4c5e6914c9ab9bc781e3b9946cb03e7ae08ef9b7b389304ecdcba6850"
+                    },
+                    {
+                      "factId": "fact_79a52cf24e6f01b281c99e36",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/cloudArchitecture/resources/3/label",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "debe923ee93528c5141821341db04576089873116d30e87b26e2f3d3e4e7d771"
+                    },
+                    {
+                      "factId": "fact_2722fafc03137d1552a7d12e",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/cloudArchitecture/resources/3/service",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "6283bed7ae8bfaec0bbb869ab20f9326e47b2825d961bf1f8019019ca11e962f"
+                    }
+                  ]
+                },
+                {
+                  "id": "ecs-worker",
+                  "label": "Integration workers",
+                  "service": "Amazon ECS Fargate",
+                  "boundaryId": "private",
+                  "evidence": [
+                    {
+                      "factId": "fact_f8aaa99c6aba6801a505e554",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/cloudArchitecture/resources/4/boundaryId",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "24ed65044b6346a4e6fa04ef1f480bc8ff128f36eeafa6ab5d1ab3804997d28f"
+                    },
+                    {
+                      "factId": "fact_e891a5c1838550896acd5b72",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/cloudArchitecture/resources/4/id",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "606ad3ca72e4a90c551690c2bc6fe3ceca8c90e6ac535639542a41f30b738f3c"
+                    },
+                    {
+                      "factId": "fact_d94703fdffcd5d83c3140a38",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/cloudArchitecture/resources/4/label",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "a6bb8cdc5f0bdb6973607295300c39f1d5191fc226340a06fd60baa2c70de8ac"
+                    },
+                    {
+                      "factId": "fact_869fefc9f7f4fb667001d9e2",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/cloudArchitecture/resources/4/service",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "6283bed7ae8bfaec0bbb869ab20f9326e47b2825d961bf1f8019019ca11e962f"
+                    }
+                  ]
+                },
+                {
+                  "id": "rds",
+                  "label": "Platform database",
+                  "service": "Amazon RDS for PostgreSQL",
+                  "boundaryId": "data",
+                  "evidence": [
+                    {
+                      "factId": "fact_0aef2bce451d9d46d179f3da",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/cloudArchitecture/resources/5/boundaryId",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "519b3ed503c6a825347f28dfd269c0a422e3b923858410e3abbab2d2a99837f2"
+                    },
+                    {
+                      "factId": "fact_9bf4ef411128d1b0944eb8e3",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/cloudArchitecture/resources/5/id",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "fee232ab6267a3d956dce1ae26a0981f66b7a3b81fe0c348bf6a2586d5058daa"
+                    },
+                    {
+                      "factId": "fact_fd33d83b9ffb5a6216dcbc16",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/cloudArchitecture/resources/5/label",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "a1f06e8e254c7e3076667c9a5c446ac994f07e790d37d5200eefa93f13c3289e"
+                    },
+                    {
+                      "factId": "fact_ea92863c6605f7b12f375504",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/cloudArchitecture/resources/5/service",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "99c49e419246e89ca5e7308b2ae091de76a1eb071b5fc2d5131fefe8790efe35"
+                    }
+                  ]
+                },
+                {
+                  "id": "opensearch",
+                  "label": "Course and career search",
+                  "service": "Amazon OpenSearch Service",
+                  "boundaryId": "data",
+                  "evidence": [
+                    {
+                      "factId": "fact_436090d73a1677ac8e842089",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/cloudArchitecture/resources/6/boundaryId",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "519b3ed503c6a825347f28dfd269c0a422e3b923858410e3abbab2d2a99837f2"
+                    },
+                    {
+                      "factId": "fact_046229af2901342e890a651a",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/cloudArchitecture/resources/6/id",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "eb07ccc2b9790fe6b3a20630e5b6eb6d67d005f7487e6f325bd57d30f1c6b7cc"
+                    },
+                    {
+                      "factId": "fact_a75628f3aadd04ba98eb2a96",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/cloudArchitecture/resources/6/label",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "3a60b13eeec236923d1aa55e2feba54eb483fddffd2891d987a0a8b468e0e094"
+                    },
+                    {
+                      "factId": "fact_2b8904fef3cf502b7fd51291",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/cloudArchitecture/resources/6/service",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "9d49816f8d03ba8a9fcf0310819209f74cdc09042e71c43ab14a333e0a398efb"
+                    }
+                  ]
+                },
+                {
+                  "id": "s3",
+                  "label": "Media and document storage",
+                  "service": "Amazon S3",
+                  "boundaryId": "data",
+                  "evidence": [
+                    {
+                      "factId": "fact_d75bfe396507adf1b4147027",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/cloudArchitecture/resources/7/boundaryId",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "519b3ed503c6a825347f28dfd269c0a422e3b923858410e3abbab2d2a99837f2"
+                    },
+                    {
+                      "factId": "fact_13c113083fb3c4036137e7fd",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/cloudArchitecture/resources/7/id",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "659412f9d32b1c0157fbaa6dd6d11c33aad2dc037e34c4dc00b0ef606a5981cd"
+                    },
+                    {
+                      "factId": "fact_17816d116905fb6def729f71",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/cloudArchitecture/resources/7/label",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "d5b7991b5f33107a610f7d23b7e818bc696687ee55e0e558dfce41036969a41a"
+                    },
+                    {
+                      "factId": "fact_e7f8a27be69db048eecfb412",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/cloudArchitecture/resources/7/service",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "50752b791a95d87646213605f9a960e4f0fdb00d0999fcd1ef05d04ddd6b023f"
+                    }
+                  ]
+                }
+              ],
+              "boundaries": [
+                {
+                  "id": "edge",
+                  "label": "AWS edge and protection",
+                  "kind": "edge",
+                  "evidence": [
+                    {
+                      "factId": "fact_89fe086789a760ff144876a4",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/cloudArchitecture/boundaries/0/id",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "c4a335446487eb2e5a6ab2023a178426caba7edb10fb7b3af644787a38668b31"
+                    },
+                    {
+                      "factId": "fact_61bf320547a9e1b9933e29c6",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/cloudArchitecture/boundaries/0/kind",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "c4a335446487eb2e5a6ab2023a178426caba7edb10fb7b3af644787a38668b31"
+                    },
+                    {
+                      "factId": "fact_a1e30ff5a99e963cebb12fae",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/cloudArchitecture/boundaries/0/label",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "e4681c12f4a70ece5bc6db583e592fef853a1e2e7d43afa05a90825d90353fb4"
+                    }
+                  ]
+                },
+                {
+                  "id": "public",
+                  "label": "Public subnets",
+                  "kind": "network",
+                  "evidence": [
+                    {
+                      "factId": "fact_835d9f0e44877b7776cbf37a",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/cloudArchitecture/boundaries/1/id",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "b78532572a08261cbc0c918d293a0d4fb83b1a83e9dacef857e52efbd4b5c78b"
+                    },
+                    {
+                      "factId": "fact_767dc3e3125f06d31fefc972",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/cloudArchitecture/boundaries/1/kind",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "57b8970d2bd78c559a08c62a134238a8ac9bc182c20322c4dcc7690ac409b200"
+                    },
+                    {
+                      "factId": "fact_31d0edda38cc34c0253369aa",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/cloudArchitecture/boundaries/1/label",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "01eee3a8e5b35253e726788fd42cfc7eb789220d1b50ddfd8ebdf7633c40f12d"
+                    }
+                  ]
+                },
+                {
+                  "id": "private",
+                  "label": "Private application subnets",
+                  "kind": "network",
+                  "evidence": [
+                    {
+                      "factId": "fact_ecdebe0a00e4443f83ede43d",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/cloudArchitecture/boundaries/2/id",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "24ed65044b6346a4e6fa04ef1f480bc8ff128f36eeafa6ab5d1ab3804997d28f"
+                    },
+                    {
+                      "factId": "fact_034afd6ebdfe39cc26d1a684",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/cloudArchitecture/boundaries/2/kind",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "57b8970d2bd78c559a08c62a134238a8ac9bc182c20322c4dcc7690ac409b200"
+                    },
+                    {
+                      "factId": "fact_650d78802e8b373bc1c5765f",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/cloudArchitecture/boundaries/2/label",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "ccf5ac128d7d9d74c64fd88bbedee10247417459af4c7a9a8785b1b21ce8b019"
+                    }
+                  ]
+                },
+                {
+                  "id": "data",
+                  "label": "Private data subnets",
+                  "kind": "network",
+                  "evidence": [
+                    {
+                      "factId": "fact_789f6b03f151dd22ec5bd05b",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/cloudArchitecture/boundaries/3/id",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "519b3ed503c6a825347f28dfd269c0a422e3b923858410e3abbab2d2a99837f2"
+                    },
+                    {
+                      "factId": "fact_31f807d48ed084163522253e",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/cloudArchitecture/boundaries/3/kind",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "57b8970d2bd78c559a08c62a134238a8ac9bc182c20322c4dcc7690ac409b200"
+                    },
+                    {
+                      "factId": "fact_dbdbc02960bd5cdce02306ce",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/cloudArchitecture/boundaries/3/label",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "7ca14ee417baf31471870a0fd98dcffecb557106daccf2dd98799867a89459c2"
+                    }
+                  ]
+                }
+              ],
+              "relationships": [
+                {
+                  "from": "cloudfront",
+                  "to": "waf",
+                  "label": "Protected requests",
+                  "protocol": "HTTPS",
+                  "evidence": [
+                    {
+                      "factId": "fact_6da5155d9b318bd5952452a7",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/cloudArchitecture/relationships/0/from",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "1d8a77bed98665c31d6fc38f02ef689328b8b07d6c698d1b44daadba78065c70"
+                    },
+                    {
+                      "factId": "fact_c20b12f6ca1b4f170fd70161",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/cloudArchitecture/relationships/0/label",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "a2ddac2853f8938682cf4c9c727e76b44f4ec1185742baff468067e5c9bdb53a"
+                    },
+                    {
+                      "factId": "fact_01b9d495b31784f34bf8c045",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/cloudArchitecture/relationships/0/protocol",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "1c281f15ce337955b9b0fda72e665739887caa6287d9da3c0d9e4332cf4a5f8a"
+                    },
+                    {
+                      "factId": "fact_53b2b6ac6f31ee6ec4a87046",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/cloudArchitecture/relationships/0/to",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "72952b0d2ea1d336bd866688cec74511196c5e1ea2c7143965a1c8caa17896b8"
+                    }
+                  ]
+                },
+                {
+                  "from": "waf",
+                  "to": "alb",
+                  "label": "Allowed traffic",
+                  "protocol": "HTTPS",
+                  "evidence": [
+                    {
+                      "factId": "fact_733d22aa37d46c6a866e0ef0",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/cloudArchitecture/relationships/1/from",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "72952b0d2ea1d336bd866688cec74511196c5e1ea2c7143965a1c8caa17896b8"
+                    },
+                    {
+                      "factId": "fact_376d7a7931a377b07df15887",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/cloudArchitecture/relationships/1/label",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "0a19a85f19a2d38fbcc572640a9d4b4ce37b7ca738b327b4ef19ca6f6d7e0029"
+                    },
+                    {
+                      "factId": "fact_fb8577649fcb65bb14a5e702",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/cloudArchitecture/relationships/1/protocol",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "1c281f15ce337955b9b0fda72e665739887caa6287d9da3c0d9e4332cf4a5f8a"
+                    },
+                    {
+                      "factId": "fact_b9d61819c1527e49321ee4e0",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/cloudArchitecture/relationships/1/to",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "d3fb23bcc392ad1a9a2988f9e7d99b684ab2a72b7fda6531f6cb3a9bc03576a2"
+                    }
+                  ]
+                },
+                {
+                  "from": "alb",
+                  "to": "ecs-web",
+                  "label": "Routes requests",
+                  "protocol": "HTTPS",
+                  "evidence": [
+                    {
+                      "factId": "fact_b735e4dbcaf1a95de696486c",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/cloudArchitecture/relationships/2/from",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "d3fb23bcc392ad1a9a2988f9e7d99b684ab2a72b7fda6531f6cb3a9bc03576a2"
+                    },
+                    {
+                      "factId": "fact_4c93754ad8cf90f2c90c06aa",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/cloudArchitecture/relationships/2/label",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "0c10817fd17bc268e10753f30c3b1ddce1ca715cf6b6ba0d81f50f1dfcd7b578"
+                    },
+                    {
+                      "factId": "fact_5260dccb1acf6f836f38746a",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/cloudArchitecture/relationships/2/protocol",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "1c281f15ce337955b9b0fda72e665739887caa6287d9da3c0d9e4332cf4a5f8a"
+                    },
+                    {
+                      "factId": "fact_1b96a34b64b23ea7540fa4fe",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/cloudArchitecture/relationships/2/to",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "7d938be4c5e6914c9ab9bc781e3b9946cb03e7ae08ef9b7b389304ecdcba6850"
+                    }
+                  ]
+                },
+                {
+                  "from": "ecs-web",
+                  "to": "rds",
+                  "label": "Application data",
+                  "protocol": "PostgreSQL/TLS",
+                  "evidence": [
+                    {
+                      "factId": "fact_61b61abe3c7d4af95f90b315",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/cloudArchitecture/relationships/3/from",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "7d938be4c5e6914c9ab9bc781e3b9946cb03e7ae08ef9b7b389304ecdcba6850"
+                    },
+                    {
+                      "factId": "fact_d256ad25c6ba82066372750d",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/cloudArchitecture/relationships/3/label",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "35bce4be23c3400b41c571b8a3672f9f5b93e305eb5239f333e086e4b3431b5b"
+                    },
+                    {
+                      "factId": "fact_725a1fd07a3e284949fcbf04",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/cloudArchitecture/relationships/3/protocol",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "89a60bbea30c9f249afb12e0ac57859a872f035c0cf1b38c0d300966e4de7f23"
+                    },
+                    {
+                      "factId": "fact_8045b791a5d516d154704493",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/cloudArchitecture/relationships/3/to",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "fee232ab6267a3d956dce1ae26a0981f66b7a3b81fe0c348bf6a2586d5058daa"
+                    }
+                  ]
+                },
+                {
+                  "from": "ecs-web",
+                  "to": "opensearch",
+                  "label": "Search queries",
+                  "protocol": "HTTPS",
+                  "evidence": [
+                    {
+                      "factId": "fact_2b757f8bc070e8e8db1a0b64",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/cloudArchitecture/relationships/4/from",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "7d938be4c5e6914c9ab9bc781e3b9946cb03e7ae08ef9b7b389304ecdcba6850"
+                    },
+                    {
+                      "factId": "fact_022de482ae030dc5f93b5f48",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/cloudArchitecture/relationships/4/label",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "e753f20ff46b646268c491a0bc03c22c7cab5883e12ecb15a55eef8315f18447"
+                    },
+                    {
+                      "factId": "fact_f016a965eed9b26d965f5196",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/cloudArchitecture/relationships/4/protocol",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "1c281f15ce337955b9b0fda72e665739887caa6287d9da3c0d9e4332cf4a5f8a"
+                    },
+                    {
+                      "factId": "fact_eb211fff532f766db6a3be07",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/cloudArchitecture/relationships/4/to",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "eb07ccc2b9790fe6b3a20630e5b6eb6d67d005f7487e6f325bd57d30f1c6b7cc"
+                    }
+                  ]
+                },
+                {
+                  "from": "ecs-web",
+                  "to": "s3",
+                  "label": "Media access",
+                  "protocol": "HTTPS",
+                  "evidence": [
+                    {
+                      "factId": "fact_9f11b4c5375d88c5eee34fd2",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/cloudArchitecture/relationships/5/from",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "7d938be4c5e6914c9ab9bc781e3b9946cb03e7ae08ef9b7b389304ecdcba6850"
+                    },
+                    {
+                      "factId": "fact_8a70a43a68032cfabf91e7d8",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/cloudArchitecture/relationships/5/label",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "18c6990b5417a223226ee636e1fbcef1e4ec2aa8678fb84b96e3071ff8c36723"
+                    },
+                    {
+                      "factId": "fact_673b78a8e550cd3ac2882b6a",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/cloudArchitecture/relationships/5/protocol",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "1c281f15ce337955b9b0fda72e665739887caa6287d9da3c0d9e4332cf4a5f8a"
+                    },
+                    {
+                      "factId": "fact_aa9da351de848ad98a579400",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/cloudArchitecture/relationships/5/to",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "659412f9d32b1c0157fbaa6dd6d11c33aad2dc037e34c4dc00b0ef606a5981cd"
+                    }
+                  ]
+                },
+                {
+                  "from": "ecs-worker",
+                  "to": "rds",
+                  "label": "Synchronized records",
+                  "protocol": "PostgreSQL/TLS",
+                  "evidence": [
+                    {
+                      "factId": "fact_060b3d69b26b363bf1f42ae9",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/cloudArchitecture/relationships/6/from",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "606ad3ca72e4a90c551690c2bc6fe3ceca8c90e6ac535639542a41f30b738f3c"
+                    },
+                    {
+                      "factId": "fact_6c242db7627d9b9e15c71aa8",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/cloudArchitecture/relationships/6/label",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "ed3bbf4737e433023eae1af31e4f66b22256508d6c9f8d7768a9bae6bf10ce9e"
+                    },
+                    {
+                      "factId": "fact_f7b468e84f84655d88abcd88",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/cloudArchitecture/relationships/6/protocol",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "89a60bbea30c9f249afb12e0ac57859a872f035c0cf1b38c0d300966e4de7f23"
+                    },
+                    {
+                      "factId": "fact_5ac53116dcf4feb50d63da10",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/cloudArchitecture/relationships/6/to",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "fee232ab6267a3d956dce1ae26a0981f66b7a3b81fe0c348bf6a2586d5058daa"
+                    }
+                  ]
+                }
+              ],
+              "evidence": [
+                {
+                  "factId": "fact_de7d3cbb4e584d017de3db34",
+                  "sourceId": "structured_data",
+                  "canonicalPath": "/structured_data/cloudArchitecture/provider",
+                  "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                  "valueDigest": "8fc6b8330d93456df13f6ecf282e47d2d266e4eff70a85b4b1122b7f369bcba6"
+                }
+              ]
+            }
+          }
+        ],
+        "warnings": []
+      }
+    },
+    {
+      "plan_token": "EUE18zp2h7ZZWRFBDtuW7IsJrlaBCG6F_9tSxTDg7zk",
+      "version": "1",
+      "prompt_version": "endpoint-visual-planner-v1",
+      "source_digest": "92ce8314cdf5a921f552cc05a228669becbfe654825337a8b6d2a53546b85cd1",
+      "renderable": true,
+      "expires_at": "2026-07-26T13:58:16.391Z",
+      "summary": "Proposal for a public-sector digital platform for Offshore Wind Careers with goals to explain modular solution, cloud deployment, C4 container responsibilities, and delivery milestones for executive and technical audiences.",
+      "artifact_plan": {
+        "version": "1",
+        "proposalProfile": {
+          "proposalType": "public-sector-digital-platform",
+          "audiences": [
+            "executive",
+            "technical"
+          ],
+          "themes": [
+            "modular solution",
+            "cloud deployment",
+            "security boundaries",
+            "C4 container responsibilities",
+            "delivery phases",
+            "milestones",
+            "accessibility",
+            "privacy by design",
+            "secure API integration",
+            "scalability",
+            "aftercare"
+          ],
+          "goals": [
+            "Explain the proposed modular solution",
+            "Show the cloud deployment and security boundaries",
+            "Document the C4 container responsibilities",
+            "Communicate the requested delivery phases and milestones"
+          ],
+          "availableFactClasses": [
+            "architecture",
+            "c4",
+            "cloudArchitecture",
+            "timeline"
+          ],
+          "inferredFields": [
+            "architecture_c4_level",
+            "timeline_tasks",
+            "timeline_milestones"
+          ]
+        },
+        "candidates": [
+          {
+            "type": "architecture-overview",
+            "decision": "omitted",
+            "relevance": 0,
+            "evidenceCoverage": 0,
+            "audienceFit": [],
+            "reasonCodes": [
+              "NOT_RECOMMENDED_BY_PLANNER",
+              "NOT_REQUESTED"
+            ]
+          },
+          {
+            "type": "architecture-details",
+            "decision": "omitted",
+            "relevance": 0,
+            "evidenceCoverage": 0,
+            "audienceFit": [],
+            "reasonCodes": [
+              "NOT_RECOMMENDED_BY_PLANNER",
+              "NOT_REQUESTED"
+            ]
+          },
+          {
+            "type": "cloud-architecture",
+            "decision": "omitted",
+            "relevance": 0,
+            "evidenceCoverage": 0,
+            "audienceFit": [],
+            "reasonCodes": [
+              "NOT_RECOMMENDED_BY_PLANNER",
+              "NOT_REQUESTED"
+            ]
+          },
+          {
+            "type": "architecture-c4",
+            "decision": "selected",
+            "purpose": "Document the C4 container responsibilities and interactions for executive and technical audiences",
+            "relevance": 0.95,
+            "evidenceCoverage": 0.9,
+            "audienceFit": [
+              "executive",
+              "technical"
+            ],
+            "reasonCodes": [
+              "S1",
+              "G3",
+              "A2",
+              "F5",
+              "EXPLICITLY_REQUESTED"
+            ]
+          },
+          {
+            "type": "gantt",
+            "decision": "selected",
+            "purpose": "Communicate the requested delivery phases, key tasks, dependencies, and milestones for project management",
+            "relevance": 0.9,
+            "evidenceCoverage": 0.85,
+            "audienceFit": [
+              "executive",
+              "technical"
+            ],
+            "reasonCodes": [
+              "S1",
+              "G4",
+              "A2",
+              "F6",
+              "EXPLICITLY_REQUESTED"
+            ]
+          }
+        ],
+        "requestSummary": "Proposal for a public-sector digital platform for Offshore Wind Careers with goals to explain modular solution, cloud deployment, C4 container responsibilities, and delivery milestones for executive and technical audiences.",
+        "artifacts": [
+          {
+            "id": "visual-1-architecture-c4",
+            "title": "Document the C4 container responsibilities and interactions for executive and technical audiences",
+            "purpose": "Document the C4 container responsibilities and interactions for executive and technical audiences",
+            "audience": "executive",
+            "required": true,
+            "dependsOn": [],
+            "presentation": {
+              "emphasis": [],
+              "direction": "LR",
+              "density": "balanced"
+            },
+            "type": "architecture-c4",
+            "fidelityClass": "structural_exact",
+            "content": {
+              "level": "container",
+              "elements": [
+                {
+                  "id": "job-seeker",
+                  "label": "Learner / job seeker",
+                  "kind": "person",
+                  "evidence": [
+                    {
+                      "factId": "fact_6777baac1b971939ef0520c6",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/c4/elements/0/id",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "2b37612014de54f7f9cea71ff41d39947e7a6a33c8685f79427590255d514f70"
+                    },
+                    {
+                      "factId": "fact_c752d404dc811f3fc549c571",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/c4/elements/0/kind",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "4e1d81205c42004069a257292c100a409eaea475316b15c0cd7397731cbd3df1"
+                    },
+                    {
+                      "factId": "fact_50556ea8cb61e8bba4a6d926",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/c4/elements/0/label",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "459c7f5b49ca5d03a88ae7b7d6008979a12a7d87df6434db07c191543ff8a672"
+                    }
+                  ]
+                },
+                {
+                  "id": "editor",
+                  "label": "Content editor",
+                  "kind": "person",
+                  "evidence": [
+                    {
+                      "factId": "fact_e763af9a7bc161345ebdf447",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/c4/elements/1/id",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "5f269d79f6ab88136c1ab28cfa998746f9cab26ca380d457fd3145fe48fc1f8e"
+                    },
+                    {
+                      "factId": "fact_560cbe9f582e893e004f4465",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/c4/elements/1/kind",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "4e1d81205c42004069a257292c100a409eaea475316b15c0cd7397731cbd3df1"
+                    },
+                    {
+                      "factId": "fact_98023202ef99fd759c83ddb6",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/c4/elements/1/label",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "77b6890c434f7448bead582478e4e777f2a3d3d295b28302b6b71ba88f1ad3be"
+                    }
+                  ]
+                },
+                {
+                  "id": "web-app",
+                  "label": "Careers web application",
+                  "kind": "container",
+                  "technology": "React / Next.js",
+                  "boundaryId": "owe-platform",
+                  "evidence": [
+                    {
+                      "factId": "fact_9ed049adb9176e83bcc333e1",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/c4/elements/2/boundaryId",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "c3bbb5372e21f6866f45eb2909400c07fdb87b99ddf0582b66facd324c3675dd"
+                    },
+                    {
+                      "factId": "fact_4815f486c487978e952aca2d",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/c4/elements/2/id",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "acde152b6fbefa447efd26475088308e408faeee30e4aca57b398ad6c3bd67fd"
+                    },
+                    {
+                      "factId": "fact_40ad0a39d45ee21770a9337d",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/c4/elements/2/kind",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "b52d3805dc31572722e3ad0af8d09283053405ab7863364f9df611526991e69b"
+                    },
+                    {
+                      "factId": "fact_a1f2e3c9cb560aa8a68e1054",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/c4/elements/2/label",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "a84d5260664f533ac325bc14f95abed624af3848a3af671066a5b687ff68d655"
+                    },
+                    {
+                      "factId": "fact_81eed31a3e7ec305998ddd62",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/c4/elements/2/technology",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "22efd5c4dd224429b3a3d878c3b066afc9fab5e2956b6994460897fc3ce05342"
+                    }
+                  ]
+                },
+                {
+                  "id": "cms-app",
+                  "label": "Editorial CMS",
+                  "kind": "container",
+                  "technology": "Headless CMS",
+                  "boundaryId": "owe-platform",
+                  "evidence": [
+                    {
+                      "factId": "fact_fbf7da4a62e26d3398c6094b",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/c4/elements/3/boundaryId",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "c3bbb5372e21f6866f45eb2909400c07fdb87b99ddf0582b66facd324c3675dd"
+                    },
+                    {
+                      "factId": "fact_d104af0ea7f800bb97d02e75",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/c4/elements/3/id",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "e4d3de56b54947d0abea39372a6eac0e7b9203c35c6801e563549f2c818951ee"
+                    },
+                    {
+                      "factId": "fact_ce243cf0444f58e4e28712f8",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/c4/elements/3/kind",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "b52d3805dc31572722e3ad0af8d09283053405ab7863364f9df611526991e69b"
+                    },
+                    {
+                      "factId": "fact_fc995f8bb8b9234aa6ff111a",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/c4/elements/3/label",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "c8c18923b8234de456651e1adb712c878c934420222fc7d658b9ec0448a79c0b"
+                    },
+                    {
+                      "factId": "fact_957ad5f5aec2323ae646d533",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/c4/elements/3/technology",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "5ccd780f487d1430f9ced2fc848999838c11d5845ae4b781903319994ba0a96e"
+                    }
+                  ]
+                },
+                {
+                  "id": "api-app",
+                  "label": "Platform API",
+                  "kind": "container",
+                  "technology": "Node.js",
+                  "boundaryId": "owe-platform",
+                  "evidence": [
+                    {
+                      "factId": "fact_8e98de188532bf63eda8b5fa",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/c4/elements/4/boundaryId",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "c3bbb5372e21f6866f45eb2909400c07fdb87b99ddf0582b66facd324c3675dd"
+                    },
+                    {
+                      "factId": "fact_15f624bb5c9bbd7963b6340a",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/c4/elements/4/id",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "f5b42b71d5875ed69a8fc447a7840b8a1fae92406b04b41792e76078029efd9b"
+                    },
+                    {
+                      "factId": "fact_aee65fcf44f3be519df82284",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/c4/elements/4/kind",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "b52d3805dc31572722e3ad0af8d09283053405ab7863364f9df611526991e69b"
+                    },
+                    {
+                      "factId": "fact_478dc49b2bdabff24d87f8ca",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/c4/elements/4/label",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "fa79c15b9fbce73af3b751d76ed686213dabaa72fd85d26b5c0c6614ccb289cf"
+                    },
+                    {
+                      "factId": "fact_65a53d4aa585eeb0a3b0a45d",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/c4/elements/4/technology",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "6759411a99c005601071034c9d1b38a0eef0a08dcee943f9093b1f50f7e7b6a4"
+                    }
+                  ]
+                },
+                {
+                  "id": "integration-worker",
+                  "label": "Integration worker",
+                  "kind": "container",
+                  "technology": "Node.js",
+                  "boundaryId": "owe-platform",
+                  "evidence": [
+                    {
+                      "factId": "fact_31d769a51c2db5919a80e4b4",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/c4/elements/5/boundaryId",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "c3bbb5372e21f6866f45eb2909400c07fdb87b99ddf0582b66facd324c3675dd"
+                    },
+                    {
+                      "factId": "fact_e2473cba2d35e31336975c6f",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/c4/elements/5/id",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "1a3bf3bc5c02383046121bf92af35338426df52f233799aab7a485686560878b"
+                    },
+                    {
+                      "factId": "fact_1dae2b0b768d7fadadd64c90",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/c4/elements/5/kind",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "b52d3805dc31572722e3ad0af8d09283053405ab7863364f9df611526991e69b"
+                    },
+                    {
+                      "factId": "fact_bbc52467970aac9217509a3e",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/c4/elements/5/label",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "67589c264a3acd0f5523704b0b126c24e1bff9e477dd5f50344906125cd1c68c"
+                    },
+                    {
+                      "factId": "fact_aa903174cd16e7d5121b3882",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/c4/elements/5/technology",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "6759411a99c005601071034c9d1b38a0eef0a08dcee943f9093b1f50f7e7b6a4"
+                    }
+                  ]
+                },
+                {
+                  "id": "platform-db",
+                  "label": "Platform database",
+                  "kind": "container",
+                  "technology": "PostgreSQL",
+                  "boundaryId": "owe-platform",
+                  "evidence": [
+                    {
+                      "factId": "fact_8aaa1cd57c2d53ccb74aa74b",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/c4/elements/6/boundaryId",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "c3bbb5372e21f6866f45eb2909400c07fdb87b99ddf0582b66facd324c3675dd"
+                    },
+                    {
+                      "factId": "fact_5d948862310ba39c2575567f",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/c4/elements/6/id",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "96de31956be3fca677512e5011ae59662e4401f973eb00383d0049fc22f2aa98"
+                    },
+                    {
+                      "factId": "fact_4c5d124326ab0a63e8fd92a5",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/c4/elements/6/kind",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "b52d3805dc31572722e3ad0af8d09283053405ab7863364f9df611526991e69b"
+                    },
+                    {
+                      "factId": "fact_44d853209d717d6c7dc8ef72",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/c4/elements/6/label",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "a1f06e8e254c7e3076667c9a5c446ac994f07e790d37d5200eefa93f13c3289e"
+                    },
+                    {
+                      "factId": "fact_1bc138ccceebefdb50ae88a1",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/c4/elements/6/technology",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "c24b839d02d3fdb82fde5c3b58c5cf9dda6c84bd368a49128f44547d45340105"
+                    }
+                  ]
+                },
+                {
+                  "id": "external-providers",
+                  "label": "Training and event providers",
+                  "kind": "software-system",
+                  "evidence": [
+                    {
+                      "factId": "fact_9c761c6c4b001effb37648c3",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/c4/elements/7/id",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "23f7bc2b4513f2c5523a991214e2651b2a246f5be480cdd900ff4b4a9f86071d"
+                    },
+                    {
+                      "factId": "fact_c4c50c63ba816c125c19e9b8",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/c4/elements/7/kind",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "18e8ce1cfef46fd2ab8e00d57895fe01aaa9faa427858d2eecf5fbe636196485"
+                    },
+                    {
+                      "factId": "fact_716b3fad1940ededd64695ec",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/c4/elements/7/label",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "7f3131df72a351da50ed59a18c4a27c93922b7f5563c273e1ce0376eb16f0dc9"
+                    }
+                  ]
+                }
+              ],
+              "boundaries": [
+                {
+                  "id": "owe-platform",
+                  "label": "OWE careers platform",
+                  "evidence": [
+                    {
+                      "factId": "fact_51b117869ca959e837f5e001",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/c4/boundaries/0/id",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "c3bbb5372e21f6866f45eb2909400c07fdb87b99ddf0582b66facd324c3675dd"
+                    },
+                    {
+                      "factId": "fact_1eb69e8942c2c874ba08ef00",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/c4/boundaries/0/label",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "acbe88f7e3d3c498fc947d04d97489a0ff473ef62598620f8445de888b733c8f"
+                    }
+                  ]
+                }
+              ],
+              "relationships": [
+                {
+                  "from": "job-seeker",
+                  "to": "web-app",
+                  "label": "Explores careers and training",
+                  "evidence": [
+                    {
+                      "factId": "fact_0b7c4691f87ca42d37a91189",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/c4/relationships/0/from",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "2b37612014de54f7f9cea71ff41d39947e7a6a33c8685f79427590255d514f70"
+                    },
+                    {
+                      "factId": "fact_83f6f0bbe83f69696e47ecf3",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/c4/relationships/0/label",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "dd0d77397ec2ce54eab6694ea68cb9ae8f34b1202c3f169d3a4878197e373301"
+                    },
+                    {
+                      "factId": "fact_bb5a9d70fbbab14ecfa68040",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/c4/relationships/0/to",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "acde152b6fbefa447efd26475088308e408faeee30e4aca57b398ad6c3bd67fd"
+                    }
+                  ]
+                },
+                {
+                  "from": "editor",
+                  "to": "cms-app",
+                  "label": "Manages content",
+                  "evidence": [
+                    {
+                      "factId": "fact_98ca081abd51dec2db815157",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/c4/relationships/1/from",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "5f269d79f6ab88136c1ab28cfa998746f9cab26ca380d457fd3145fe48fc1f8e"
+                    },
+                    {
+                      "factId": "fact_d37778907f7ddbfc65056289",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/c4/relationships/1/label",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "a30c3d56db94e619593864eafb4e9eb2e9fc834a127aa34131f579fedd8d68ad"
+                    },
+                    {
+                      "factId": "fact_8f061e3f4a85877798db49af",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/c4/relationships/1/to",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "e4d3de56b54947d0abea39372a6eac0e7b9203c35c6801e563549f2c818951ee"
+                    }
+                  ]
+                },
+                {
+                  "from": "web-app",
+                  "to": "api-app",
+                  "label": "Uses",
+                  "technology": "HTTPS/JSON",
+                  "evidence": [
+                    {
+                      "factId": "fact_fb33cb86415496c63ffec1a1",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/c4/relationships/2/from",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "acde152b6fbefa447efd26475088308e408faeee30e4aca57b398ad6c3bd67fd"
+                    },
+                    {
+                      "factId": "fact_a2a6691b1c006eb9c9fd83f3",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/c4/relationships/2/label",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "41cea7b6d039f31f2529e48db0efdce9bfa26ebcb92ec1b6ab6f1f2112404568"
+                    },
+                    {
+                      "factId": "fact_53472266151fd1e66ea0bd38",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/c4/relationships/2/technology",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "633136a5c5e7d1891ad262d758409389824445eb65c7703546d3c8e0272d8f12"
+                    },
+                    {
+                      "factId": "fact_825467dc35b0cf9916d8d9ac",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/c4/relationships/2/to",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "f5b42b71d5875ed69a8fc447a7840b8a1fae92406b04b41792e76078029efd9b"
+                    }
+                  ]
+                },
+                {
+                  "from": "cms-app",
+                  "to": "api-app",
+                  "label": "Publishes",
+                  "technology": "HTTPS/JSON",
+                  "evidence": [
+                    {
+                      "factId": "fact_2fda70f05d36888d3ed8c05d",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/c4/relationships/3/from",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "e4d3de56b54947d0abea39372a6eac0e7b9203c35c6801e563549f2c818951ee"
+                    },
+                    {
+                      "factId": "fact_173bcb4d3fd9d576f158a8b3",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/c4/relationships/3/label",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "c8c477929f34c4de584d510bfdc3dd8ee82b4af777144dc9b26a2bc0498b9f50"
+                    },
+                    {
+                      "factId": "fact_c15f4647c8d64a520065d833",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/c4/relationships/3/technology",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "633136a5c5e7d1891ad262d758409389824445eb65c7703546d3c8e0272d8f12"
+                    },
+                    {
+                      "factId": "fact_dd849e39b464a0849ca7315f",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/c4/relationships/3/to",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "f5b42b71d5875ed69a8fc447a7840b8a1fae92406b04b41792e76078029efd9b"
+                    }
+                  ]
+                },
+                {
+                  "from": "api-app",
+                  "to": "platform-db",
+                  "label": "Reads and writes",
+                  "technology": "SQL/TLS",
+                  "evidence": [
+                    {
+                      "factId": "fact_b5ecc9814fe9ae9f699af09a",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/c4/relationships/4/from",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "f5b42b71d5875ed69a8fc447a7840b8a1fae92406b04b41792e76078029efd9b"
+                    },
+                    {
+                      "factId": "fact_369065f5ea2d8f2fa7007bf0",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/c4/relationships/4/label",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "b0401a893194031a719645bfb43d6b7eb446a6b16f69731e81972d719bef55d6"
+                    },
+                    {
+                      "factId": "fact_4a230cb4f1fb942c73d601e0",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/c4/relationships/4/technology",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "f306696de8ef3cc97ba949586175b1ac93ff2a091e41dffaeebd2c9a7aed4c52"
+                    },
+                    {
+                      "factId": "fact_50e3058a4de390bf4086f238",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/c4/relationships/4/to",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "96de31956be3fca677512e5011ae59662e4401f973eb00383d0049fc22f2aa98"
+                    }
+                  ]
+                },
+                {
+                  "from": "integration-worker",
+                  "to": "external-providers",
+                  "label": "Synchronizes courses and events",
+                  "technology": "REST/OAuth2",
+                  "evidence": [
+                    {
+                      "factId": "fact_8aa596633a29c82369ed1258",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/c4/relationships/5/from",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "1a3bf3bc5c02383046121bf92af35338426df52f233799aab7a485686560878b"
+                    },
+                    {
+                      "factId": "fact_0b1008b452c1a0ed16cb642c",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/c4/relationships/5/label",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "25a95850c6b745327c3ed35faf1e419463bf60c27c610e4ef90026f59308ff89"
+                    },
+                    {
+                      "factId": "fact_24c9b54e1679d822ed70259c",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/c4/relationships/5/technology",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "5fd372cd9590eb856a382dc53ccf06bf7255ba766f1b5be80cd5f95074b42bb5"
+                    },
+                    {
+                      "factId": "fact_4eba807dfb948597cd537204",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/c4/relationships/5/to",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "23f7bc2b4513f2c5523a991214e2651b2a246f5be480cdd900ff4b4a9f86071d"
+                    }
+                  ]
+                },
+                {
+                  "from": "integration-worker",
+                  "to": "platform-db",
+                  "label": "Stores normalized records",
+                  "technology": "SQL/TLS",
+                  "evidence": [
+                    {
+                      "factId": "fact_bdf280eccfe56123e9f33e1a",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/c4/relationships/6/from",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "1a3bf3bc5c02383046121bf92af35338426df52f233799aab7a485686560878b"
+                    },
+                    {
+                      "factId": "fact_7a98726e7a2ee3b1d41305eb",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/c4/relationships/6/label",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "0824fdd1d3b7e3e51394690211aa67fa2dda5419e913b90294c5e859cd909708"
+                    },
+                    {
+                      "factId": "fact_518df0d0b550416b0b5a34bc",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/c4/relationships/6/technology",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "f306696de8ef3cc97ba949586175b1ac93ff2a091e41dffaeebd2c9a7aed4c52"
+                    },
+                    {
+                      "factId": "fact_c77d12ea57c83249b73fadc0",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/c4/relationships/6/to",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "96de31956be3fca677512e5011ae59662e4401f973eb00383d0049fc22f2aa98"
+                    }
+                  ]
+                }
+              ],
+              "evidence": [
+                {
+                  "factId": "fact_2461778a044ae5842d15e075",
+                  "sourceId": "structured_data",
+                  "canonicalPath": "/structured_data/c4/level",
+                  "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                  "valueDigest": "b52d3805dc31572722e3ad0af8d09283053405ab7863364f9df611526991e69b"
+                }
+              ]
+            }
+          },
+          {
+            "id": "visual-2-gantt",
+            "title": "Communicate the requested delivery phases, key tasks, dependencies, and milestones for project management",
+            "purpose": "Communicate the requested delivery phases, key tasks, dependencies, and milestones for project management",
+            "audience": "executive",
+            "required": true,
+            "dependsOn": [],
+            "presentation": {
+              "emphasis": [],
+              "direction": "LR",
+              "density": "balanced"
+            },
+            "type": "gantt",
+            "fidelityClass": "data_exact",
+            "content": {
+              "tasks": [
+                {
+                  "id": "discovery",
+                  "label": "Discovery and kickoff workshops",
+                  "start": "2026-08-03",
+                  "end": "2026-08-14",
+                  "dependencies": [],
+                  "milestone": false,
+                  "group": "Design",
+                  "evidence": [
+                    {
+                      "factId": "fact_96d63087b36554e9bda2c964",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/timeline/0/dependencies",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+                    },
+                    {
+                      "factId": "fact_37c7e4439357372143b113da",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/timeline/0/end",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "5d8c54e43dc6ce90309dbf67a79b90bcd806bc92548080d9ca2ac8d1c40ed8b9"
+                    },
+                    {
+                      "factId": "fact_fdb092d9d8a71e69d356b8aa",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/timeline/0/group",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "28273887a8e4c0b1bd90265f97557b0ba7d70ff83832943b5edd2f8c32ba552f"
+                    },
+                    {
+                      "factId": "fact_f71fcab3f12a93cde1e1582d",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/timeline/0/id",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "8aa4d112f84eba0b8b418d274de63e617f44f4721b0474e9657e2229580933f0"
+                    },
+                    {
+                      "factId": "fact_280b54d991f2b95b708a0f27",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/timeline/0/label",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "0761cfc3945326e75dbd719bd9ae8a8ee9e7b21b14d36c1e3c003283c0597c11"
+                    },
+                    {
+                      "factId": "fact_965a68b360677797b79111e1",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/timeline/0/milestone",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "fcbcf165908dd18a9e49f7ff27810176db8e9f63b4352213741664245224f8aa"
+                    },
+                    {
+                      "factId": "fact_a372f2cf60417431218879b7",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/timeline/0/start",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "9e5cece73b5601e4c4aa118683b51419762584a8d24f159c2c05950db50d80df"
+                    }
+                  ]
+                },
+                {
+                  "id": "experience-design",
+                  "label": "Information architecture and UX design",
+                  "start": "2026-08-17",
+                  "end": "2026-09-11",
+                  "dependencies": [
+                    "discovery"
+                  ],
+                  "milestone": false,
+                  "group": "Design",
+                  "evidence": [
+                    {
+                      "factId": "fact_b5a41b351427b6a8ff5bced1",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/timeline/1/dependencies/0",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "8aa4d112f84eba0b8b418d274de63e617f44f4721b0474e9657e2229580933f0"
+                    },
+                    {
+                      "factId": "fact_4a7054095ceb25454213d131",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/timeline/1/end",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "532d5d6f9a809deb934bb9936a2e29095f56ddb3ca4fd7f7db545dc0a1465c9d"
+                    },
+                    {
+                      "factId": "fact_b24d7d806c9c6007c48ee1f0",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/timeline/1/group",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "28273887a8e4c0b1bd90265f97557b0ba7d70ff83832943b5edd2f8c32ba552f"
+                    },
+                    {
+                      "factId": "fact_c5ef8e36587cb2ecfc3c8569",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/timeline/1/id",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "10411b75ed81370940be10011a4d466f64f731978f721ccbf41a5b5564757476"
+                    },
+                    {
+                      "factId": "fact_37f87974a97bfc8c1cbc5efe",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/timeline/1/label",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "094a8281c024dc0e84142074c10c6484143e5eec9571c601cb5db5d374241f87"
+                    },
+                    {
+                      "factId": "fact_a340d81524fe96fe6e86b71f",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/timeline/1/milestone",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "fcbcf165908dd18a9e49f7ff27810176db8e9f63b4352213741664245224f8aa"
+                    },
+                    {
+                      "factId": "fact_48b1a70409926811c0a17502",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/timeline/1/start",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "9d7b2faba38cb560ae6c4f63acf8f541cc24d83b688dd62f5e860f3fb0050a72"
+                    }
+                  ]
+                },
+                {
+                  "id": "design-approval",
+                  "label": "Design approval",
+                  "start": "2026-09-14",
+                  "end": "2026-09-14",
+                  "dependencies": [
+                    "experience-design"
+                  ],
+                  "milestone": true,
+                  "group": "Design",
+                  "evidence": [
+                    {
+                      "factId": "fact_ab0a5f0248e185ac29381706",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/timeline/2/dependencies/0",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "10411b75ed81370940be10011a4d466f64f731978f721ccbf41a5b5564757476"
+                    },
+                    {
+                      "factId": "fact_4a17812e936034ec2c51010c",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/timeline/2/end",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "f5b6fdf5f4ebf78aa4b62760754b27a137561c56ac2127d020d580b5d9491fa8"
+                    },
+                    {
+                      "factId": "fact_3515f253a82e9c43db0bf76e",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/timeline/2/group",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "28273887a8e4c0b1bd90265f97557b0ba7d70ff83832943b5edd2f8c32ba552f"
+                    },
+                    {
+                      "factId": "fact_06e8dbe7612f5e1652aff9cb",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/timeline/2/id",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "4908681c35e3f69f7f87ccb852a0e0618a229fbcf0dba5f103c5660349d77bce"
+                    },
+                    {
+                      "factId": "fact_491a9ca7c36833439523ffa1",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/timeline/2/label",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "5eebd4bcfe842110190e89349420745c136d905286cd05db6544a82cb53002d8"
+                    },
+                    {
+                      "factId": "fact_1b2fe3d49bf97fed4c775e98",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/timeline/2/milestone",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "b5bea41b6c623f7c09f1bf24dcae58ebab3c0cdd90ad966bc43a45b44867e12b"
+                    },
+                    {
+                      "factId": "fact_3e865126399dd9f2cefc66c7",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/timeline/2/start",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "f5b6fdf5f4ebf78aa4b62760754b27a137561c56ac2127d020d580b5d9491fa8"
+                    }
+                  ]
+                },
+                {
+                  "id": "development",
+                  "label": "Platform and integration development",
+                  "start": "2026-09-15",
+                  "end": "2026-11-13",
+                  "dependencies": [
+                    "design-approval"
+                  ],
+                  "milestone": false,
+                  "group": "Development",
+                  "evidence": [
+                    {
+                      "factId": "fact_4997cb112b86a2734ef99f11",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/timeline/3/dependencies/0",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "4908681c35e3f69f7f87ccb852a0e0618a229fbcf0dba5f103c5660349d77bce"
+                    },
+                    {
+                      "factId": "fact_28a7689944a3fbc8e0bb74e5",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/timeline/3/end",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "c632fb16191a345891994e0829686cf2ba7aa7801f849afd27546548acf3347d"
+                    },
+                    {
+                      "factId": "fact_251569ab9d0f7ea5ce19a30a",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/timeline/3/group",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "ab616132a425607362290e9884af4f81062f5ab1c3e013aad347334d197bff91"
+                    },
+                    {
+                      "factId": "fact_ecb51ad1659015c28c1cf989",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/timeline/3/id",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "cdd045107527a60fcf58a287a29c03695dab735806998a565da4353b66fe0d95"
+                    },
+                    {
+                      "factId": "fact_d78599d0fedfb6dd5e1553fb",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/timeline/3/label",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "9ffcd11ec5bedfa913462f7c84af0e9947f913a06e2df6ad000b40d7c8a340f5"
+                    },
+                    {
+                      "factId": "fact_b091c704921dd7080bdfd0af",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/timeline/3/milestone",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "fcbcf165908dd18a9e49f7ff27810176db8e9f63b4352213741664245224f8aa"
+                    },
+                    {
+                      "factId": "fact_250ccac0675e48b6391156b4",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/timeline/3/start",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "918ad75fe37202c6d8e306f4019d5fea852e72fb75aae73cff50f3d1cd6e2e3a"
+                    }
+                  ]
+                },
+                {
+                  "id": "testing",
+                  "label": "Accessibility, security, and acceptance testing",
+                  "start": "2026-11-16",
+                  "end": "2026-12-04",
+                  "dependencies": [
+                    "development"
+                  ],
+                  "milestone": false,
+                  "group": "Testing",
+                  "evidence": [
+                    {
+                      "factId": "fact_2dbf4bf29dce043db485cfc1",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/timeline/4/dependencies/0",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "cdd045107527a60fcf58a287a29c03695dab735806998a565da4353b66fe0d95"
+                    },
+                    {
+                      "factId": "fact_e40176415316f12fafd2a056",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/timeline/4/end",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "79a8577af8a9f72c46f559b6a70d388fc548d59a7ef38107f1feb984d3b5d104"
+                    },
+                    {
+                      "factId": "fact_8b64de2ba2d684e21f98e9ea",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/timeline/4/group",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "523bb58275f92547e9fc1e179532d6d0c4fe74fbcd20caccc8677df7af3fb347"
+                    },
+                    {
+                      "factId": "fact_c1961ff49d6763dfac66484a",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/timeline/4/id",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "c8b61ec034d17530b93c32e49e0d98eb7b27225cba9fbea927212a9d6ab0a5ce"
+                    },
+                    {
+                      "factId": "fact_65c5e1b850209c9223852f8f",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/timeline/4/label",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "c93a85c744143b5539d6998ba610ad196073b9445f3678ec7a2d2c5c0bb29542"
+                    },
+                    {
+                      "factId": "fact_2a5412373c09f3bf313ad770",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/timeline/4/milestone",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "fcbcf165908dd18a9e49f7ff27810176db8e9f63b4352213741664245224f8aa"
+                    },
+                    {
+                      "factId": "fact_f90619ed2914fd1f1f59084c",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/timeline/4/start",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "faffe734ef290597a139fa056e87a8ad295127cb0e390e1ea35540b79e420978"
+                    }
+                  ]
+                },
+                {
+                  "id": "launch",
+                  "label": "Production deployment and launch",
+                  "start": "2026-12-07",
+                  "end": "2026-12-07",
+                  "dependencies": [
+                    "testing"
+                  ],
+                  "milestone": true,
+                  "group": "Deployment",
+                  "evidence": [
+                    {
+                      "factId": "fact_fa3820eb54720da18ce9b079",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/timeline/5/dependencies/0",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "c8b61ec034d17530b93c32e49e0d98eb7b27225cba9fbea927212a9d6ab0a5ce"
+                    },
+                    {
+                      "factId": "fact_25a37ceb0ec5b84e46873340",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/timeline/5/end",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "4ad672c2f9ff454deb3b7f9bf8481d990c5544f9a2fdc6fb8b524de4f652e556"
+                    },
+                    {
+                      "factId": "fact_368603cbebd4cf505ba425f4",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/timeline/5/group",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "4fadb744edde44d2ff3274080f2cf43c2984dba2361a2f449b5fa54737f4dd24"
+                    },
+                    {
+                      "factId": "fact_13d7d8da8bbe6f5c1b3201e6",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/timeline/5/id",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "6164c16405ffad14780cca15e85cf8688c355069ccb5b8dfa55b25603379a449"
+                    },
+                    {
+                      "factId": "fact_642673f32f2cfe9dd9fb560d",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/timeline/5/label",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "6aa001f42af057685e1c1e16ff4b4367187181a4ebd16288629beabf043cd467"
+                    },
+                    {
+                      "factId": "fact_8263fcc49bf45dec2d1d880c",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/timeline/5/milestone",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "b5bea41b6c623f7c09f1bf24dcae58ebab3c0cdd90ad966bc43a45b44867e12b"
+                    },
+                    {
+                      "factId": "fact_2493d41009d319d16d5ffbf5",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/timeline/5/start",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "4ad672c2f9ff454deb3b7f9bf8481d990c5544f9a2fdc6fb8b524de4f652e556"
+                    }
+                  ]
+                },
+                {
+                  "id": "aftercare",
+                  "label": "Post-launch aftercare",
+                  "start": "2026-12-08",
+                  "end": "2027-02-07",
+                  "dependencies": [
+                    "launch"
+                  ],
+                  "milestone": false,
+                  "group": "Aftercare",
+                  "evidence": [
+                    {
+                      "factId": "fact_75862e9163586d3850842c2c",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/timeline/6/dependencies/0",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "6164c16405ffad14780cca15e85cf8688c355069ccb5b8dfa55b25603379a449"
+                    },
+                    {
+                      "factId": "fact_9524bd29ae287a64e63f68ff",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/timeline/6/end",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "899724165530cc106fea134854515f3392135934b458d48909fb0afe030b7621"
+                    },
+                    {
+                      "factId": "fact_a05feca1747b1bba5aa01707",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/timeline/6/group",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "9b0aebff3a2b21b42cd374e1c974d55bef41c21bef970b66b0501202f234edbf"
+                    },
+                    {
+                      "factId": "fact_9d6a51642e4e7607af095e82",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/timeline/6/id",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "ae96777fe3808932634889f996ea60dd213236749e6c8098528a67a353b8b18a"
+                    },
+                    {
+                      "factId": "fact_328b735624b12374b68528f3",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/timeline/6/label",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "c062483da1290370fb6345c40812928f197e1c1683a728ae7a5e291580147d93"
+                    },
+                    {
+                      "factId": "fact_5cc425d4dfa9c26da355e74b",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/timeline/6/milestone",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "fcbcf165908dd18a9e49f7ff27810176db8e9f63b4352213741664245224f8aa"
+                    },
+                    {
+                      "factId": "fact_4459c62892b0d3d9fbd8b9e5",
+                      "sourceId": "structured_data",
+                      "canonicalPath": "/structured_data/timeline/6/start",
+                      "sourceDigest": "43a43f1419d7250d6b7ed016886a0ee83898e9e1837b009d98b5eedbde110ef7",
+                      "valueDigest": "a06142d961b7bc94ef5ba039980719fc9250cc47045d54947234fca7349cf36c"
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        ],
+        "warnings": []
+      }
+    }
+  ]
+}

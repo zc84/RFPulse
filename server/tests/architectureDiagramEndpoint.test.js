@@ -72,12 +72,20 @@ test('diagram endpoint calls the existing image generation method and returns ba
   assert.match(calls[0].prompt, /Never invent or infer an additional component/);
 });
 
-test('strict request reports that the current sandbox still uses high image fidelity', async () => {
+test('strict request uses the deterministic renderer without calling Images API', async () => {
   const request = validRequest();
   request.style.fidelity = 'strict';
-  const response = await renderArchitectureDiagramRequest(request, { client: fakeImageClient() });
-  assert.equal(response.meta.fidelity_applied, 'high');
-  assert.equal(response.warnings.length, 1);
+  request.render.width = 1200;
+  request.render.height = 800;
+  const calls = [];
+  const response = await renderArchitectureDiagramRequest(request, { client: fakeImageClient(calls) });
+  assert.equal(response.meta.fidelity_applied, 'strict');
+  assert.equal(response.meta.renderer, 'deterministic-svg');
+  assert.equal(response.width, 1200);
+  assert.equal(response.height, 800);
+  assert.equal(response.warnings.length, 0);
+  assert.equal(calls.length, 0);
+  assert.ok(Buffer.from(response.image, 'base64').length > 1000);
 });
 
 test('endpoint prompt is structured around the source graph and Andersen rules', () => {

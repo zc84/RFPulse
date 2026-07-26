@@ -1,4 +1,5 @@
 import { generateOpenAIImageArtifact } from './aiOrchestrator.js';
+import { renderDeterministicArchitectureDiagram } from './deterministicArchitectureDiagram.js';
 
 const DIRECTIONS = new Set(['LR', 'TB']);
 const DENSITIES = new Set(['compact', 'balanced', 'spacious']);
@@ -52,13 +53,19 @@ function validateDiagram(diagram) {
     asNonEmptyString(node.label, `node '${id}'.label`);
     if (nodeIds.has(id)) throw fail(422, 'invalid_graph', `duplicate node id '${id}'`);
     nodeIds.add(id);
+    if (node.details !== undefined && (!Array.isArray(node.details) || node.details.some(detail => typeof detail !== 'string'))) {
+      throw fail(422, 'invalid_graph', `node '${id}'.details must be an array of strings`);
+    }
   }
 
   const groupedNodeIds = new Set();
+  const groupIds = new Set();
   for (const group of groups) {
     asObject(group, 'diagram.groups[]');
     const groupId = asNonEmptyString(group.id, 'diagram.groups[].id');
     asNonEmptyString(group.label, `group '${groupId}'.label`);
+    if (groupIds.has(groupId)) throw fail(422, 'invalid_graph', `duplicate group id '${groupId}'`);
+    groupIds.add(groupId);
     if (!Array.isArray(group.nodes)) throw fail(422, 'invalid_graph', `group '${groupId}'.nodes must be an array`);
     for (const nodeId of group.nodes) {
       if (!nodeIds.has(nodeId)) throw fail(422, 'invalid_graph', `group '${groupId}' references unknown node '${nodeId}'`);
@@ -95,7 +102,7 @@ function validateRequest(body) {
 
   return {
     diagram: { ...diagram, direction },
-    style: { ...style, brand: 'andersen', fidelity: 'high' },
+    style: { ...style, brand: 'andersen', fidelity: style.fidelity === 'strict' ? 'strict' : 'high' },
     render: { ...render, format: 'png', width: render.width || 1536, height: render.height || 1024 },
     strictRequested: style.fidelity === 'strict',
   };
@@ -122,19 +129,38 @@ function readPngDimensions(buffer) {
 
 export async function renderArchitectureDiagramRequest(body, { client = null, signal = null } = {}) {
   const request = validateRequest(body);
+  if (request.style.fidelity === 'strict') {
+    const rendered = renderDeterministicArchitectureDiagram(request);
+    return {
+      id: `diag_${Date.now().toString(36)}`,
+      format: 'png',
+      encoding: 'base64',
+      image: rendered.png.toString('base64'),
+      width: rendered.width,
+      height: rendered.height,
+      meta: {
+        fidelity_applied: 'strict',
+        renderer: 'deterministic-svg',
+        nodes: request.diagram.nodes.length,
+        edges: request.diagram.edges.length,
+        seed: request.render.seed ?? null,
+        requested_width: request.render.width,
+        requested_height: request.render.height,
+      },
+      warnings: [],
+    };
+  }
   const image = await generateOpenAIImageArtifact({
     client,
     prompt: buildPrompt(request),
     title: request.diagram.title || 'Solution architecture',
     description: 'Andersen-style architecture diagram rendered from structured diagram JSON.',
     signal,
-    size: '1536x1024',
+    size: request.render.width / request.render.height > 1.2 ? '1536x1024' : '1024x1536',
     background: request.render.background === 'transparent' ? 'transparent' : 'opaque',
   });
   const dimensions = readPngDimensions(image.png);
-  const warnings = request.strictRequested
-    ? ['strict fidelity is not available in the current sandbox renderer; high fidelity via OpenAI Images API was used']
-    : [];
+  const warnings = [];
 
   return {
     id: `diag_${Date.now().toString(36)}`,
