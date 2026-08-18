@@ -339,19 +339,19 @@ const artifactPlanUnionSchema = z.discriminatedUnion('type', [
   z.object({
     ...artifactEnvelope,
     type: z.literal('architecture-details'),
-    fidelityClass: z.literal('structural_exact'),
+    fidelityClass: z.literal('validated_best_effort'),
     content: detailsContentSchema,
   }).strict(),
   z.object({
     ...artifactEnvelope,
     type: z.literal('cloud-architecture'),
-    fidelityClass: z.literal('structural_exact'),
+    fidelityClass: z.literal('validated_best_effort'),
     content: cloudContentSchema,
   }).strict(),
   z.object({
     ...artifactEnvelope,
     type: z.literal('architecture-c4'),
-    fidelityClass: z.literal('structural_exact'),
+    fidelityClass: z.literal('validated_best_effort'),
     content: c4ContentSchema,
   }).strict(),
   z.object({
@@ -501,7 +501,7 @@ export const artifactPlanSchema = artifactPlanUnionSchema.superRefine((artifact,
 });
 
 export const visualArtifactPlanSchema = z.object({
-  version: z.literal('1'),
+  version: z.literal('2'),
   proposalProfile: proposalProfileSchema,
   candidates: z.array(candidateDecisionSchema).max(VISUAL_TYPES.length),
   requestSummary: boundedText(1_000),

@@ -5,6 +5,7 @@ import {
   artifactPlanSchema,
   canonicalJson,
   createStructuredFactIndex,
+  FIDELITY_BY_TYPE,
   verifyEvidenceRef,
   visualPlanRequestSchema,
   visualRenderRequestSchema,
@@ -214,4 +215,14 @@ test('artifact plans enforce type-specific fidelity classes', () => {
       }],
     },
   }));
+});
+
+test('AI architecture artifacts use validated best-effort fidelity', () => {
+  const details = candidate('architecture-details');
+  assert.equal(details.type, 'architecture-details');
+  assert.equal(
+    FIDELITY_BY_TYPE['architecture-details'],
+    'validated_best_effort'
+  );
+  assert.equal(FIDELITY_BY_TYPE.gantt, 'data_exact');
 });

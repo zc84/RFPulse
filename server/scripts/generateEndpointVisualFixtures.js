@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 import { extractDocumentText } from '../services/documentExtractor.js';
 
 const rootDir = path.resolve(import.meta.dirname, '..', '..');
@@ -27,26 +28,141 @@ function structuredProposalData() {
   return {
     architecture: {
       boundaries: [
-        { id: 'experience', label: 'Experience layer' },
-        { id: 'application', label: 'Application and content layer' },
-        { id: 'data-integration', label: 'Data and integration layer' },
+        { id: 'actors', label: 'Users and content operations' },
+        { id: 'experience', label: 'Edge and digital experience' },
+        { id: 'application', label: 'Application and content services' },
+        { id: 'data-integration', label: 'Data, identity, and integrations' },
+        { id: 'delivery-operations', label: 'Delivery, environments, and operations' },
       ],
       components: [
-        { id: 'web', label: 'OWE careers web application', technology: 'React / Next.js', boundaryId: 'experience' },
-        { id: 'cms', label: 'Editorial CMS', technology: 'Headless CMS', boundaryId: 'application' },
-        { id: 'api', label: 'Platform API', technology: 'Node.js', boundaryId: 'application' },
-        { id: 'search', label: 'Course and career search', technology: 'OpenSearch', boundaryId: 'application' },
-        { id: 'integration', label: 'Integration adapters', technology: 'REST APIs', boundaryId: 'data-integration' },
-        { id: 'database', label: 'Platform database', technology: 'PostgreSQL', boundaryId: 'data-integration' },
-        { id: 'analytics', label: 'Analytics and monitoring', technology: 'GA4 / Cloud monitoring', boundaryId: 'data-integration' },
+        {
+          id: 'learner',
+          label: 'Learners and career changers',
+          technology: 'Responsive web',
+          description: 'Explore career pathways, courses, events, and support resources.',
+          boundaryId: 'actors',
+        },
+        {
+          id: 'editor',
+          label: 'Content editors and administrators',
+          technology: 'Role-based administration',
+          description: 'Manage governed content, providers, courses, and events.',
+          boundaryId: 'actors',
+        },
+        {
+          id: 'edge',
+          label: 'Content delivery and web protection',
+          technology: 'CDN / WAF / TLS',
+          description: 'Secure public delivery, caching, routing, and traffic protection.',
+          boundaryId: 'experience',
+        },
+        {
+          id: 'web',
+          label: 'OWE careers web application',
+          technology: 'React / Next.js',
+          description: 'Accessible, responsive experience with pathway and opportunity discovery.',
+          boundaryId: 'experience',
+        },
+        {
+          id: 'cms',
+          label: 'Editorial CMS',
+          technology: 'Headless CMS',
+          description: 'Content models, editorial workflow, approvals, and publishing.',
+          boundaryId: 'application',
+        },
+        {
+          id: 'api',
+          label: 'Platform API',
+          technology: 'Node.js',
+          description: 'Versioned application services for web, CMS, search, and integrations.',
+          boundaryId: 'application',
+        },
+        {
+          id: 'search',
+          label: 'Course and career search',
+          technology: 'OpenSearch',
+          description: 'Indexed search, filtering, and discovery across platform content.',
+          boundaryId: 'application',
+        },
+        {
+          id: 'integration',
+          label: 'Provider integration services',
+          technology: 'REST APIs / OAuth 2.0',
+          description: 'Validated synchronization of training, events, and partner records.',
+          boundaryId: 'application',
+        },
+        {
+          id: 'database',
+          label: 'Platform relational database',
+          technology: 'PostgreSQL',
+          description: 'Structured platform, provider, course, event, and audit data.',
+          boundaryId: 'data-integration',
+        },
+        {
+          id: 'media',
+          label: 'Media and document storage',
+          technology: 'Object storage',
+          description: 'Managed storage for images, documents, and downloadable resources.',
+          boundaryId: 'data-integration',
+        },
+        {
+          id: 'identity',
+          label: 'Identity and access',
+          technology: 'OIDC / OAuth 2.0 / RBAC',
+          description: 'Administrative authentication and role-based authorization.',
+          boundaryId: 'data-integration',
+        },
+        {
+          id: 'external-providers',
+          label: 'Training and event providers',
+          technology: 'External APIs',
+          description: 'Authoritative partner sources for opportunities and events.',
+          boundaryId: 'data-integration',
+        },
+        {
+          id: 'analytics',
+          label: 'Consent-aware analytics',
+          technology: 'GA4',
+          description: 'Approved usage measurement with consent-aware event collection.',
+          boundaryId: 'data-integration',
+        },
+        {
+          id: 'pipeline',
+          label: 'Build and release pipeline',
+          technology: 'CI/CD',
+          description: 'Automated build, test, security checks, approvals, and deployment.',
+          boundaryId: 'delivery-operations',
+        },
+        {
+          id: 'environments',
+          label: 'Segregated environments',
+          technology: 'Development / UAT / Production',
+          description: 'Environment-specific configuration, data, secrets, and release controls.',
+          boundaryId: 'delivery-operations',
+        },
+        {
+          id: 'monitoring',
+          label: 'Monitoring and operational support',
+          technology: 'Logs / metrics / alerts',
+          description: 'Service health, audit visibility, alerting, and aftercare support.',
+          boundaryId: 'delivery-operations',
+        },
       ],
       relationships: [
-        { from: 'web', to: 'api', label: 'Uses platform services', protocol: 'HTTPS/JSON' },
+        { from: 'learner', to: 'edge', label: 'Uses the public platform', protocol: 'HTTPS' },
+        { from: 'edge', to: 'web', label: 'Routes protected requests', protocol: 'HTTPS' },
+        { from: 'web', to: 'api', label: 'Uses platform services', protocol: 'HTTPS / JSON' },
+        { from: 'editor', to: 'cms', label: 'Authors and approves content', protocol: 'HTTPS' },
         { from: 'cms', to: 'api', label: 'Publishes content', protocol: 'HTTPS/JSON' },
         { from: 'api', to: 'search', label: 'Searches courses and roles', protocol: 'HTTPS' },
         { from: 'api', to: 'database', label: 'Reads and writes platform data', protocol: 'SQL/TLS' },
-        { from: 'api', to: 'integration', label: 'Synchronizes external data', protocol: 'REST/OAuth2' },
+        { from: 'api', to: 'media', label: 'Stores and retrieves assets', protocol: 'HTTPS' },
+        { from: 'cms', to: 'identity', label: 'Authenticates administrators', protocol: 'OIDC' },
+        { from: 'api', to: 'integration', label: 'Coordinates synchronization', protocol: 'Internal API' },
+        { from: 'integration', to: 'external-providers', label: 'Synchronizes opportunities', protocol: 'REST / OAuth 2.0' },
         { from: 'web', to: 'analytics', label: 'Sends consented usage events', protocol: 'HTTPS' },
+        { from: 'pipeline', to: 'environments', label: 'Promotes approved releases', protocol: 'Automated deployment' },
+        { from: 'environments', to: 'monitoring', label: 'Emits operational telemetry', protocol: 'Logs / metrics' },
       ],
     },
     cloudArchitecture: {
@@ -183,11 +299,25 @@ if (!extracted.success) throw new Error(`Tender extraction failed: ${extracted.e
 const tenderContext = buildRelevantTenderContext(extracted.text);
 await fs.mkdir(outputDir, { recursive: true });
 
-const batches = [
-  ['architecture-overview'],
-  ['architecture-details', 'cloud-architecture'],
-  ['architecture-c4', 'gantt'],
+const allTypes = [
+  'architecture-overview',
+  'architecture-details',
+  'cloud-architecture',
+  'architecture-c4',
+  'gantt',
 ];
+const requestedTypes = (process.env.ENDPOINT_VISUAL_TYPES || allTypes.join(','))
+  .split(',')
+  .map(value => value.trim())
+  .filter(Boolean);
+const unknownTypes = requestedTypes.filter(type => !allTypes.includes(type));
+if (unknownTypes.length > 0) {
+  throw new Error(`Unknown ENDPOINT_VISUAL_TYPES: ${unknownTypes.join(', ')}`);
+}
+const batches = [];
+for (let index = 0; index < requestedTypes.length; index += 2) {
+  batches.push(requestedTypes.slice(index, index + 2));
+}
 const manifest = {
   tender: tenderPath,
   endpoint: endpointBaseUrl,
@@ -202,17 +332,23 @@ for (let index = 0; index < batches.length; index += 1) {
   for (const artifact of payload.artifacts) {
     const filename = `${artifact.type}.png`;
     const outputPath = path.join(outputDir, filename);
-    await fs.writeFile(outputPath, Buffer.from(artifact.image_base64, 'base64'));
+    const png = Buffer.from(artifact.image_base64, 'base64');
+    await fs.writeFile(outputPath, png);
     manifest.artifacts.push({
       type: artifact.type,
       file: filename,
+      sha256: createHash('sha256').update(png).digest('hex'),
       width: artifact.width,
       height: artifact.height,
       renderer: artifact.renderer,
       status: artifact.status,
-      bytes: Buffer.byteLength(artifact.image_base64, 'base64'),
+      bytes: png.length,
+      validation: artifact.validation,
+      warnings: artifact.warnings,
     });
   }
+  manifest.usage = manifest.usage || [];
+  manifest.usage.push(payload.usage);
 }
 
 await fs.writeFile(
@@ -221,4 +357,3 @@ await fs.writeFile(
   'utf8'
 );
 console.log(JSON.stringify(manifest.artifacts, null, 2));
-

@@ -17,9 +17,8 @@ export const DEFAULT_CAPABILITIES = Object.freeze(
 
 export const FIDELITY_BY_TYPE = Object.freeze({
   'architecture-overview': 'conceptual',
-  'architecture-details': 'structural_exact',
-  'cloud-architecture': 'structural_exact',
-  'architecture-c4': 'structural_exact',
+  'architecture-details': 'validated_best_effort',
+  'cloud-architecture': 'validated_best_effort',
+  'architecture-c4': 'validated_best_effort',
   gantt: 'data_exact',
 });
-

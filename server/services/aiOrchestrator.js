@@ -13,16 +13,15 @@ import {
   validateEstimatorResult,
 } from './aiSchemas.js';
 import { loadEstimationPolicy } from '../ai-runtime/policies/estimationPolicy.js';
+import { extractArchitectureDiagramSource } from '../diagram-generation/architectureSource.js';
+import { buildArchitectureDiagramImagePrompt } from '../diagram-generation/architecturePrompt.js';
+import {
+  generateOpenAIImageArtifact as generateSharedOpenAIImageArtifact,
+} from '../diagram-generation/imageArtifactGenerator.js';
+import { DiagramGenerationError } from '../diagram-generation/errors.js';
 
 const DEFAULT_AGENT_SLUGS = ['coordinator', 'legal', 'architect', 'estimator', 'frontend-dev'];
 const REQUIRED_SPECIALIST_SLUGS = ['legal', 'architect', 'estimator'];
-const MARKDOWN_HEADING_PATTERN = /^(#{1,6})\s+(.*)$/;
-const ARCHITECTURE_SECTION_PATTERNS = [
-  /^\s*#{1,6}\s+.*\b(proposed architecture|solution architecture|technical solution|proposed solution|solution overview|architecture)\b.*$/i,
-];
-const EXCLUDED_ARCHITECTURE_SUBSECTION_PATTERNS = [
-  /^\s*#{1,6}\s+.*\b(implementation plan|timeline|delivery plan|roadmap|project schedule|schedule|wbs|work breakdown)\b.*$/i,
-];
 
 function createAiError(message, status = 502) {
   const error = new Error(message);
@@ -190,27 +189,24 @@ export async function generateOpenAIImageArtifact({
   n = 1,
 }) {
   throwIfAborted(signal);
-  const imageClient = client || await getOpenAIClient();
-  const response = await imageClient.images.generate({
-    model,
-    prompt,
-    size,
-    quality,
-    output_format: 'png',
-    background,
-    n,
-  }, signal ? { signal } : undefined);
-  const image = response.data?.[0];
-  if (!image?.b64_json) {
-    throw createAiError(`Image generation for "${title || 'diagram'}" returned no PNG output. Please try again.`);
+  try {
+    return await generateSharedOpenAIImageArtifact({
+      client,
+      getClient: getOpenAIClient,
+      prompt,
+      title,
+      description,
+      signal,
+      model,
+      size,
+      quality,
+      background,
+      n,
+    });
+  } catch (error) {
+    if (!(error instanceof DiagramGenerationError)) throw error;
+    throw createAiError(error.message, error.status);
   }
-  return {
-    title,
-    description: description || '',
-    format: response.output_format || 'png',
-    png: Buffer.from(image.b64_json, 'base64'),
-    revisedPrompt: image.revised_prompt || null,
-  };
 }
 
 export async function validateOpenAIKey() {
@@ -1031,80 +1027,6 @@ function appendArchitectureDiagramPrompt(report) {
   ].join('\n\n');
 
   return `${report.trim()}\n\n${prompt}`;
-}
-
-function extractArchitectureDiagramSource(report) {
-  const body = stripArchitectureDiagramPrompt(report);
-  const lines = body.split(/\r?\n/);
-
-  for (let i = 0; i < lines.length; i += 1) {
-    const line = lines[i].trim();
-    const heading = MARKDOWN_HEADING_PATTERN.exec(line);
-    if (!heading || !ARCHITECTURE_SECTION_PATTERNS.some(pattern => pattern.test(line))) continue;
-
-    const sectionLevel = heading[1].length;
-    let end = i + 1;
-    while (end < lines.length) {
-      const nextHeading = MARKDOWN_HEADING_PATTERN.exec(lines[end].trim());
-      if (nextHeading && nextHeading[1].length <= sectionLevel) break;
-      end += 1;
-    }
-
-    const kept = [lines[i]];
-    let skipSubsectionLevel = null;
-    for (let cursor = i + 1; cursor < end; cursor += 1) {
-      const currentLine = lines[cursor];
-      const currentHeading = MARKDOWN_HEADING_PATTERN.exec(currentLine.trim());
-
-      if (skipSubsectionLevel !== null) {
-        if (currentHeading && currentHeading[1].length <= skipSubsectionLevel) {
-          skipSubsectionLevel = null;
-        } else {
-          continue;
-        }
-      }
-
-      if (currentHeading && EXCLUDED_ARCHITECTURE_SUBSECTION_PATTERNS.some(pattern => pattern.test(currentLine.trim()))) {
-        skipSubsectionLevel = currentHeading[1].length;
-        continue;
-      }
-
-      kept.push(currentLine);
-    }
-
-    const extracted = kept.join('\n').trim();
-    if (extracted) return extracted;
-  }
-
-  return body.trim();
-}
-
-function buildArchitectureDiagramImagePrompt(report, variant) {
-  const base = [
-    'You are generating a polished enterprise architecture diagram as a PNG image.',
-    'Use the proposal below as the source of truth.',
-    'Use only architecture content from the proposal. Ignore WBS content, implementation plans, delivery timelines, schedules, roadmap lanes, pricing, and effort tables.',
-    'Use the exact tech stack named in the proposal. Do not replace it with a generic platform or provider-approved substitute.',
-    'Use native icons for the technologies named in the report wherever possible. If a native icon is unavailable, use a simple neutral glyph instead of an unrelated icon.',
-    'Style requirements: white background, dark navy headline, subtle rounded cards, dashed trust boundaries, clean arrows, legible labels, spacious layout, and a presentation-ready finish.',
-    variant === 'overview'
-      ? 'Create an executive overview architecture diagram that shows the main user, security edge, application layer, data/search layer, AI/integration layer, and operations/support boundaries.'
-      : 'Create a supporting architecture diagram that shows the main solution components, external systems, and data flows in more detail while remaining clear and compact.',
-    'The output should look like a professional solution architecture slide, not a marketing illustration.',
-    'Do not generate a title page, cover page, brochure, poster, photorealistic scene, or document mockup.',
-    'Avoid large decorative text blocks. Prioritize component boxes, connectors, trust boundaries, and explicit labels.',
-    'Do not embed a WBS, Gantt chart, date row, roadmap strip, or tabular schedule into the diagram.',
-    'Render the diagram as a single landscape PNG.',
-    'Assessment report:',
-    clipText(report, 12000, true).trim(),
-  ];
-  return base.join('\n\n');
-}
-
-function stripArchitectureDiagramPrompt(report) {
-  const marker = '\n\n## Architecture Diagram Prompt';
-  const idx = report.indexOf(marker);
-  return idx >= 0 ? report.slice(0, idx).trim() : report.trim();
 }
 
 export async function generateArchitectureDiagramImages(report, signal = null, clientOverride = null) {

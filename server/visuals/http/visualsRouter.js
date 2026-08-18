@@ -128,7 +128,9 @@ function sendVisualError(error, req, res, next) {
 export function createVisualsRouter({
   visualModule,
   bodyLimit = process.env.ENDPOINT_VISUAL_BODY_LIMIT || '1mb',
-  timeoutMs = Number(process.env.ENDPOINT_VISUAL_TIMEOUT_MS || 55_000),
+  // High-quality image rendering can exceed one minute even after planning.
+  // Keep a bounded deadline while allowing one proposal-grade image call to finish.
+  timeoutMs = Number(process.env.ENDPOINT_VISUAL_TIMEOUT_MS || 300_000),
   planRateLimit = Number(process.env.ENDPOINT_VISUAL_PLAN_RATE_LIMIT || 20),
   renderRateLimit = Number(process.env.ENDPOINT_VISUAL_RENDER_RATE_LIMIT || 10),
   rateWindowMs = Number(process.env.ENDPOINT_VISUAL_RATE_WINDOW_MS || 15 * 60 * 1000),

@@ -87,7 +87,9 @@ function normalizeCandidate(candidate, type) {
     ? {
       ...candidate,
       type,
-      reasonCodes: [...new Set(candidate.reasonCodes ?? [])],
+      // Reserve capacity for server-owned eligibility, exclusion, and budget
+      // decisions added after the planner response.
+      reasonCodes: [...new Set(candidate.reasonCodes ?? [])].slice(0, 15),
     }
     : {
       type,

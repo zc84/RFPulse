@@ -1,0 +1,99 @@
+{
+  "version": "1",
+  "confidentiality": "synthetic",
+  "language": "en",
+  "referenceImages": [
+    {
+      "path": "server/uploads/22/architecture-1-1783322367809.png",
+      "availability": "local-manual-only",
+      "confidentiality": "review-required",
+      "sha256": "14ff18bae22de89d35243995cb75263586a875d57cbd23f726a239a728e321bf",
+      "bytes": 1711720,
+      "width": 1536,
+      "height": 1024,
+      "bestKnownCommit": "2365aa2",
+      "bestKnownPipeline": "direct-images-generate-overview-and-detail"
+    },
+    {
+      "path": "server/uploads/22/architecture-2-1783322367831.png",
+      "availability": "local-manual-only",
+      "confidentiality": "review-required",
+      "sha256": "77a411cbefdc050dac6edb56ecefadda2c7d3af3ca77c41f0ec2f67c50d4c0f9",
+      "bytes": 1697508,
+      "width": 1536,
+      "height": 1024,
+      "bestKnownCommit": "2365aa2",
+      "bestKnownPipeline": "direct-images-generate-overview-and-detail"
+    }
+  ],
+  "cases": [
+    {
+      "id": "overview-from-markdown",
+      "type": "architecture-overview",
+      "sourceClass": "qualitative-markdown",
+      "expectedFidelity": "conceptual",
+      "requiredAssertions": [
+        "self-contained-plan",
+        "no-schedule-content",
+        "untrusted-data-boundary"
+      ]
+    },
+    {
+      "id": "details-directed-relationships",
+      "type": "architecture-details",
+      "sourceClass": "structured-architecture",
+      "expectedFidelity": "validated_best_effort",
+      "requiredAssertions": [
+        "all-components-in-render-request",
+        "directed-relationships-preserved",
+        "evidence-not-sent-to-image-provider"
+      ]
+    },
+    {
+      "id": "cloud-provider-boundaries",
+      "type": "cloud-architecture",
+      "sourceClass": "structured-cloud",
+      "expectedFidelity": "validated_best_effort",
+      "requiredAssertions": [
+        "provider-preserved",
+        "service-substitution-prohibited",
+        "boundaries-preserved"
+      ]
+    },
+    {
+      "id": "c4-container-view",
+      "type": "architecture-c4",
+      "sourceClass": "structured-c4",
+      "expectedFidelity": "validated_best_effort",
+      "requiredAssertions": [
+        "c4-level-preserved",
+        "containment-preserved",
+        "relationship-direction-preserved"
+      ]
+    },
+    {
+      "id": "gantt-relative-calendar",
+      "type": "gantt",
+      "sourceClass": "structured-timeline",
+      "expectedFidelity": "data_exact",
+      "requiredAssertions": [
+        "deterministic-renderer",
+        "relative-month-week-labels",
+        "no-calendar-dates",
+        "dependency-validation",
+        "milestone-validation"
+      ]
+    },
+    {
+      "id": "instruction-like-labels",
+      "type": "architecture-details",
+      "sourceClass": "structured-architecture",
+      "expectedFidelity": "validated_best_effort",
+      "requiredAssertions": [
+        "delimiter-closing-escaped",
+        "instruction-like-label-treated-as-data",
+        "renderer-policy-remains-server-owned"
+      ]
+    }
+  ]
+}

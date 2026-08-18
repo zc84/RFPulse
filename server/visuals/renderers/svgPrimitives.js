@@ -28,20 +28,24 @@ export function wrapText(value, maxCharacters = 28, maxLines = 3) {
 
   const lines = [];
   let current = '';
+  let truncated = false;
   for (const word of words) {
     const candidate = current ? `${current} ${word}` : word;
     if (candidate.length <= maxCharacters || !current) {
       current = candidate;
       continue;
     }
-    lines.push(current);
-    current = word;
-    if (lines.length === maxLines - 1) break;
+    if (lines.length < maxLines - 1) {
+      lines.push(current);
+      current = word;
+      continue;
+    }
+    truncated = true;
+    break;
   }
   if (current && lines.length < maxLines) lines.push(current);
 
-  const consumed = lines.join(' ').split(/\s+/).length;
-  if (consumed < words.length && lines.length > 0) {
+  if (truncated && lines.length > 0) {
     const last = lines.length - 1;
     lines[last] = `${lines[last].replace(/[.…]+$/, '')}…`;
   }
@@ -104,4 +108,3 @@ export function indexById(items, label) {
   }
   return index;
 }
-

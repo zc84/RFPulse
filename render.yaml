@@ -18,6 +18,24 @@ services:
         generateValue: true
       - key: UPLOAD_DIR
         value: /var/data/uploads
+      - key: TRUST_PROXY_HOPS
+        value: "1"
+      - key: ENDPOINT_VISUALS_ENABLED
+        value: "true"
+      - key: ENDPOINT_VISUAL_TIMEOUT_MS
+        value: "300000"
+      - key: ENDPOINT_VISUAL_MAX_CONCURRENT
+        value: "2"
+      - key: ENDPOINT_VISUAL_DEPLOYMENT_MODE
+        value: single-instance
+      - key: ENDPOINT_VISUAL_PROVIDER_MAX_CONCURRENT
+        value: "2"
+      - key: ENDPOINT_VISUAL_ARCHITECTURE_RENDERER
+        value: shared
+      - key: ENDPOINT_VISUAL_MAX_ARTIFACT_BYTES
+        value: "3145728"
+      - key: ENDPOINT_VISUAL_MAX_OUTPUT_BYTES
+        value: "6291456"
     disk:
       name: rfpulse-uploads
       mountPath: /var/data

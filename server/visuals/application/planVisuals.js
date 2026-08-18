@@ -14,9 +14,12 @@ import {
 } from '../infrastructure/endpointVisualPlannerPrompt.js';
 import { canonicalJson } from '../domain/facts.js';
 import { visualError } from '../domain/errors.js';
+import {
+  normalizeImageRetryCount,
+} from '../../diagram-generation/imageArtifactGenerator.js';
 
-export const ENDPOINT_VISUAL_SCHEMA_VERSION = '1';
-export const ENDPOINT_RENDERER_POLICY_VERSION = 'endpoint-renderer-policy-v1';
+export const ENDPOINT_VISUAL_SCHEMA_VERSION = '2';
+export const ENDPOINT_RENDERER_POLICY_VERSION = 'endpoint-renderer-policy-v4';
 
 const plannerAudienceSchema = z.enum(['executive', 'business', 'technical', 'mixed']);
 const plannerVisualTypeSchema = z.enum([
@@ -122,9 +125,16 @@ function evidenceForPrefix(factIndex, prefix) {
 
 function commonArtifactFields(type, draft, context, index) {
   const candidate = draft.candidates.find(item => item.type === type);
+  const titles = {
+    'architecture-overview': 'Solution Architecture Overview',
+    'architecture-details': 'Detailed Solution Architecture',
+    'cloud-architecture': 'Cloud Deployment Architecture',
+    'architecture-c4': 'C4 Container Architecture',
+    gantt: 'Delivery Plan and Milestones',
+  };
   return {
     id: `visual-${index + 1}-${type}`,
-    title: candidate?.purpose || type,
+    title: titles[type] || type,
     purpose: candidate?.purpose || `Explain ${type}`,
     audience: candidate?.audienceFit?.[0] || context.audience?.[0] || 'mixed',
     required: true,
@@ -207,7 +217,7 @@ function buildDetailsArtifact({ source, factIndex, draft, context, index }) {
   return {
     ...commonArtifactFields('architecture-details', draft, context, index),
     type: 'architecture-details',
-    fidelityClass: 'structural_exact',
+    fidelityClass: 'validated_best_effort',
     content: {
       components: (data.components || []).map((item, itemIndex) => ({
         ...item,
@@ -231,7 +241,7 @@ function buildCloudArtifact({ source, factIndex, draft, context, index }) {
   return {
     ...commonArtifactFields('cloud-architecture', draft, context, index),
     type: 'cloud-architecture',
-    fidelityClass: 'structural_exact',
+    fidelityClass: 'validated_best_effort',
     content: {
       provider: data.provider,
       resources: data.resources.map((item, itemIndex) => ({
@@ -257,7 +267,7 @@ function buildC4Artifact({ source, factIndex, draft, context, index }) {
   return {
     ...commonArtifactFields('architecture-c4', draft, context, index),
     type: 'architecture-c4',
-    fidelityClass: 'structural_exact',
+    fidelityClass: 'validated_best_effort',
     content: {
       level: data.level,
       elements: data.elements.map((item, itemIndex) => ({
@@ -307,10 +317,12 @@ export function createPlanVisualsUseCase({
   budgetGate = { reserve: async () => {} },
   capabilities = DEFAULT_CAPABILITIES,
   plannerModel = process.env.ENDPOINT_VISUAL_PLANNER_MODEL || 'gpt-4.1-mini',
+  maxPlannerPromptBytes = Number(
+    process.env.ENDPOINT_VISUAL_MAX_PLANNER_PROMPT_BYTES || 256 * 1024
+  ),
 }) {
   return async function planVisuals(input, { signal } = {}) {
     const request = visualPlanRequestSchema.parse(input);
-    await budgetGate.reserve({ plannerCalls: 1, imageCalls: 0 });
     const factIndex = createStructuredFactIndex(request.source.structured_data || {});
     const sourceDigest = digestSource(request.source);
     const promptFacts = factIndex.facts.map(fact => ({
@@ -320,17 +332,28 @@ export function createPlanVisualsUseCase({
       sourceDigest: fact.sourceDigest,
       valueDigest: fact.valueDigest,
     }));
+    const userPrompt = buildEndpointVisualPlannerUserPrompt({
+      source: request.source,
+      context: request.context,
+      selection: request.selection,
+      canonicalFacts: promptFacts,
+      enabledTypes: Object.keys(capabilities).filter(type => capabilities[type]),
+    });
+    const plannerPromptBytes = Buffer.byteLength(userPrompt, 'utf8');
+    if (plannerPromptBytes > maxPlannerPromptBytes) {
+      throw visualError(
+        'PLANNER_INPUT_TOO_LARGE',
+        'The normalized visual planning input exceeds the configured prompt limit.',
+        413,
+        { plannerPromptBytes, maxPlannerPromptBytes }
+      );
+    }
+    await budgetGate.reserve({ plannerCalls: 1, imageCalls: 0 });
     const completion = await provider.completeStructured({
       schema: plannerDraftSchema,
       schemaName: 'endpoint_visual_plan_draft',
       systemPrompt: ENDPOINT_VISUAL_PLANNER_SYSTEM_PROMPT,
-      userPrompt: buildEndpointVisualPlannerUserPrompt({
-        source: request.source,
-        context: request.context,
-        selection: request.selection,
-        canonicalFacts: promptFacts,
-        enabledTypes: Object.keys(capabilities).filter(type => capabilities[type]),
-      }),
+      userPrompt,
       signal,
     });
     const draft = normalizePlannerDraft(completion.value);
@@ -377,10 +400,27 @@ export function createPlanVisualsUseCase({
       usage: completion.usage || null,
       estimates: {
         plannerCalls: 1,
-        imageCalls: plan.artifacts.filter(artifact => artifact.type === 'architecture-overview').length,
-        deterministicRenders: plan.artifacts.filter(artifact => artifact.type !== 'architecture-overview').length,
-        latencyBand: plan.artifacts.some(artifact => artifact.type === 'architecture-overview') ? 'high' : 'medium',
-        costBand: plan.artifacts.some(artifact => artifact.type === 'architecture-overview') ? 'medium' : 'low',
+        imageCalls: plan.artifacts.filter(
+          artifact => artifact.type !== 'gantt'
+        ).length,
+        maxImageCalls: plan.artifacts.filter(
+          artifact => artifact.type !== 'gantt'
+        ).length * (
+          1 + normalizeImageRetryCount(
+            process.env.ENDPOINT_VISUAL_IMAGE_MAX_RETRIES,
+            1
+          )
+        ),
+        qaCalls: 0,
+        deterministicRenders: plan.artifacts.filter(
+          artifact => artifact.type === 'gantt'
+        ).length,
+        latencyBand: plan.artifacts.some(
+          artifact => artifact.type !== 'gantt'
+        ) ? 'high' : 'medium',
+        costBand: plan.artifacts.some(
+          artifact => artifact.type !== 'gantt'
+        ) ? 'medium' : 'low',
       },
     };
   };

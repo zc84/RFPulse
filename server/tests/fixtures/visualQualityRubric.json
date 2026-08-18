@@ -1,0 +1,50 @@
+{
+  "version": "1",
+  "minimumRunsPerAiFixture": 3,
+  "scoreScale": {
+    "minimum": 0,
+    "maximum": 5
+  },
+  "minimumWeightedScore": 85,
+  "hardFailures": [
+    "invented-critical-system",
+    "missing-required-component",
+    "reversed-mandatory-relationship",
+    "unreadable-primary-label",
+    "invalid-or-clipped-output"
+  ],
+  "criteria": [
+    {
+      "id": "required-component-recall",
+      "weight": 20
+    },
+    {
+      "id": "invented-critical-component-avoidance",
+      "weight": 20
+    },
+    {
+      "id": "mandatory-relationship-direction",
+      "weight": 20
+    },
+    {
+      "id": "label-legibility",
+      "weight": 10
+    },
+    {
+      "id": "connector-clarity",
+      "weight": 10
+    },
+    {
+      "id": "proposal-slide-composition",
+      "weight": 10
+    },
+    {
+      "id": "icon-correctness-or-neutral-fallback",
+      "weight": 5
+    },
+    {
+      "id": "legend-correctness",
+      "weight": 5
+    }
+  ]
+}

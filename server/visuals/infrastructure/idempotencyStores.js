@@ -52,7 +52,13 @@ export class MemoryIdempotencyStore {
 }
 
 export class PostgresIdempotencyStore {
-  constructor({ query, ttlMs = DEFAULT_TTL_MS, maxResponseBytes = 4 * 1024 * 1024 }) {
+  constructor({
+    query,
+    ttlMs = DEFAULT_TTL_MS,
+    maxResponseBytes = Number(
+      process.env.ENDPOINT_VISUAL_MAX_IDEMPOTENCY_RESPONSE_BYTES || 12 * 1024 * 1024
+    ),
+  }) {
     this.query = query;
     this.ttlMs = ttlMs;
     this.maxResponseBytes = maxResponseBytes;

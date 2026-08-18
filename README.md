@@ -96,6 +96,33 @@ Superadmins use **Platform Configuration** for admin-only setup:
 
 Editors and Superadmins can update deal properties directly on the deal detail page by clicking the displayed value. Viewers remain read-only.
 
+## Public visual API
+
+The source-driven visual API is intentionally public and does not require authentication or authorization.
+
+Endpoints:
+
+- `POST /v1/visuals/plan` selects zero to two useful visual artifacts and returns a short-lived opaque plan token.
+- `POST /v1/visuals/render` plans and renders inline or renders a previously issued plan token.
+
+Billable render requests require an `Idempotency-Key` header. The endpoint applies per-IP rate limits, request and provider concurrency limits, hourly and daily usage budgets, input and output limits, cancellation, and a five-minute deadline.
+
+Supported visual types:
+
+- `architecture-overview` — conceptual shared AI image rendering.
+- `architecture-details` — evidence-bound structured input with `validated_best_effort` AI image fidelity.
+- `cloud-architecture` — evidence-bound structured input with `validated_best_effort` AI image fidelity.
+- `architecture-c4` — evidence-bound structured input with `validated_best_effort` AI image fidelity.
+- `gantt` — deterministic `data_exact` rendering from structured dates and dependencies.
+
+AI-rendered architecture images do not claim mathematically exact topology. The response exposes artifact validation status and reports `unverified` while semantic image QA is disabled. Deterministic Gantt output reports `passed` after schema, dependency, PNG, and geometry validation.
+
+The public request continues to accept `style_preset: "professional-light-v1"`. The server maps it to the internal shared `system-proposal-v1` visual language. Clients cannot submit renderer IDs or arbitrary image prompts.
+
+Operational configuration is documented in `.env.example`. `ENDPOINT_VISUAL_ARCHITECTURE_RENDERER=deterministic` keeps the existing structured architecture renderer available as a server-controlled rollback path for details, cloud, and C4. Overview remains on the shared image renderer.
+
+The bundled Render Blueprint uses one Node.js service instance. Its request rate and route concurrency limits are process-local, while provider leases and usage budgets are coordinated through PostgreSQL. Before horizontal scaling, configure a shared `express-rate-limit` store or an equivalent distributed request limiter.
+
 ## Deploying on Render.com
 
 This repository includes a Render Blueprint in `render.yaml`. The Blueprint creates:

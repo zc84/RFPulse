@@ -6,7 +6,7 @@ import { MemoryIdempotencyStore } from '../visuals/infrastructure/idempotencySto
 function fakePlanResult() {
   return {
     plan: {
-      version: '1',
+      version: '2',
       proposalProfile: {
         audiences: ['executive'],
         themes: [],
@@ -25,7 +25,7 @@ function fakePlanResult() {
       schema: '1',
       prompt: 'endpoint-visual-planner-v1',
       model: 'fake',
-      rendererPolicy: 'endpoint-renderer-policy-v1',
+      rendererPolicy: 'endpoint-renderer-policy-v4',
     },
     planToken: null,
     expiresAt: null,

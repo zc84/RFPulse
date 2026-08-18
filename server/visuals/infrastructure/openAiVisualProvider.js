@@ -1,6 +1,10 @@
 import OpenAI from 'openai';
 import { zodResponseFormat } from 'openai/helpers/zod';
 import { query } from '../../db.js';
+import {
+  generateOpenAIImageArtifact,
+  normalizeImageRetryCount,
+} from '../../diagram-generation/imageArtifactGenerator.js';
 
 function visualProviderError(message, status = 502, code = 'PROVIDER_ERROR') {
   const error = new Error(message);
@@ -56,31 +60,17 @@ export async function createOpenAiVisualProvider({
       }
     },
 
-    async generateImage({
-      prompt,
-      signal,
-      size = '1536x1024',
-      quality = 'high',
-      background = 'opaque',
-    }) {
+    async generateImage(options) {
       const openai = await getClient();
-      const response = await openai.images.generate({
+      return generateOpenAIImageArtifact({
+        ...options,
+        client: openai,
         model: imageModel,
-        prompt,
-        size,
-        quality,
-        output_format: 'png',
-        background,
-        n: 1,
-      }, signal ? { signal } : undefined);
-      const image = response.data?.[0];
-      if (!image?.b64_json) throw visualProviderError('Image provider returned no PNG output');
-      return {
-        png: Buffer.from(image.b64_json, 'base64'),
-        revisedPrompt: image.revised_prompt || null,
-        model: imageModel,
-      };
+        maxRetries: options.maxRetries ?? normalizeImageRetryCount(
+          process.env.ENDPOINT_VISUAL_IMAGE_MAX_RETRIES,
+          1
+        ),
+      });
     },
   };
 }
-

@@ -1123,7 +1123,7 @@ async function saveTimelineDiagram(dealId, sessionId, image) {
   };
 }
 
-async function saveFinalProposal(dealId, sessionId, dealName, markdown, diagramDocs = [], timelineDiagramDocs = []) {
+async function saveFinalProposal(dealId, sessionId, dealName, markdown, diagramDocs = [], timelineDiagramDocs = [], signal = null) {
   try {
     const dealDir = path.join(UPLOAD_DIR, String(dealId));
     if (!fs.existsSync(dealDir)) {
@@ -1422,7 +1422,8 @@ async function finalizeAssessmentArtifacts({ dealId, sessionId, dealName, propos
         dealName,
         proposalMarkdown,
         diagramDocs,
-        timelineDoc ? [timelineDoc] : []
+        timelineDoc ? [timelineDoc] : [],
+        signal
       );
       await markWorkflowStepCompleted(sessionId, dealId, 'save-final-report', String(finalReportDocumentId));
     }

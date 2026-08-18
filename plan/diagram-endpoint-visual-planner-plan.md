@@ -1,898 +1,899 @@
-# Endpoint Visual Planner: MVP and target architecture
+# Endpoint Visual Generation: reuse-first, fidelity-aware implementation plan
 
-Status: implemented and validated  
-Scope: endpoint functionality only  
-Out of scope: system Process/Chat flow and proposal document generation
+Status: **reviewed and corrected; implementation work remains**
 
-Implementation result:
+Last updated: 2026-07-27
 
-- the public, unauthenticated `/v1/visuals/plan` and `/v1/visuals/render` endpoints are implemented;
-- all five catalog types are enabled;
-- conceptual overview rendering uses the endpoint-owned AI image adapter;
-- details, cloud, C4, and Gantt rendering use deterministic SVG-to-PNG adapters;
-- plan tokens, evidence binding, idempotency, limits, timeouts, shared budgets, and endpoint-specific error envelopes are implemented;
-- the legacy `/v1/diagrams/render` route and the system Process/Chat generation flow remain separate.
+Scope: public `/v1/visuals` endpoint functionality
 
-## 1. Goal
+System behavior: preserve existing Process/Chat output while extracting reusable image-generation services
 
-Improve diagrams generated through the public endpoint by adding an AI planning step between the source material and rendering.
+Language: all code, prompts, tests, comments, API documentation, and plan content must remain in English
 
-The planner must not merely rewrite the source into a free-form image prompt. It must produce a typed, inspectable `VisualArtifactPlan` that:
+Authentication decision: the endpoint is intentionally public and requires no authentication or authorization
 
-- selects only visuals that materially improve the proposal;
-- chooses the correct visual type and renderer;
-- separates semantic decisions from exact business data;
-- carries source references for dates, amounts, labels, and relationships;
-- defines validation rules before rendering starts;
-- supports architecture diagrams and commercial visuals such as Gantt charts.
+## 1. Executive summary
 
-The target pipeline is:
+The existing `/v1/visuals` planning and operational foundation is useful, but the rendering implementation created a parallel architecture drawing system whose presentation quality is below the existing Process/Chat examples.
+
+The correction is reuse-first:
+
+- retain the endpoint Visual Planner, typed artifact plans, evidence binding, plan tokens, idempotency, limits, cancellation, and public API behavior;
+- extract the reusable OpenAI image-generation and prompt-building logic from the system path;
+- make AI-rendered architecture artifacts use one shared proposal visual language;
+- keep renderer selection server-owned;
+- keep deterministic Gantt rendering as the default because schedule geometry is an exact-data requirement;
+- describe AI-rendered architecture fidelity truthfully as validated best effort, not mathematical exactness;
+- retain deterministic architecture rendering only as a temporary rollback path during migration;
+- remove duplicated architecture rendering code only after the replacement passes the complete evaluation and rollout gates.
+
+The target behavior is:
 
 ```text
-Endpoint request
-  -> request validation and normalization
-  -> endpoint-specific Visual Planner
-  -> typed VisualArtifactPlan validation
-  -> renderer routing
-  -> artifact-specific rendering
-  -> fidelity and quality checks
+Public request
+  -> validate and normalize
+  -> enforce pre-provider input and complexity limits
+  -> canonicalize structured facts
+  -> endpoint Visual Planner
+  -> validate and persist a self-contained VisualArtifactPlan
+  -> server rendering policy
+       -> shared AI architecture renderer
+       -> deterministic exact Gantt renderer
+  -> bounded output validation and optional advisory visual QA
   -> endpoint response
 ```
 
-### Target user and job to be done
+## 2. Corrected rendering and fidelity policy
 
-Primary user: an API client or internal proposal service that has proposal/architecture source and needs one or two useful visuals without manually authoring graph JSON.
+### 2.1 Architecture overview
 
-Secondary user: an operator or developer who wants to inspect a plan before paying for rendering, then render the approved server-issued plan.
+`architecture-overview` uses the shared system image renderer.
 
-The first implementation proves both rendering strategies:
+Fidelity:
 
-- `architecture-overview` for a conceptual AI-rendered visual;
-- `gantt` for an exact-data deterministic visual;
-- zero, one, or two artifacts per request.
+- conceptual;
+- presentation-oriented;
+- supplied terminology should be preserved;
+- exact topology is not guaranteed.
 
-The endpoint product must ultimately support this fixed five-type catalog:
+Eligible source:
 
-- `architecture-overview`;
-- `architecture-details`;
-- `cloud-architecture`;
-- `architecture-c4`;
-- `gantt`.
+- proposal markdown;
+- architecture markdown;
+- structured architecture, cloud, or C4 data.
 
-The three structurally exact architecture types were completed in the same endpoint implementation without expanding the public type catalog.
+### 2.2 Architecture details, cloud, and C4
 
-## 2. Hard boundary: do not change system generation
+`architecture-details`, `cloud-architecture`, and `architecture-c4` use the shared system image renderer after the typed plan has been validated and serialized.
 
-This initiative must not change:
+Fidelity:
 
-- `server/routes/ai.js`;
-- system agent prompts or database agent configuration;
-- the system artifact-planning step;
-- `generateArchitectureDiagramImages`;
-- proposal DOCX assembly or image embedding;
-- existing Process/Chat behavior.
+- exact structured input and evidence binding;
+- `validated_best_effort` rendered fidelity;
+- mandatory elements and relationships are checked before rendering;
+- rendered pixels must not be advertised as `structural_exact`;
+- advisory visual QA may detect omissions or reversals but cannot prove topology.
 
-Endpoint code may reuse low-level utilities that have no system behavior attached, but it must not call or modify the system agent orchestration. Planner prompts, schemas, flags, telemetry, and retries are endpoint-owned.
+Eligibility remains strict:
 
-## 3. Problems to solve
+- `architecture-details` requires structured architecture data;
+- `cloud-architecture` requires structured cloud data;
+- `architecture-c4` requires structured C4 data;
+- qualitative markdown alone does not create an exact structured artifact.
 
-The current endpoint asks a renderer to solve too many problems at once: interpret the content, decide the composition, preserve exact facts, and draw the final result.
+The existing deterministic architecture renderers remain available only behind a server-controlled rollback policy during migration. They are not client-selectable.
 
-This creates several failure modes:
+### 2.3 Gantt
 
-- a graph-shaped JSON request does not provide enough visual intent;
-- direct image generation can omit, rename, duplicate, or invent elements;
-- deterministic drawing preserves facts but produces weak layouts when it relies on manually assigned coordinates;
-- one generic architecture contract cannot represent overview, detailed topology, cloud resources, C4 hierarchy, and Gantt timelines cleanly;
-- the response does not explain why a given visual or renderer was selected;
-- there is no plan-level artifact that can be inspected, approved, cached, or replayed.
+`gantt` remains deterministic by default.
 
-## 4. Product behavior and fixed API decisions
+Fidelity:
 
-### 4.1 Separate legacy and new endpoint families
+- `data_exact`;
+- structured dates remain authoritative;
+- task positions, durations, dependencies, and milestones are calculated by code;
+- visible labels use project-relative months and weeks;
+- no calendar dates appear in the PNG.
 
-1. Legacy API: `POST /v1/diagrams/render`
-   - The existing `diagram`, `style`, and `render` contract remains unchanged.
-   - Request normalization, status codes, lowercase error codes, and response shape are frozen by route-level tests.
-   - New modes are not added to this handler.
-   - Freeze the committed/deployed baseline before implementation.
-   - The uncommitted experimental `style.fidelity: "strict"` branch is not accepted as baseline by implication. Decide separately whether to remove it, keep it experimental, or version it.
+Visible time labels use:
 
-2. New source-driven API: `/v1/visuals`
-   - Input contains proposal/architecture source, structured business data, and intent.
-   - The planner produces zero to two artifact plans in MVP.
-   - The API returns artifact statuses, plan metadata, warnings, and usage.
+```text
+M1
+  WK1 WK2 WK3 WK4
+M2
+  WK1 WK2 WK3 WK4
+...
+```
 
-The namespace is fixed to `/v1/visuals` because the target scope includes commercial visuals, not only diagrams, and a separate route minimizes regression risk.
+The existing system timeline image prompt may be extracted for Process/Chat compatibility, but it is not a replacement for the endpoint's exact structured Gantt renderer. A future presentation-only timeline mode would require a separate versioned product decision.
 
-### 4.2 New endpoint surface
+## 3. Reference output provenance
 
-#### `POST /v1/visuals/plan`
+The local files below remain useful visual references:
 
-Creates one validated plan synchronously and returns:
+- `server/uploads/22/architecture-1-1783322367809.png`
+- `server/uploads/22/architecture-2-1783322367831.png`
 
-- opaque `plan_token`, expiry, `source_digest`, schema version, and prompt version;
-- `renderable: true | false`;
-- decision codes and warnings, never chain-of-thought;
-- estimated renderer calls and cost/latency bands.
+They are not reproducible CI fixtures:
 
-An empty plan is a successful cost-saving outcome: return HTTP 200, `renderable: false`, and reason codes when no useful visual is justified.
+- `server/uploads` is ignored by Git;
+- the images may contain customer-sensitive material;
+- the files predate the current `extractArchitectureDiagramSource()` and `generateOpenAIImageArtifact()` implementation;
+- repository history indicates that the contemporaneous code used two direct `images.generate` calls for overview and detail variants.
 
-#### `POST /v1/visuals/render`
+Therefore:
 
-Accept exactly one of:
+- do not claim that the files were produced by the exact current pipeline;
+- record their hashes, timestamps, dimensions, and best-known generating commit in an evaluation manifest;
+- do not commit customer-sensitive source or images without explicit review;
+- create sanitized, versioned synthetic fixtures for CI;
+- treat the local images as a manual style reference only until provenance is complete.
 
-- inline `source`, which plans and renders in one convenience request;
-- a server-issued opaque `plan_token`.
+## 4. Existing implementation inventory
 
-The endpoint intentionally requires no authentication or authorization. The `plan_token` is therefore a short-lived, high-entropy bearer capability: possession permits rendering that plan until expiry. It is signed or resolves to server-side state and is bound to source digest, schema/prompt/model versions, server-selected renderer policy, and TTL. It must not contain readable proposal content.
+### 4.1 System services to extract and reuse
 
-Do not accept raw client-authored plans in MVP. Any future raw-plan mode must resubmit source, undergo full fact verification, and ignore client-selected renderer and validation policy.
+Architecture:
 
-### 4.3 Source-driven request
+- `server/services/aiOrchestrator.js`
+  - `extractArchitectureDiagramSource()`
+  - `buildArchitectureDiagramImagePrompt()`
+  - `generateArchitectureDiagramImages()`
+  - `generateOpenAIImageArtifact()`
 
-```json
-{
-  "mode": "source",
-  "source": {
-    "proposal_markdown": "...",
-    "architecture_markdown": "...",
-    "structured_data": {
-      "architecture": {},
-      "timeline": []
+Timeline compatibility:
+
+- `server/services/timelineDiagram.js`
+  - `extractTimelinePhasesFromMarkdown()`
+  - `buildTimelineDiagramImagePrompt()`
+  - `buildTimelineDiagramFromMarkdown()`
+
+System orchestration and persistence:
+
+- `server/routes/ai.js`
+  - `executeDiagramGenerationForMarkdown()`
+  - architecture and timeline persistence and embedding flow
+
+The endpoint must not call route orchestration or system database workflow functions.
+
+### 4.2 Endpoint foundation to retain
+
+- `/v1/visuals/plan`;
+- `/v1/visuals/render`;
+- request and response schemas;
+- context-aware type selection;
+- canonical structured facts and evidence references;
+- server-issued opaque plan tokens;
+- idempotency;
+- public unauthenticated access;
+- endpoint-specific uppercase error envelope;
+- `auto`, `recommend`, and `explicit` selection modes;
+- request cancellation;
+- five-minute request deadline;
+- input, output, artifact-count, and complexity limits;
+- emergency kill switch.
+
+### 4.3 Code affected by the rendering migration
+
+The migration must explicitly review and update:
+
+- `server/visuals/application/planVisuals.js`;
+- `server/visuals/application/renderVisuals.js`;
+- `server/visuals/createVisualModule.js`;
+- `server/visuals/infrastructure/openAiVisualProvider.js`;
+- `server/visuals/infrastructure/openAiOverviewRenderer.js`;
+- `server/visuals/renderers/rendererRegistry.js`;
+- `server/visuals/renderers/detailedArchitectureRenderer.js`;
+- `server/visuals/renderers/structuredArchitectureRenderer.js`;
+- `server/visuals/renderers/orthogonalRouter.js`;
+- `server/visuals/renderers/technologyIconRegistry.js`;
+- `server/visuals/renderers/ganttRenderer.js`;
+- `server/visuals/domain/catalog.js`;
+- `server/visuals/domain/schemas.js`;
+- `server/visuals/domain/complexity.js`;
+- endpoint estimates, usage reporting, tests, fixture scripts, and environment documentation.
+
+`simple-icons` may be removed only after confirming that no retained production renderer uses it.
+
+## 5. Target module architecture
+
+Extract focused shared services, for example:
+
+```text
+server/diagram-generation/
+  architectureSource.js
+  architecturePrompt.js
+  timelineSource.js
+  timelinePrompt.js
+  imageArtifactGenerator.js
+  architectureRenderer.js
+  errors.js
+```
+
+Both callers depend on the shared services:
+
+```text
+System Process/Chat ─┐
+                     ├─> shared image service ─> OpenAI Images API
+Public visual API ───┘
+```
+
+Requirements:
+
+- preserve current Process/Chat prompt semantics and output behavior;
+- keep `generateArchitectureDiagramImages()` as a compatibility wrapper;
+- keep `buildTimelineDiagramFromMarkdown()` as a compatibility wrapper;
+- avoid circular imports;
+- inject the image client or provider;
+- do not let the shared service query endpoint tables or call routes;
+- translate shared errors at each caller boundary;
+- never leak system prompt text or provider internals through the public endpoint;
+- add characterization tests before moving prompt logic.
+
+## 6. Self-contained renderer input
+
+Plan-token rendering cannot depend on recovering the original request. Every persisted plan must contain the bounded renderer-ready semantic payload required for replay.
+
+Use a discriminated union rather than `structuredContent: unknown`:
+
+```ts
+type SharedArchitectureRenderRequest =
+  | {
+      profile: "overview";
+      title: string;
+      purpose: string;
+      audience: string;
+      sourceExcerpt?: string;
+      content: OverviewRenderContent;
+      mandatoryTerminology: string[];
+      stylePreset: "system-proposal-v1";
     }
-  },
-  "context": {
-    "proposal_type": "cloud-migration",
-    "audience": ["executive", "technical"],
-    "stage": "final-proposal",
-    "goals": [
-      "explain target architecture",
-      "show migration approach"
-    ],
-    "customer_priorities": ["security", "AWS"]
-  },
-  "selection": {
-    "mode": "auto",
-    "preferred_types": [],
-    "excluded_types": [],
-    "max_visuals": 2
-  },
-  "request": {
-    "intent": "Create the visuals needed for an executive proposal",
-    "language": "en"
-  },
-  "render": {
-    "format": "png",
-    "delivery": "base64",
-    "failure_policy": "best_effort",
-    "style_preset": "professional-light-v1"
-  }
-}
+  | {
+      profile: "details";
+      title: string;
+      purpose: string;
+      audience: string;
+      content: DetailsRenderContent;
+      mandatoryTerminology: string[];
+      mandatoryRelationships: DirectedRelationship[];
+      stylePreset: "system-proposal-v1";
+    }
+  | {
+      profile: "cloud";
+      title: string;
+      purpose: string;
+      audience: string;
+      content: CloudRenderContent;
+      mandatoryTerminology: string[];
+      mandatoryRelationships: DirectedRelationship[];
+      stylePreset: "system-proposal-v1";
+    }
+  | {
+      profile: "c4";
+      title: string;
+      purpose: string;
+      audience: string;
+      content: C4RenderContent;
+      mandatoryTerminology: string[];
+      mandatoryRelationships: DirectedRelationship[];
+      stylePreset: "system-proposal-v1";
+    };
 ```
 
 Rules:
 
-- at least one textual or structured source must be present;
-- `selection.max_visuals` defaults to 2 and is capped at 2 in the initial vertical slice;
-- `selection.mode: "auto"` lets the planner choose from enabled types;
-- `selection.mode: "recommend"` returns ranked decisions without rendering;
-- `selection.mode: "explicit"` requires an explicit `types[]` list;
-- `recommend` is valid only for `/v1/visuals/plan`; `/render` accepts `auto`, `explicit`, or a previously issued plan token;
-- `preferred_types` influence ranking but cannot bypass evidence or renderer checks;
-- `excluded_types` are hard exclusions;
-- input byte size, field lengths, and collection sizes are bounded;
-- URLs or external files are not fetched in the first version;
-- untrusted source text is treated as data, not as planner instructions.
-- `structured_data.timeline` is required for a renderable MVP Gantt; prose is not authoritative for dates or dependencies;
-- arbitrary style prompts are rejected; MVP permits only server-owned style presets.
+- derive mandatory checklists from validated content rather than accepting independent client values;
+- persist a bounded sanitized `sourceExcerpt` only when overview rendering needs qualitative context;
+- do not persist the full raw request in the plan token store;
+- do not pass planner reasoning;
+- do not copy user-authored rendering instructions;
+- treat all titles, labels, descriptions, and excerpts as untrusted data;
+- place untrusted values inside explicit delimiters;
+- test delimiter-closing and instruction-in-label attacks;
+- reject over-complex mandatory structured content instead of silently truncating it;
+- preserve English control instructions even when source labels are multilingual.
 
-### 4.4 Context-based visual selection
+## 7. Profile behavior
 
-Selection uses four inputs:
+### 7.1 Overview profile
 
-1. proposal and architecture source;
-2. canonical structured facts;
-3. request context: proposal type, audience, stage, goals, and customer priorities;
-4. server capabilities: enabled types, renderer availability, limits, and cost policy.
+Input:
 
-Context fields are optional. The planner may infer missing qualitative context from the source, but inferred values must be marked as inference and may not become authoritative business facts.
+- bounded architecture source excerpt when needed;
+- validated semantic groups;
+- component labels;
+- essential relationships;
+- exact terminology checklist;
+- title, purpose, audience, and presentation density.
 
-The planner first returns a structured `ProposalProfile`, then evaluates the enabled diagram catalog:
+The prompt should preserve the existing proposal-slide visual language:
 
-```ts
-type ProposalProfile = {
-  proposalType?: string;
-  audiences: Array<"executive" | "business" | "technical" | "mixed">;
-  themes: string[];
-  goals: string[];
-  availableFactClasses: string[];
-  inferredFields: string[];
-};
+- executive hierarchy;
+- white landscape canvas;
+- dark navy title;
+- coherent cards and boundaries;
+- concise labels;
+- unambiguous connectors;
+- neutral glyphs when a technology icon is not unambiguous.
 
-type CandidateDecision = {
-  type: VisualType;
-  decision: "selected" | "omitted" | "blocked";
-  purpose?: string;
-  relevance: number;
-  evidenceCoverage: number;
-  audienceFit: string[];
-  reasonCodes: string[];
-};
-```
+### 7.2 Details profile
 
-The AI proposes semantic relevance and purpose. The server makes the final eligibility decision:
+Input:
 
-```text
-semantic relevance
-AND sufficient evidence
-AND audience fit
-AND enabled compatible renderer
-AND non-redundancy
-AND request cost/complexity budget
-```
+- components;
+- responsibilities;
+- technologies;
+- boundaries;
+- exact directed relationships and protocols;
+- external systems represented by validated components;
+- required connector semantics.
 
-Minimum eligibility rules:
+The prompt must request:
 
-| Type | Required context/evidence |
-|---|---|
-| `architecture-overview` | Several architectural concepts and a need for high-level explanation |
-| `architecture-details` | Structured component/interface IDs and exact relationships |
-| `cloud-architecture` | Structured provider resources, scopes/regions or network/security boundaries |
-| `architecture-c4` | Structured C4 level, element kinds, containment, and relationships |
-| `gantt` | Structured tasks, dates, milestones, and dependencies |
+- every supplied component;
+- correct source and target for every relationship;
+- visible arrowheads;
+- no ambiguous shared connector trunk;
+- a compact legend when multiple connector styles are present;
+- native technology icons only when unambiguous;
+- neutral glyphs otherwise.
 
-A semantically useful but unsupported candidate is returned as `blocked`, for example `STRUCTURED_TIMELINE_REQUIRED`; it is never rendered using invented data.
+The response remains `validated_best_effort` even when these instructions are present.
 
-Portfolio rules prevent redundant output in `auto` and `recommend` modes:
+### 7.3 Cloud profile
 
-- select at most one high-level architecture overview;
-- omit a C4 Context view when it communicates the same message as the selected overview to the same audience;
-- every selected diagram must answer a distinct proposal question;
-- prefer the smallest set that covers the request goals;
-- a valid result may contain zero selected diagrams.
+Input is limited to fields represented by the versioned schema.
 
-In `explicit` mode, requested types are not removed by automatic non-redundancy ranking. They are rendered when their type-specific evidence and renderer requirements are satisfied.
+Before implementation, either:
 
-The initial implementation performs profiling, candidate selection, and type-specific planning in one structured AI call. Split profiling and selection into separate calls only if evaluation shows a measurable quality benefit or the profile must be reused.
+- extend the source and artifact schemas to model account, subscription, project, region, network, identity, and security scopes; or
+- remove unsupported fields from the profile requirements.
 
-## 5. Typed VisualArtifactPlan
+The renderer must never infer a provider, service, region, or security boundary that is absent from validated content.
 
-The planner output must be validated with Zod/JSON Schema before any renderer is called.
+### 7.4 C4 profile
 
-```ts
-type VisualArtifactPlan = {
-  version: "1";
-  proposalProfile: ProposalProfile;
-  candidates: CandidateDecision[];
-  requestSummary: string;
-  artifacts: ArtifactPlan[];
-  warnings: string[];
-};
-```
+Input:
 
-The full candidate list is returned in `recommend`, debug, or `include_plan` mode. Normal render responses return only selected decisions, blocked reason codes, and the plan summary.
+- requested C4 level;
+- people, systems, containers, or components;
+- containment boundaries;
+- technologies;
+- directed relationships.
 
-Each artifact has a common envelope:
+The output follows the requested C4 semantics while using the shared proposal visual language. The rendered image remains `validated_best_effort`.
 
-```ts
-type ArtifactPlan = {
-  id: string;
-  type: VisualType;
-  title: string;
-  purpose: string;
-  audience: "executive" | "business" | "technical" | "mixed";
-  fidelityClass: "conceptual" | "structural_exact" | "data_exact";
-  required: boolean;
-  dependsOn: string[];
-  content: TypeSpecificContent;
-  presentation: PresentationSpec;
-};
-```
+### 7.5 Gantt renderer
 
-`ArtifactPlan` is implemented as a real discriminated union keyed by `type`; exact evidence references live next to the factual fields they support. Validation policies are server-owned per type and are not generated by the planner.
+The deterministic renderer:
 
-Conceptual and data-exact foundation types:
+- uses an explicit project epoch;
+- treats task date inclusivity consistently;
+- maps every 28-day project month to four seven-day weeks;
+- calculates task bars from structured dates;
+- validates dependency references and cycles;
+- renders milestone tasks consistently;
+- displays relative `M/WK` labels only;
+- returns `data_exact` when mechanical validation passes.
 
-- `architecture-overview`;
-- `gantt`.
+## 8. Versioning and compatibility
 
-Structurally exact types enabled in the completed implementation:
+The rendering migration changes observable plan semantics.
 
-- `architecture-details`;
-- `cloud-architecture`;
-- `architecture-c4`.
+Required changes:
 
-No other visual type is part of the current endpoint scope. Adding one requires a separately reviewed schema, renderer, evidence policy, evaluation set, and API capability version.
+- bump the endpoint plan schema from version `1` to version `2`;
+- introduce `validated_best_effort` for AI-rendered details, cloud, and C4 artifacts;
+- keep `conceptual` for overview;
+- keep `data_exact` for deterministic Gantt;
+- bump `ENDPOINT_RENDERER_POLICY_VERSION`;
+- reject old plan tokens with `PLAN_VERSION_UNSUPPORTED`;
+- document that rolling deployments may invalidate short-lived plan tokens;
+- keep the public route namespace `/v1/visuals`;
+- continue accepting public `style_preset: "professional-light-v1"` as the compatibility alias;
+- map the compatibility alias internally to `system-proposal-v1`;
+- do not expose internal renderer selection controls to clients.
 
-Do not use a universal `nodes[]/edges[]` schema for all types. Define a discriminated content schema per visual type.
-
-Examples:
-
-- architecture overview: semantic groups, essential components, main relationships, audience emphasis;
-- architecture details: stable component IDs, interfaces, protocols, data stores, trust boundaries, and exact relationships;
-- cloud architecture: provider, accounts/subscriptions/projects, regions, networks, managed services, resources, security boundaries, and exact connections;
-- C4: view level (`context`, `container`, or `component`), people, software systems, containers/components, boundaries, technologies, and relationships;
-- Gantt: tasks, stable IDs, start/end dates, dependencies, milestones, groups;
-
-## 6. Source truth and evidence rules
-
-The planner controls selection, hierarchy, emphasis, grouping, and wording. It does not control factual truth.
-
-Source precedence in the target architecture:
-
-1. `structured_data` for component/resource IDs, hierarchy, relationships, protocols, cloud provider metadata, dates, milestones, and dependencies;
-2. explicitly labeled tables or structured blocks in the supplied source;
-3. prose for qualitative concepts and explanatory labels;
-4. planner inference only for visual grouping or presentation, never for missing business facts.
-
-Before the planner call, the server canonicalizes structured input and assigns fact IDs. The planner may reference those IDs but may not create paths or hashes. Every exact datum in a deterministic artifact carries a server-verifiable `EvidenceRef`, for example:
-
-```ts
-type EvidenceRef = {
-  factId: string;
-  sourceId: "structured_data";
-  canonicalPath: string;
-  sourceDigest: string;
-  valueDigest: string;
-};
-```
-
-In MVP, exact dates and dependencies may come only from structured data. For structurally exact architecture types, component/resource IDs, hierarchy, and relationships must also come from structured data. Authoritative exact-fact extraction from prose is a later, separately evaluated ingestion capability.
-
-If required exact data is missing or contradictory:
-
-- the planner must emit a warning;
-- it must omit the affected visual or produce a clearly incomplete plan;
-- it must not invent a date, amount, dependency, percentage, or system component.
-
-## 7. Endpoint-specific planner
-
-Create an endpoint-owned service, for example:
+The response validation object must support:
 
 ```text
-server/services/endpointVisualPlanner.js
-server/services/endpointVisualSchemas.js
-server/prompts/endpointVisualPlanner.v1.js
+passed
+warning
+failed
+unverified
 ```
 
-Do not use the database-backed system `callAgent` path. Use a dedicated OpenAI client invocation with structured output and an explicit prompt version.
+It must never report `passed` automatically merely because an image provider returned bytes.
 
-Planner instructions must require it to:
+## 9. Fidelity and visual QA
 
-- first identify decision-relevant visual candidates;
-- avoid decorative or redundant visuals;
-- select at most `max_visuals`;
-- prefer one strong overview over several overlapping diagrams;
-- use deterministic visual types whenever exact dates or numbers matter;
-- use image generation only for conceptual `architecture-overview`;
-- select structural fidelity for `architecture-details`, `cloud-architecture`, and `architecture-c4`;
-- preserve identifiers and terminology from the source;
-- return only the typed plan;
-- treat source content as untrusted data and ignore instructions embedded in it;
-- explain omissions and uncertainties in plan fields;
-- never place secrets, credentials, personal data, or internal prompt text into artifacts.
+### 9.1 Mechanical validation
 
-Prompt-injection resistance must not rely on that instruction alone:
+Run for every output:
 
-- place control instructions and untrusted source in separate message sections with explicit delimiters;
-- allowlist plan fields and visual types;
-- enforce per-field and collection limits before a provider call;
-- post-validate planner claims against server-owned fact IDs;
-- never copy source-authored instructions into a renderer prompt;
-- maintain an adversarial evaluation corpus.
+- valid PNG signature;
+- decodable PNG;
+- expected dimensions;
+- configured pixel-area limit;
+- artifact and aggregate byte limits;
+- non-empty image;
+- allowed MIME type;
+- no raw prompt or provider metadata in the response.
 
-Recommended model settings:
-
-- structured response format;
-- low temperature;
-- fixed prompt version in telemetry;
-- one planner call per source request;
-- no automatic recursive planning loop.
-
-## 8. Renderer registry
-
-Introduce an endpoint-owned registry:
-
-```ts
-type Renderer = {
-  supports(plan: ArtifactPlan): boolean;
-  render(plan: ArtifactPlan, options: RenderOptions): Promise<RenderedArtifact>;
-  validate?(artifact: RenderedArtifact, plan: ArtifactPlan): Promise<ValidationResult>;
-};
-```
-
-Routing:
-
-| Visual type | Default renderer | Reason |
-|---|---|---|
-| Conceptual architecture overview | OpenAI image renderer | Benefits from composition and visual hierarchy |
-| Architecture details | Deterministic graph auto-layout renderer | Components, interfaces, and relationships must remain exact |
-| Cloud architecture | Deterministic graph auto-layout plus server-owned cloud icon library | Resources, boundaries, regions, and connections must remain exact |
-| C4 architecture | Deterministic C4-aware auto-layout renderer | C4 levels, nesting, identities, and relationships must remain exact |
-| Gantt | Deterministic timeline renderer | Dates and dependencies must be exact |
-
-The planner selects visual type and fidelity class, never an executable renderer ID. The server resolves them through an allowlisted, versioned compatibility registry. A planner cannot route a Gantt chart to an image model or lower its validation policy.
-
-### 8.1 Architecture overview image renderer
-
-Build the image prompt from a validated architecture plan rather than raw proposal text or serialized request JSON.
-
-The prompt should contain:
-
-- purpose and audience;
-- mandatory components and relationships;
-- grouping and hierarchy;
-- required labels and terms;
-- visual style constraints;
-- explicit prohibitions against adding or removing systems;
-- a compact machine-generated checklist of mandatory facts.
-
-The renderer may improve composition, but it may not reinterpret the plan.
-
-### 8.2 Structurally exact architecture renderers
-
-`architecture-details`, `cloud-architecture`, and `architecture-c4` use deterministic auto-layout. They share a low-level graph/layout foundation where practical, but keep separate type schemas and validation:
-
-- details validate component/interface IDs, protocols, trust boundaries, and edges;
-- cloud validates provider resources, scopes, regions, network/security boundaries, and icon mapping;
-- C4 validates the requested level, element kinds, nested boundaries, technologies, and permitted relationships.
-
-The cloud renderer may use only server-owned, versioned, license-reviewed icon packs. Unknown services receive a neutral labeled resource shape; the planner must not invent a closest-looking provider service.
-
-### 8.3 Deterministic Gantt renderer
-
-Use layout/chart libraries for exact-data artifacts. Do not maintain hand-authored node coordinates as the primary layout mechanism.
-
-Candidate implementation directions to validate in a short spike:
-
-- graph auto-layout for flows and architecture fallbacks;
-- a real runtime Gantt/timeline dependency or a purpose-built SVG renderer;
-- a C4-capable layout approach with explicit boundary nesting;
-- server-owned and license-reviewed AWS/Azure/GCP icon assets with neutral fallback icons;
-- SVG composition plus `@resvg/resvg-js` only as the final rasterization step.
-
-The spike must compare output quality, license, maintenance activity, headless rendering behavior, bundle/runtime cost, and support for fonts and long labels.
-
-The repository's Gantt-related coding skill is documentation, not a runtime renderer, and must not be treated as an installed rendering dependency.
-
-## 9. Quality assurance
-
-QA has two layers.
-
-### 9.1 Plan validation
-
-Always run:
+### 9.2 Semantic pre-render validation
 
 - schema validation;
-- renderer/type compatibility;
-- uniqueness and referential integrity of IDs;
-- graph dependency and cycle checks where applicable;
-- C4 level, containment, and relationship validation;
-- cloud provider/resource/icon allowlists and boundary validation;
-- date ordering and dependency checks for Gantt;
-- evidence coverage for exact facts;
-- maximum visual and complexity limits.
+- referential integrity;
+- evidence validation;
+- type eligibility;
+- normalized mandatory terminology;
+- normalized directed relationships;
+- bounded renderer payload.
 
-Invalid plans fail before billable rendering begins.
+### 9.3 Advisory post-render QA
 
-### 9.2 Render validation
+Initially keep visual QA disabled in production until its value, latency, and cost are measured.
 
-Deterministic artifacts:
+Evaluation may test one advisory vision QA call per AI artifact for:
 
-- compare rendered labels/data against the plan;
-- check clipping, overflow, empty bounds, and image dimensions;
-- verify totals and axes from source values;
-- create a render checksum tied to the normalized plan.
+- required component recall;
+- invented critical component detection;
+- sampled relationship direction;
+- legend presence;
+- label legibility;
+- obvious connector breakage;
+- broad visual similarity to the approved style rubric.
 
-Image artifacts:
+Policy when enabled:
 
-- retain structural checks on the input plan;
-- optionally run one bounded advisory vision QA pass to estimate mandatory-component recall, forbidden additions, and legibility;
-- return warnings when non-critical presentation issues remain;
-- do not use vision QA as the sole fail-closed source of truth.
+- at most one QA call per AI artifact;
+- at most one defect-specific regeneration per AI artifact;
+- no unbounded loop;
+- all calls share the request deadline;
+- QA and regeneration are included in budgets and usage reporting;
+- failure to verify mandatory content produces `warning` or artifact failure according to policy;
+- QA never upgrades image-model output to mathematical exactness.
 
-Vision QA and automatic regeneration are disabled in MVP. They may be enabled behind a feature flag only after precision/recall, latency, cost, and error-class-specific retry value are measured on a labeled set. Exact text requirements must use a deterministic text layer or must not be advertised as guaranteed.
+## 10. Evaluation baseline
 
-## 10. Response contract
+Create two evaluation layers.
 
-Source-driven and plan-driven responses:
+### 10.1 Versioned CI fixtures
 
-```json
-{
-  "request_id": "...",
-  "plan": {
-    "plan_token": "...",
-    "version": "1",
-    "prompt_version": "endpoint-visual-planner-v1",
-    "source_digest": "...",
-    "renderable": true,
-    "expires_at": "..."
-  },
-  "status": "complete",
-  "artifacts": [
-    {
-      "id": "...",
-      "type": "gantt",
-      "mime_type": "image/png",
-      "image_base64": "...",
-      "width": 1600,
-      "height": 900,
-      "renderer": "deterministic-gantt-v1",
-      "status": "complete",
-      "warnings": [],
-      "validation": {
-        "status": "passed"
-      }
-    }
-  ],
-  "errors": [],
-  "warnings": [],
-  "usage": {
-    "planner_calls": 1,
-    "image_generation_calls": 0,
-    "qa_calls": 0
-  }
-}
+Use sanitized synthetic fixtures covering:
+
+- overview from markdown;
+- details with directed and bidirectional relationships;
+- AWS, Azure, and GCP cloud cases;
+- C4 context, container, and component levels;
+- exact Gantt dates, dependencies, and milestones;
+- maximum supported density;
+- multilingual labels;
+- long labels;
+- malformed references;
+- prompt-injection text inside labels and excerpts.
+
+### 10.2 Controlled visual evaluation bundle
+
+Maintain a manifest containing:
+
+- source fixture identifier and hash;
+- output image hash;
+- prompt and schema versions;
+- model identifier;
+- image size, quality, and background;
+- generating commit;
+- timestamp;
+- rubric scores;
+- reviewer;
+- confidentiality classification.
+
+Do not make CI depend on ignored local upload files or the ignored tender document.
+
+For nondeterministic AI profiles:
+
+- run at least three generations per representative fixture;
+- define a numeric rubric and pass threshold before implementation;
+- record omission, invention, latency, cost, and failure rates;
+- do not accept a single unusually good image as proof of stable quality.
+
+## 11. Public unauthenticated endpoint controls
+
+No authentication or authorization is required. This is a product requirement.
+
+The public endpoint must enforce:
+
+- per-IP rate limiting;
+- a distributed or explicitly single-instance global request limit;
+- provider-call concurrency limits;
+- planner, image, QA, and regeneration budgets;
+- hourly and daily usage windows;
+- cost-weighted usage units;
+- emergency kill switch;
+- required `Idempotency-Key` for billable render requests;
+- short-lived high-entropy plan tokens;
+- input, output, pixel, artifact-count, and complexity limits;
+- request cancellation;
+- five-minute request deadline (`300_000 ms`);
+- redacted logs with no raw proposal content;
+- no arbitrary callback URLs, file paths, HTML, or executable templates.
+
+Budget policy:
+
+- calculate the maximum possible call graph before provider work;
+- atomically reserve worst-case capacity;
+- record actual calls on completion;
+- release unused reservation where the storage design supports it;
+- count semantic regeneration separately from transient provider retry;
+- reject before provider work when capacity is unavailable.
+
+For two AI architecture artifacts, the maximum optional QA path is:
+
+```text
+1 planner call
+2 initial image calls
+2 QA calls
+2 regeneration image calls
 ```
 
-The full plan may be returned only when requested with `include_plan: true`; otherwise return the opaque plan token, version, and summary to keep payloads smaller.
+## 12. Output and idempotency limits
 
-Legacy requests retain their current status codes and response body. New fields must not be added to the legacy response unless they are optional and verified not to break clients.
+The current two reference PNGs do not fit the existing aggregate and idempotency limits.
 
-Delivery options:
+Before switching rendering:
 
-- MVP: base64 in JSON, matching current behavior;
-- follow-up: short-lived object-storage URL for large or multi-artifact responses;
-- enforce a total response-size limit and reject plans that cannot fit the selected delivery mode.
+- set an explicit per-artifact PNG limit;
+- set an aggregate binary response limit that supports the maximum artifact count;
+- account for base64 expansion of approximately four thirds;
+- include JSON envelope overhead;
+- make the idempotency serialized-response limit larger than the maximum valid API response;
+- add boundary tests using real PNG sizes;
+- evaluate whether large base64 JSONB rows are acceptable.
 
-## 11. Security, cost, and operational controls
+Initial implementation target:
 
-The endpoint is intentionally public and unauthenticated. No API key, bearer identity, user session, or authorization check is required. The following abuse and cost controls are therefore prerequisites rather than substitutes for authentication:
+- maximum PNG bytes per artifact: `3 MiB`;
+- maximum aggregate PNG bytes: `6 MiB`;
+- maximum serialized idempotent response: `12 MiB`;
+- maximum artifacts per request: `2`.
 
-- add per-IP, global, and route-specific rate limits;
-- cap global and per-process concurrent planner/image calls;
-- define per-request planner, image, and QA call budgets;
-- limit input size, artifact count, resolution, and total output bytes;
-- enforce provider-side daily/hourly budget alarms and an emergency kill switch;
-- redact source text and secrets from logs;
-- retain hashes and structured metadata rather than full proposal content by default;
-- set upstream timeouts and abort signals;
-- propagate a request ID through planner, renderer, and QA;
-- reject unknown renderer IDs and prompt versions;
-- do not accept arbitrary callback URLs, file paths, HTML, or executable templates;
-- document retention behavior for generated artifacts.
-- require `Idempotency-Key` for billable render calls and cache the result for a defined TTL;
-- scope idempotency by route plus normalized request digest, and optionally IP, rather than user identity;
-- issue only signed/high-entropy, short-lived plan tokens and store only a token hash when server-side state is used;
-- reject expired, modified, replay-policy-incompatible, or source-digest-mismatched plan tokens;
-- classify or redact sensitive input before sending it to an external AI provider;
-- define policy for confidential tender data, PII, and provider retention;
-- retain no raw source by default unless an approved retention mode is explicitly selected.
+If database storage proves unsuitable, preserve the public base64 response contract while storing generated artifacts separately and reconstructing idempotent replays from internal artifact references.
 
-Because there is no authenticated identity, per-customer quotas, revocation by user, and tenant-level audit guarantees are not available. This limitation must be documented. If IP/global controls do not keep abuse and spend within the agreed canary budget, public rollout must stop or the product decision to omit authentication must be revisited.
+## 13. Idempotency and failure semantics
 
-Telemetry should include:
+- claim idempotency before consuming a plan render attempt;
+- completed replay must not call the planner, renderer, QA, or provider again;
+- the same idempotency key with another payload returns conflict;
+- an in-progress request returns `IDEMPOTENCY_IN_PROGRESS`;
+- a request that fails after provider work remains explicitly failed for that key;
+- retry after such failure requires a new key;
+- document whether a failed provider attempt consumes a plan render count;
+- never claim that a process crash or upstream timeout makes duplicate provider billing impossible;
+- add PostgreSQL concurrency tests for claims, expiry, response persistence, and render-count races.
 
-- request mode and visual types;
-- planner/renderer/prompt versions;
-- latency by stage;
-- token and image-generation usage;
-- validation failures and regeneration reasons;
-- artifact count and response size;
-- provider errors, timeouts, and cancellation;
-- no raw proposal content.
+## 14. Provider retry and error mapping
 
-## 12. Failure model
+Define a deadline-aware transient retry policy:
 
-Define stable endpoint error codes:
+- retry only supported transient 429 and 5xx failures;
+- respect `Retry-After` when present;
+- use bounded jitter;
+- do not retry invalid prompts, moderation failures, schema failures, or client cancellation;
+- do not retry when insufficient request deadline remains;
+- distinguish transient retry from semantic regeneration in usage reporting.
 
-- `INVALID_REQUEST`;
-- `SOURCE_TOO_LARGE`;
-- `PLAN_INVALID`;
-- `UNSUPPORTED_VISUAL_TYPE`;
-- `RENDERER_UNAVAILABLE`;
-- `RENDER_FAILED`;
-- `QUALITY_CHECK_FAILED`;
-- `BUDGET_EXCEEDED`;
-- `RATE_LIMITED`.
+Shared service errors must be translated into:
 
-Legacy errors remain unchanged. The uppercase envelope applies only to `/v1/visuals`.
+- system Process/Chat errors at the system boundary;
+- uppercase public visual API errors at the endpoint boundary.
 
-MVP execution contract:
+No provider response may expose raw proposal content, internal prompts, stack traces, or secrets.
 
-- plan creation is synchronous and makes at most one planner call;
-- render is synchronous for at most two artifacts, with at most one image-model artifact;
-- each request has one propagated deadline, upstream abort signals, bounded concurrency of two, and output/pixel limits;
-- `failure_policy` is client-selected as `atomic` or `best_effort`, defaulting to `best_effort`;
-- artifacts expose `required`, `dependsOn`, status, and per-artifact error;
-- a best-effort response uses HTTP 200 with `complete`, `partial`, or `failed`; request-wide validation, rate-limit, budget, or provider-unavailability errors use HTTP errors;
-- disconnect and timeout behavior must cancel pending work where supported;
-- the same `Idempotency-Key` returns the stored outcome and causes no duplicate provider calls.
+## 15. Implementation phases
 
-If canary p95 exceeds the agreed synchronous deadline or payload ceiling, asynchronous jobs (`202`, job ID, status/result endpoint) become a release blocker for wider rollout.
+### Phase 0 — freeze, correct, and measure
 
-## 13. Implementation phases
-
-### Phase 0 — contract and baseline (completed)
-
-- Freeze golden requests and outputs for the current legacy endpoint.
-- Decide the status of the uncommitted experimental strict renderer.
-- Record current latency, cost, and failure rate on a small evaluation set.
-- Finalize `/v1/visuals` request/response schemas and separate error codes.
-- Define the endpoint/system isolation test.
-- Confirm and document that `/v1/visuals` has no authentication or authorization middleware.
-- Add dedicated IP/global limiters, concurrency caps, provider-spend alarms, request/output budgets, deadline propagation, redacted logging, idempotency storage, and an emergency kill switch before enabling a paid route.
-- Make the Express app testable without coupling route tests to `listen()`.
+- add characterization tests for current system architecture and timeline prompts;
+- document the true provenance of the local reference images;
+- create sanitized versioned CI fixtures;
+- define the scored visual rubric, thresholds, reviewers, and repeat count;
+- confirm plan schema version `2` and renderer policy version;
+- confirm `validated_best_effort` architecture semantics;
+- confirm deterministic Gantt as the default;
+- confirm coherent output and idempotency limits;
+- define worst-case provider budgets.
 
 Exit criteria:
 
-- legacy contract is covered by tests;
-- the new plan schema is reviewed;
-- endpoint-only file boundaries are documented.
-- unauthenticated requests work by contract while IP/global limits and budgets are enforced;
-- duplicate idempotency keys cannot duplicate provider calls.
+- current Process/Chat behavior is protected by tests;
+- the reference manifest is accurate;
+- CI does not depend on ignored customer files;
+- fidelity and validation terms are truthful;
+- no production behavior has changed.
 
-### Phase 1 — signed-plan dry run (completed)
+### Phase 1 — extract shared image services
 
-- Implement request normalization and schemas.
-- Canonicalize structured source into server-owned fact IDs and a source digest.
-- Add the endpoint-specific structured-output planner.
-- Add `POST /v1/visuals/plan`.
-- Persist or sign opaque server-issued plan tokens with source/version binding and TTL.
-- Add plan validation, evidence checks, layered prompt-injection controls, budgets, and telemetry.
-- Do not render new artifact types yet.
-
-Exit criteria:
-
-- plans validate for architecture-overview and Gantt fixtures;
-- missing/contradictory data creates warnings rather than invented facts;
-- negative cases return a valid non-renderable empty plan;
-- planning does not call system agents or modify system artifacts.
-
-### Phase 2 — MVP vertical slice (completed)
-
-- Route validated architecture plans to the OpenAI image renderer.
-- Replace raw JSON prompt construction with plan-based prompt construction.
-- Implement a real deterministic Gantt renderer selected by a dependency spike.
-- Require structured timeline data and verify exact task IDs, dates, dependencies, and milestones.
-- Add `POST /v1/visuals/render`, plan replay, idempotency, statuses, and failure policy.
-- Keep vision QA and automatic image regeneration disabled.
-- Keep the legacy route byte-for-byte compatible.
+- extract the image artifact generator;
+- extract architecture source and prompt construction;
+- extract timeline source and prompt construction for Process/Chat compatibility;
+- keep compatibility wrappers;
+- preserve dependency injection;
+- add caller-specific error adapters;
+- run the full test suite.
 
 Exit criteria:
 
-- architecture evaluation set improves against the endpoint baseline;
-- Gantt data fidelity is 100% on the evaluation set;
-- mandatory architecture components and terminology pass measurable thresholds;
-- latency, cost, size, and call budgets are enforced.
+- both callers can import the shared service without route imports;
+- Process/Chat prompt contracts remain intentionally equivalent;
+- no duplicate OpenAI image wrapper remains.
 
-### Phase 3 — execution hardening (core safeguards completed; production SLO observation remains operational)
+### Phase 2 — implement plan schema v2 and self-contained adapters
 
-- Evaluate synchronous p95 latency, response size, and memory on canary traffic.
-- Add asynchronous multi-artifact jobs if synchronous gates are missed.
-- Add cancellation, process-restart, concurrency, and provider-failure coverage.
-- Add object-storage delivery only if measured payload size justifies it.
-- Establish dashboards and alerts.
-
-Exit criteria:
-
-- the selected execution model meets its SLO;
-- retries do not duplicate charges;
-- rollback leaves `/v1/diagrams/render` unaffected.
-
-### Phase 4 — complete the five-type catalog (completed)
-
-- Add `architecture-details` with deterministic graph auto-layout.
-- Add `cloud-architecture` with provider/resource validation and versioned cloud icon packs.
-- Add `architecture-c4` with explicit C4 level and containment validation.
-- Reuse a common graph/layout foundation without collapsing the three public schemas into one generic contract.
-- Add structural-data and overflow validation for each type.
-- Evaluate advisory vision QA separately; enable it only if labeled-set precision/recall and cost justify it.
-- Publish migration and capability documentation.
+- add versioned fidelity classes;
+- add self-contained renderer-ready payloads;
+- add discriminated profile schemas;
+- add bounded sanitized overview excerpts;
+- add exact terminology and directed-relationship derivation;
+- extend or narrow the cloud schema explicitly;
+- map public `professional-light-v1` to internal `system-proposal-v1`;
+- bump renderer policy version.
 
 Exit criteria:
 
-- all five supported types have a documented schema, renderer, evaluation set, and rollout gate;
-- no exact-data visual uses an image model;
-- legacy behavior remains unchanged.
+- plan-token render requires no original request recovery;
+- all profile payloads are typed and bounded;
+- old tokens fail safely;
+- no client prompt reaches the image provider.
 
-## 14. Test strategy
+### Phase 3 — architecture vertical slices
 
-### Contract tests
+- switch `architecture-overview` to the extracted shared service;
+- switch `architecture-details` behind a rollout flag;
+- generate repeated fixture outputs;
+- compare against the rubric and deterministic baseline;
+- migrate cloud and C4 only after the details gate passes;
+- keep the deterministic architecture path available for rollback.
 
-- legacy request and response snapshots;
-- `/v1/visuals/plan`, inline-source render, and server-issued-plan render;
-- invalid mixed-mode requests;
-- strict separation of legacy lowercase and new uppercase error envelopes;
-- base64 delivery and response-size rejection.
+Exit criteria:
 
-### Planner tests
+- AI architecture outputs meet the defined pass rate;
+- validation metadata is truthful;
+- Process/Chat output remains unchanged;
+- output sizes fit the endpoint contract;
+- rollback works.
 
-- structured output schema;
-- visual selection and maximum count;
-- `auto`, `recommend`, and `explicit` selection behavior;
-- preferred/excluded-type constraints;
-- proposal profile inference markers;
-- candidate reason codes and server eligibility overrides;
-- redundancy rules across overview and C4;
-- no useful visual returns an empty plan;
-- missing, contradictory, and malicious source text;
-- exact facts always have evidence;
-- stable prompt/model/version metadata.
+### Phase 4 — operational hardening and optional QA
 
-Because LLM output is probabilistic, combine mocked contract tests with a versioned live evaluation suite. Do not assert byte-identical plans from live calls.
+- implement provider concurrency control;
+- implement hourly and cost-weighted budgets;
+- reserve worst-case call capacity;
+- add transient retry policy;
+- add PostgreSQL idempotency and budget integration tests;
+- measure advisory QA;
+- enable QA only when its value justifies cost and latency;
+- verify the five-minute deadline across render, QA, and regeneration.
 
-### Renderer tests
+Exit criteria:
 
-- one golden fixture per visual type;
-- exact-value/property assertions before pixel comparisons;
-- details: component/interface/protocol and relationship fidelity;
-- cloud: resource identity, provider scope, boundary, connection, and icon/fallback fidelity;
-- C4: view-level, element-kind, containment, technology, and relationship fidelity;
-- layout overflow and clipping;
-- Unicode and long labels;
-- high-density graphs and timelines;
-- deterministic output stability where promised.
+- multi-request capacity tests pass;
+- provider calls cannot bypass endpoint budgets;
+- actual usage is reported correctly;
+- timeout and cancellation propagate through every call;
+- logs are redacted.
 
-### Integration tests
+### Phase 5 — complete evaluation and rollout
 
-- source -> plan -> architecture/Gantt renderer -> response;
-- server-issued plan skips planner;
-- timeout, cancellation, provider failure, and retry budget;
-- best-effort and atomic failure policies;
-- idempotent retry, plan expiry, token tampering, and source-digest mismatch;
-- route-level JSON parser `413`, nesting/array limits, and compressed-body policy;
-- concurrency, client disconnect, and process-restart behavior;
-- telemetry contains metadata but not source content;
-- system routes and system generation remain untouched.
+- generate all five diagram types from sanitized fixtures;
+- run repeated architecture generations;
+- verify deterministic Gantt geometry;
+- measure latency, cost, failure rate, output size, and QA value;
+- perform a canary rollout;
+- verify emergency disable and rollback;
+- observe production metrics for an agreed period.
 
-### Security tests
+Exit criteria:
 
-- prompt injection inside source markdown;
-- oversized and deeply nested payloads;
-- secret-like content is not logged;
-- unknown renderer/prompt IDs;
-- successful unauthenticated access plus IP/global rate-limit and budget rejection;
-- malicious labels cannot inject SVG/HTML/script content.
-- confidential/PII policy enforcement before provider calls;
-- plan-token entropy, signature, expiry, and non-disclosure of source content.
+- Product accepts the scored presentation results;
+- Architecture accepts the documented best-effort fidelity;
+- no accepted fixture contains an invented critical system;
+- accepted mandatory relationships meet the rubric threshold;
+- Gantt uses relative `M/WK` labels and no calendar dates;
+- operational budgets remain within approved limits.
 
-## 15. Acceptance criteria
+### Phase 6 — cleanup
+
+Only after Phase 5:
+
+- remove unused custom architecture renderer code;
+- remove the orthogonal router if no fallback uses it;
+- remove the technology icon registry if unused;
+- remove `simple-icons` if unused;
+- remove the endpoint-owned OpenAI overview renderer if superseded;
+- simplify the renderer registry;
+- retain deterministic Gantt and its required SVG utilities;
+- remove obsolete implementation-specific tests;
+- retain contract, fidelity, prompt, usage, and rollout tests.
+
+Exit criteria:
+
+- there is one shared AI image-generation path;
+- deterministic Gantt remains supported;
+- no dead architecture renderer or dependency remains;
+- `git diff --check`, full tests, and production build pass.
+
+## 16. Test plan
+
+### Shared service tests
+
+- architecture extraction compatibility;
+- timeline extraction compatibility;
+- prompt characterization;
+- injected fake image client;
+- size, quality, background, and output-format parameters;
+- caller-specific error translation;
+- cancellation propagation;
+- no circular imports.
+
+### Plan and adapter tests
+
+- all five types can be planned;
+- plan schema v2 fidelity classes are enforced;
+- token plans are self-contained;
+- overview excerpts are bounded;
+- profile payloads use discriminated schemas;
+- mandatory terminology and relationships are derived from validated content;
+- malicious instructions remain inside untrusted-data boundaries;
+- unsupported cloud fields are rejected;
+- oversized mandatory content is rejected before provider work.
+
+### Render application tests
+
+- plan-token rendering skips a second planner call;
+- all architecture profiles use the shared image service;
+- Gantt uses the deterministic renderer;
+- public style alias maps to the internal preset;
+- validation is not automatically marked passed;
+- `best_effort` and `atomic` behavior is correct;
+- usage includes planner, image, QA, regeneration, and retry calls;
+- timeout aborts every upstream call;
+- output limits are checked incrementally;
+- idempotent replay creates no duplicate application call.
+
+### PostgreSQL integration tests
+
+- concurrent idempotency claims;
+- payload conflict;
+- stale and expired claims;
+- failed request semantics;
+- plan render-count races;
+- hourly and daily budget atomicity;
+- worst-case reservation;
+- response-size boundary;
+- cleanup and migration behavior.
+
+### Compatibility tests
+
+- Process/Chat architecture generation;
+- Process/Chat timeline generation;
+- proposal persistence and embedding;
+- legacy `/v1/diagrams/render`;
+- public endpoint uppercase error envelope;
+- system and endpoint errors do not leak into each other.
+
+### Visual evaluation
+
+- required component recall;
+- invented critical components;
+- mandatory relationship direction;
+- arrowhead visibility;
+- legend presence;
+- icon correctness or neutral fallback;
+- typography and clipping;
+- presentation similarity;
+- repeated-run pass rate;
+- exact Gantt positions, dependencies, and milestones.
+
+## 17. Acceptance criteria
 
 Functional:
 
-- a source request can produce a validated zero-to-two-artifact plan;
-- all five supported types use their intended renderer class;
-- exact dates and numbers are reproduced without invention;
-- a client can inspect a plan before rendering;
-- a server-issued plan can be replayed semantically without another planner call;
-- deterministic replay is stable, while AI image regeneration is explicitly non-deterministic;
-- the legacy endpoint contract passes unchanged.
+- all five visual types remain selectable under their eligibility rules;
+- planning and rendering remain separate;
+- plan-token replay is self-contained;
+- the endpoint remains public and unauthenticated;
+- no client-authored renderer prompt or renderer ID is accepted;
+- deterministic Gantt remains the exact schedule path.
 
-Quality:
+Fidelity:
 
-- on a versioned evaluation set of at least 50 representative and negative inputs, visual-type selection agrees with the human rubric in at least 90% of cases;
-- at least 85% of supported-case plans are accepted without edits;
-- at least 95% of negative cases correctly return an empty plan, with zero fabricated exact business facts;
-- architecture reaches at least 95% required component/relationship recall, zero invented critical external systems, and at least 90% human readability/usefulness pass rate;
-- details/cloud/C4 deterministic outputs preserve 100% of structured element IDs, containment, and relationships;
-- cloud fixtures contain zero provider-service substitutions and 100% valid icon-or-neutral-fallback mappings;
-- C4 fixtures contain 100% valid element kinds and boundary nesting for the selected C4 level;
-- Gantt has 100% equality for structured task IDs, dates, dependencies, and milestones;
-- no clipped titles, legends, or mandatory labels in golden fixtures;
-- no image regeneration in MVP;
-- empty or redundant visuals are omitted.
+- overview is `conceptual`;
+- AI details, cloud, and C4 are `validated_best_effort`;
+- Gantt is `data_exact`;
+- validation status is evidence-based and never automatically passed;
+- API documentation does not claim mathematical topology guarantees for generated images.
 
-Operational:
+Engineering:
 
-- per-request call and output budgets are enforced;
-- 100% of requests remain unauthenticated by contract and are covered by IP/global rate limits and spend controls;
-- replaying an `Idempotency-Key` creates zero duplicate provider calls;
-- sampled logs contain zero raw source bodies or secrets; default source retention is none;
-- stage latency and usage are observable;
-- each new stage and renderer has an independent feature flag;
-- disabling the new flow does not affect system Process/Chat generation.
+- Process/Chat output remains compatible;
+- shared image services have dependency injection;
+- renderer policy and schema versions are bumped;
+- old tokens fail safely;
+- output and idempotency limits are coherent;
+- all provider work is covered by budgets, concurrency control, timeout, and cancellation;
+- full `npm test` passes;
+- `npm run build` passes;
+- `git diff --check` passes;
+- code, prompts, comments, tests, and documentation are in English.
 
-Release-blocking SLOs to finalize numerically in Phase 0:
+## 18. Explicit decisions
 
-- suggested `/plan` p95 ceiling: 8 seconds;
-- suggested deterministic Gantt p95 ceiling: 2 seconds server-side;
-- suggested full architecture request p95 sync ceiling: 45 seconds;
-- render failure rate at most 2%, excluding documented provider outage;
-- average cost per accepted artifact within the Product-approved budget;
-- canary of at least 100 requests with at least 90% useful successful artifacts, at most 5% partial/failed responses, and no severity-1 privacy/security issue.
+1. The endpoint remains public and unauthenticated.
+2. Extract shared image services instead of calling Process/Chat routes or workflow functions.
+3. Preserve the endpoint Visual Planner and canonical evidence model.
+4. Preserve current Process/Chat behavior through compatibility wrappers.
+5. Use `system-proposal-v1` internally.
+6. Continue accepting `professional-light-v1` as the public compatibility alias.
+7. Use AI image generation for overview, details, cloud, and C4 presentation profiles.
+8. Describe AI architecture output as `validated_best_effort`, not exact.
+9. Keep deterministic Gantt as the default `data_exact` renderer.
+10. Keep renderer choice server-owned.
+11. Do not accept arbitrary client prompts.
+12. Persist a self-contained renderer-ready plan for token replay.
+13. Keep the five-minute request deadline.
+14. Bound QA to one call and one regeneration per AI artifact when enabled.
+15. Remove deterministic architecture fallback code only after evaluation, canary, and rollback gates pass.
 
-## 16. Rollout and rollback
+## 19. Current handoff state
 
-Feature flags:
+Implemented in the current workspace:
 
-- `ENDPOINT_VISUAL_PLANNER_ENABLED`;
-- `ENDPOINT_ARCHITECTURE_PLAN_RENDERER_ENABLED`;
-- `ENDPOINT_DETERMINISTIC_VISUALS_ENABLED`;
-- `ENDPOINT_VISION_QA_ENABLED`.
+- endpoint planner;
+- five visual types;
+- plan schema version `2`;
+- typed plans and canonical evidence;
+- `conceptual`, `validated_best_effort`, and `data_exact` fidelity classes;
+- public unauthenticated routes;
+- plan tokens;
+- self-contained architecture token rendering;
+- idempotency;
+- coherent artifact, aggregate output, and idempotency limits;
+- hourly and daily cost-weighted budgets;
+- PostgreSQL provider concurrency leases;
+- bounded transient image retry;
+- request deadline and cancellation;
+- endpoint-specific errors;
+- shared architecture source, prompt, image, and renderer services;
+- shared timeline source and prompt services;
+- Process/Chat compatibility wrappers;
+- all four architecture profiles routed through the shared image adapter;
+- deterministic Gantt;
+- server-controlled deterministic architecture rollback;
+- truthful `unverified` semantic validation while QA is disabled;
+- renderer estimates and actual usage reporting;
+- sanitized evaluation and local-reference provenance manifests;
+- environment and deployment documentation;
+- database migration and verification coverage for visual controls.
 
-Rollout:
+Intentionally pending external evaluation:
 
-1. internal dry-run planning;
-2. public plan endpoint under strict global budget;
-3. limited-percentage or time-windowed source rendering;
-4. canary traffic under explicit spend and concurrency ceilings;
-5. wider availability after quality/cost thresholds are met.
+- execute migration `028` and database verification against the target PostgreSQL environment;
+- repeated live image generation from sanitized fixtures;
+- scored comparison with the controlled visual references;
+- latency, cost, omission, invention, and relationship-direction measurements;
+- a production canary and rollback exercise;
+- advisory visual QA and bounded semantic regeneration;
+- final deterministic architecture fallback and `simple-icons` cleanup.
 
-Rollback:
+Advisory QA remains disabled until repeated evaluation demonstrates that it improves acceptance enough to justify its latency and cost.
 
-- disable a failing renderer without disabling plan creation;
-- disable vision QA without changing plan/render contracts;
-- disable source-driven modes while preserving legacy graph rendering;
-- pin the last known-good planner prompt and schema version.
+## 20. Recommended next actions
 
-## 17. Decisions
-
-Accepted for MVP:
-
-1. Use `/v1/visuals`; freeze `/v1/diagrams/render`.
-2. Support `best_effort` and `atomic`; default to `best_effort` with per-artifact status.
-3. Require no authentication or authorization; protect the public endpoint with IP/global limits, concurrency caps, spend alarms, and a kill switch.
-4. Use synchronous base64 delivery for at most two artifacts and one image artifact; async becomes mandatory if canary SLOs fail.
-5. Exact Gantt data and structurally exact architecture topology must be structured; prose extraction is not authoritative.
-6. Use signed/high-entropy server-issued plan tokens bound to source/version and TTL; no trusted raw client plans.
-7. Use fixed server-owned style presets; postpone arbitrary style prompts and brand kits.
-8. Vision QA and automatic regeneration are not part of MVP.
-9. Support `auto`, `recommend`, and `explicit` selection modes.
-10. Base automatic selection on proposal source, structured facts, audience, stage, goals, customer priorities, enabled capabilities, evidence coverage, non-redundancy, and cost limits.
-
-Operational values to tune from deployment telemetry:
-
-1. Exact latency, cost, input-byte, output-byte, pixel, and quota limits.
-2. Data classification, confidential tender/PII policy, provider retention, and artifact retention.
-3. MVP language: default recommendation is English-only claims; deterministic Unicode support and every additional image-text language require separate evaluation gates.
-4. Evaluation ownership: Product owns usefulness, Architecture owns structural fidelity, domain owners approve timeline fixtures, and Engineering owns operational SLOs.
-5. Final runtime Gantt renderer after the dependency spike.
-6. Disposition of the current uncommitted experimental strict renderer.
-
-## 18. Deliverables
-
-- endpoint-only ADR covering planner/render separation and system isolation;
-- versioned request, plan, response, and error schemas;
-- endpoint-specific planner prompt and evaluation set;
-- renderer registry and renderer compatibility map;
-- fixtures for overview, details, cloud, C4, and Gantt, delivered alongside each type's rollout;
-- legacy compatibility test suite;
-- security/cost/observability controls;
-- migration guide with plan-only, inline-source render, and server-issued-plan examples.
-
-## 19. Multi-agent review decisions
-
-The draft was reviewed independently by a Solution Architect, an adversarial Critic, and a Product Owner.
-
-Accepted:
-
-- split the five-type product catalog from an executable two-type initial vertical slice;
-- create `/v1/visuals` instead of expanding the legacy handler;
-- move limits, quotas, privacy, timeouts, idempotency, and abuse controls before the first paid endpoint;
-- replace raw replayable plans with signed/high-entropy server-issued plan tokens;
-- replace LLM-created quote hashes with server-created fact IDs and canonical digests;
-- let the planner select fidelity class while the server selects renderer/version;
-- distinguish conceptual, structural-exact, and data-exact rendering;
-- make vision QA advisory and remove regeneration from MVP;
-- define synchronous caps and an objective trigger for async jobs;
-- make Gantt depend on structured timeline data and a real runtime renderer;
-- make acceptance, latency, cost, security, and rollout gates measurable.
-- add context-based `auto`, `recommend`, and `explicit` selection with server-side eligibility and redundancy rules.
-
-Superseded by explicit product decision:
-
-- an earlier draft assumed identity-based access and plan ownership; the explicit product decision supersedes that assumption, so the endpoint uses possession-based short-lived plan tokens plus IP/global abuse and spend controls.
-
-Deferred:
-
-- visual types outside the agreed five-type catalog, object-storage delivery, brand kits, authoritative prose fact extraction, plan-editing UI, vision QA, and automatic regeneration.
-
-Rejected:
-
-- modifying system Process/Chat generation as part of this initiative;
-- mixing legacy and source/plan modes in one handler;
-- trusting client-supplied renderer or validation rules;
-- treating the current manual-coordinate strict renderer or a coding skill as the target Gantt/layout engine;
-- claiming byte-identical replay for AI-generated images.
+1. Apply and verify migration `028` in the target environment.
+2. Start the endpoint with `ENDPOINT_VISUAL_ARCHITECTURE_RENDERER=shared`.
+3. Generate every architecture profile at least three times from sanitized fixtures.
+4. Score the outputs against the versioned rubric and local manual references.
+5. Exercise `ENDPOINT_VISUAL_ARCHITECTURE_RENDERER=deterministic` as rollback.
+6. Measure provider retries, request deadlines, output sizes, and budget counters.
+7. Decide whether advisory QA should be implemented and enabled.
+8. Run a bounded production canary.
+9. Remove deterministic architecture fallback code and `simple-icons` only after the canary gate passes.

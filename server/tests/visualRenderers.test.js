@@ -5,6 +5,7 @@ import {
   renderDeterministicVisual,
 } from '../visuals/renderers/rendererRegistry.js';
 import { assertVisualPlanComplexity } from '../visuals/domain/complexity.js';
+import { wrapText } from '../visuals/renderers/svgPrimitives.js';
 
 const renderOptions = { width: 1400, height: 820 };
 
@@ -105,6 +106,35 @@ for (const fixture of fixtures) {
     }
   });
 }
+
+test('Gantt uses phase colors, executive metrics, and an explicit milestone legend', () => {
+  const result = renderDeterministicVisual(fixtures[3], renderOptions);
+  assert.equal(result.renderer, 'deterministic-gantt-v2');
+  assert.match(result.svg, /WORKSTREAMS/);
+  assert.match(result.svg, /MILESTONES/);
+  assert.match(result.svg, /Milestone/);
+  assert.match(result.svg, /#176B87/);
+  assert.match(result.svg, />M1</);
+  assert.match(result.svg, />WK1</);
+  assert.doesNotMatch(result.svg, /2026-08-03/);
+});
+
+test('detailed architecture exposes a complete flow legend and fixed-size arrowheads', () => {
+  const result = renderDeterministicVisual(fixtures[0], renderOptions);
+  assert.match(result.svg, />Legend</);
+  assert.match(result.svg, /Data \/ Request Flow/);
+  assert.match(result.svg, /Auth \/ Identity Flow/);
+  assert.match(result.svg, /Integration \/ Data Exchange/);
+  assert.match(result.svg, /Delivery \/ Operations Flow/);
+  assert.match(result.svg, /markerUnits="userSpaceOnUse"/);
+});
+
+test('text wrapping fills the final allowed line before truncating', () => {
+  assert.deepEqual(
+    wrapText('One two three four five six seven', 13, 2),
+    ['One two three', 'four five six…']
+  );
+});
 
 test('structured architecture rejects relationships to unknown elements', () => {
   const fixture = structuredClone(fixtures[0]);

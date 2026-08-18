@@ -1,8 +1,9 @@
 import { renderGantt } from './ganttRenderer.js';
+import { renderDetailedArchitecture } from './detailedArchitectureRenderer.js';
 import { renderStructuredArchitecture } from './structuredArchitectureRenderer.js';
 
 const deterministicRenderers = new Map([
-  ['architecture-details', renderStructuredArchitecture],
+  ['architecture-details', renderDetailedArchitecture],
   ['cloud-architecture', renderStructuredArchitecture],
   ['architecture-c4', renderStructuredArchitecture],
   ['gantt', renderGantt],
@@ -21,4 +22,3 @@ export function renderDeterministicVisual(plan, options = {}) {
   if (!renderer) throw new Error(`No deterministic renderer is registered for '${plan?.type || 'unknown'}'`);
   return renderer(plan, options);
 }
-

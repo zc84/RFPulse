@@ -18,6 +18,8 @@ export function formatPlanResponse(result, { requestId, includePlan = true } = {
       estimates: {
         planner_calls: result.estimates.plannerCalls,
         image_calls: result.estimates.imageCalls,
+        max_image_calls: result.estimates.maxImageCalls ?? result.estimates.imageCalls,
+        qa_calls: result.estimates.qaCalls ?? 0,
         deterministic_renders: result.estimates.deterministicRenders,
         latency_band: result.estimates.latencyBand,
         cost_band: result.estimates.costBand,
@@ -29,4 +31,3 @@ export function formatPlanResponse(result, { requestId, includePlan = true } = {
     },
   };
 }
-

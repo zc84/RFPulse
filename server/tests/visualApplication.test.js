@@ -6,6 +6,11 @@ import { MemoryVisualPlanStore } from '../visuals/infrastructure/planStores.js';
 import { MemoryVisualBudgetGate } from '../visuals/infrastructure/budgetGates.js';
 import { buildEndpointVisualPlannerUserPrompt } from '../visuals/infrastructure/endpointVisualPlannerPrompt.js';
 
+const SAMPLE_PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO1L5J0AAAAASUVORK5CYII=',
+  'base64'
+);
+
 function completeSource() {
   return {
     proposal_markdown: '# Cloud migration proposal\nMove the customer platform to AWS in controlled phases.',
@@ -134,7 +139,7 @@ function planRequest(types) {
   };
 }
 
-function createHarness() {
+function createHarness({ architectureRendererMode = 'shared', budgetGate } = {}) {
   const provider = {
     async completeStructured({ schema }) {
       return {
@@ -146,25 +151,38 @@ function createHarness() {
   };
   const planStore = new MemoryVisualPlanStore();
   const planVisuals = createPlanVisualsUseCase({ provider, planStore });
-  const overviewRenderer = {
-    async render() {
+  const architectureRenderer = {
+    async render(artifact) {
       return {
-        png: Buffer.from('fake-png'),
-        width: 1536,
-        height: 1024,
-        renderer: 'fake-overview-v1',
+        png: SAMPLE_PNG,
+        width: 1,
+        height: 1,
+        renderer: `fake-shared-architecture-${artifact.type}`,
+        warnings: ['Semantic image QA is not enabled.'],
+        validation: {
+          status: 'unverified',
+          fidelity: artifact.fidelityClass,
+        },
+        usage: {
+          imageCalls: 1,
+          qaCalls: 0,
+          regenerationCalls: 0,
+          retryCalls: 0,
+        },
       };
     },
   };
   const renderVisuals = createRenderVisualsUseCase({
     planVisuals,
     planStore,
-    overviewRenderer,
+    architectureRenderer,
+    architectureRendererMode,
+    ...(budgetGate ? { budgetGate } : {}),
   });
   return { planStore, planVisuals, renderVisuals };
 }
 
-test('planner applies explicit context selection and materializes exact artifacts from canonical source', async () => {
+test('planner applies explicit selection and materializes evidence-bound artifacts', async () => {
   const { planVisuals } = createHarness();
   const result = await planVisuals(planRequest(['architecture-details', 'gantt']));
 
@@ -173,7 +191,8 @@ test('planner applies explicit context selection and materializes exact artifact
   assert.equal(result.plan.artifacts[0].content.components[0].id, 'web');
   assert.equal(result.plan.artifacts[1].content.tasks[1].dependencies[0], 'discovery');
   assert.ok(result.plan.artifacts[0].content.components[0].evidence[0].factId.startsWith('fact_'));
-  assert.equal(result.estimates.imageCalls, 0);
+  assert.equal(result.estimates.imageCalls, 1);
+  assert.equal(result.estimates.deterministicRenders, 1);
 });
 
 test('all five types can be planned through the endpoint application contract', async () => {
@@ -212,9 +231,32 @@ test('render use case returns AI overview and exact deterministic Gantt output',
   const result = await renderVisuals(input, { requestId: 'request-test' });
   assert.equal(result.status, 'complete');
   assert.deepEqual(result.artifacts.map(artifact => artifact.type), ['architecture-overview', 'gantt']);
-  assert.equal(result.artifacts[0].renderer, 'fake-overview-v1');
-  assert.equal(result.artifacts[1].renderer, 'deterministic-gantt-v1');
+  assert.equal(result.artifacts[0].renderer, 'fake-shared-architecture-architecture-overview');
+  assert.equal(result.artifacts[1].renderer, 'deterministic-gantt-v2');
+  assert.equal(result.artifacts[0].validation.status, 'unverified');
+  assert.equal(result.artifacts[1].validation.status, 'passed');
   assert.ok(result.plan.artifact_plan);
+});
+
+test('detailed architecture uses the shared best-effort image renderer', async () => {
+  const { renderVisuals } = createHarness();
+  const result = await renderVisuals({
+    ...planRequest(['architecture-details']),
+    render: {
+      format: 'png',
+      delivery: 'base64',
+      failure_policy: 'atomic',
+      style_preset: 'professional-light-v1',
+    },
+  });
+
+  assert.equal(result.status, 'complete');
+  assert.equal(
+    result.artifacts[0].renderer,
+    'fake-shared-architecture-architecture-details'
+  );
+  assert.equal(result.artifacts[0].validation.status, 'unverified');
+  assert.equal(result.usage.image_generation_calls, 1);
 });
 
 test('a server-issued token renders without another planner call', async () => {
@@ -232,6 +274,41 @@ test('a server-issued token renders without another planner call', async () => {
   }, { requestId: 'token-render' });
   assert.equal(result.usage.planner_calls, 0);
   assert.equal(result.artifacts[0].type, 'gantt');
+});
+
+test('a server-issued architecture token is self-contained for rendering', async () => {
+  const harness = createHarness();
+  const planned = await harness.planVisuals(planRequest(['architecture-details']));
+  const result = await harness.renderVisuals({
+    mode: 'plan_token',
+    plan_token: planned.planToken,
+    render: {
+      format: 'png',
+      delivery: 'base64',
+      failure_policy: 'atomic',
+      style_preset: 'professional-light-v1',
+    },
+  }, { requestId: 'architecture-token-render' });
+  assert.equal(result.usage.planner_calls, 0);
+  assert.equal(result.artifacts[0].type, 'architecture-details');
+  assert.equal(result.artifacts[0].validation.status, 'unverified');
+});
+
+test('server rollback policy keeps deterministic architecture rendering available', async () => {
+  const { renderVisuals } = createHarness({
+    architectureRendererMode: 'deterministic',
+  });
+  const result = await renderVisuals({
+    ...planRequest(['architecture-details']),
+    render: {
+      format: 'png',
+      delivery: 'base64',
+      failure_policy: 'atomic',
+      style_preset: 'professional-light-v1',
+    },
+  });
+  assert.match(result.artifacts[0].renderer, /^deterministic-architecture-details/);
+  assert.equal(result.usage.image_generation_calls, 0);
 });
 
 test('render rejects incompatible plan-token versions before rendering', async () => {
@@ -264,6 +341,46 @@ test('shared budget gate blocks work after its configured call budget', async ()
     () => budgetGate.reserve({ plannerCalls: 1 }),
     error => error.code === 'BUDGET_EXCEEDED'
   );
+});
+
+test('render reserves the worst-case transient retry budget before image work', async () => {
+  const budgetGate = new MemoryVisualBudgetGate({
+    plannerLimit: 10,
+    imageLimit: 1,
+  });
+  const harness = createHarness({ budgetGate });
+  await assert.rejects(
+    () => harness.renderVisuals({
+      ...planRequest(['architecture-overview']),
+      render: {
+        format: 'png',
+        delivery: 'base64',
+        failure_policy: 'atomic',
+        style_preset: 'professional-light-v1',
+      },
+    }),
+    error => error.code === 'BUDGET_EXCEEDED'
+  );
+});
+
+test('planner rejects normalized input that exceeds its provider prompt limit', async () => {
+  let providerCalls = 0;
+  const provider = {
+    async completeStructured() {
+      providerCalls += 1;
+      throw new Error('Provider must not be called');
+    },
+  };
+  const planVisuals = createPlanVisualsUseCase({
+    provider,
+    planStore: new MemoryVisualPlanStore(),
+    maxPlannerPromptBytes: 100,
+  });
+  await assert.rejects(
+    () => planVisuals(planRequest(['architecture-overview'])),
+    error => error.code === 'PLANNER_INPUT_TOO_LARGE'
+  );
+  assert.equal(providerCalls, 0);
 });
 
 test('structured source values remain inside the untrusted planner boundary', () => {
